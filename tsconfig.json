@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": false,
+    "baseUrl": ".",
+    "paths": {
+      "@admin-panel/*": ["packages/admin-panel/src/*"],
+      "@mobile-app/*": ["packages/mobile-app/src/*"],
+      "@kiosk-app/*": ["packages/kiosk-app/src/*"]
+    },
+    "typeRoots": [
+      "packages/admin-panel/node_modules/@types",
+      "packages/mobile-app/node_modules/@types",
+      "packages/kiosk-app/node_modules/@types",
+      "node_modules/@types"
+    ]
+  },
+  "references": [
+    { "path": "packages/admin-panel" },
+    { "path": "packages/mobile-app" },
+    { "path": "packages/kiosk-app" }
+  ],
+  "exclude": ["node_modules", "**/node_modules"]
+}

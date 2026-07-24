@@ -1,0 +1,16 @@
+{
+  "name": "@waste2goods/backend",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "node src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@waste2goods/core": "*",
+    "express": "^4.21.0",
+    "cors": "^2.8.5"
+  }
+}

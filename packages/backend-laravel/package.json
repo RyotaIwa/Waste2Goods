@@ -1,0 +1,8 @@
+{
+  "name": "@waste2goods/backend-laravel",
+  "version": "0.0.1",
+  "description": "Laravel-like backend for Waste2Goods",
+  "scripts": {
+    "dev": "php -S localhost:3001 -t public"
+  }
+}
