@@ -4,7 +4,7 @@ import { Waste2GoodsAPI } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   Smartphone, Monitor, Cpu, Recycle, Home, QrCode, Gift,
-  Target, User, ArrowLeft, Check, AlertCircle, Scale,
+  Target, User, ArrowLeft, Check, AlertCircle, Scale, CheckCircle,
   RefreshCw, MapPin, Activity, ShoppingCart, Filter, MoreHorizontal,
   Plus, Edit, Trash2, Eye, Wifi, Clock, Trophy, Medal, Zap, Award,
   BarChart3, Users, TrendingUp, Bell, Search, LogOut, HelpCircle,
@@ -116,7 +116,8 @@ function useAnimatedWeight(target: number, running: boolean) {
   return val;
 }
 
-function Field({ label, placeholder, type = "text", icon, value, onChange }: { label: string; placeholder: string; type?: string; icon?: React.ReactNode; value?: string; onChange?: (value: string) => void }) {
+function Field({ label, placeholder, type = "text", icon, value, onChange, defaultValue, defaultVal }: { label: string; placeholder: string; type?: string; icon?: React.ReactNode; value?: string; onChange?: (value: string) => void; defaultValue?: string; defaultVal?: string }) {
+  const initialValue = value !== undefined ? value : (defaultValue ?? defaultVal);
   return (
     <div>
       <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label>
@@ -124,11 +125,52 @@ function Field({ label, placeholder, type = "text", icon, value, onChange }: { l
         {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</div>}
         <input
           type={type}
-          value={value}
+          value={initialValue}
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
           className={`w-full ${icon ? "pl-10" : "pl-4"} pr-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40`}
         />
+      </div>
+    </div>
+  );
+}
+
+function SelectField({
+  label,
+  placeholder,
+  icon,
+  value,
+  options,
+  onChange,
+  disabled,
+}: {
+  label: string;
+  placeholder: string;
+  icon?: React.ReactNode;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label>
+      <div className="relative">
+        {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none z-10">{icon}</div>}
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(e) => onChange(e.target.value)}
+          className={`w-full ${icon ? "pl-10" : "pl-4"} pr-10 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 appearance-none cursor-pointer disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed`}
+        >
+          <option value="">{placeholder}</option>
+          {options.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+        <ChevronRight className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 -rotate-90 text-muted-foreground pointer-events-none" />
       </div>
     </div>
   );
@@ -162,25 +204,134 @@ export default function App() {
   const [rewardFilter, setRewardFilter] = useState("All");
   const [mfaCode, setMfaCode] = useState(["", "", "", "", "", ""]);
   const [weighing, setWeighing] = useState(false);
-  const [email, setEmail] = useState("resident@cabantian.ph");
-  const [password, setPassword] = useState("ResidentCabantian2025");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  // Registration form state
+  const [regFullName, setRegFullName] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
+  const [regPhone, setRegPhone] = useState("");
+  const [regProvince, setRegProvince] = useState("");
+  const [regCity, setRegCity] = useState("");
+  const [regBarangay, setRegBarangay] = useState("");
+  const [regStreetAddress, setRegStreetAddress] = useState("");
+  const [regLoading, setRegLoading] = useState(false);
+  const [regError, setRegError] = useState("");
   const weight = useAnimatedWeight(2.3, weighing);
   const mfaRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  // Philippine Location Data: Province → Cities → Barangays (sample subset with Cabantian, Davao)
+  const PH_LOCATIONS: Record<string, Record<string, string[]>> = {
+    "Davao del Sur": {
+      "Davao City": ["Cabantian", "Buhangin", "Poblacion", "Matina", "Toril", "Tugbok", "Calinan", "Marilog", "Baguio", "Paquibato"],
+      "Digos City": ["Barangay 1 Pob.", "Barangay 2 Pob.", "San Jose", "San Miguel", "Aplaya"],
+      "Sta. Cruz": ["Poblacion", "Sibulan", "Darong", "Inauayan", "Bato"],
+    },
+    "Metro Manila": {
+      "Quezon City": ["Diliman", "Loyola Heights", "Project 4", "Kamuning", "Commonwealth", "Batasan Hills"],
+      "Manila": ["Sampaloc", "Ermita", "Malate", "Quiapo", "Tondo", "Pasay"],
+      "Makati City": ["Poblacion", "Bel-Air", "San Lorenzo", "Urdaneta", "Forbes Park"],
+      "Taguig City": ["BGC", "Upper Bicutan", "Lower Bicutan", "Hagonoy", "Tuktukan"],
+    },
+    "Cebu": {
+      "Cebu City": ["Lahug", "Cebu Business Park", "Mabolo", "Talamban", "Poblacion Pardo", "San Nicolas"],
+      "Mandaue City": ["Centro", "Canduman", "Maguikay", "Opao", "Tabok"],
+      "Lapu-Lapu City": ["Punta Engaño", "Lapu-Lapu Pob.", "Marigondon", "Mactan"],
+    },
+    "Bukidnon": {
+      "Valencia City": ["Poblacion", "Bagontaas", "Lumbayao", "Batangan", "Guinoyuran"],
+      "Malaybalay City": ["Poblacion", "Sumpong", "Pal-ing", "Linabo", "Casisang"],
+    },
+    "Misamis Oriental": {
+      "Cagayan de Oro": ["Pueblo de Oro", "Liceo", "Divisoria", "Carmen", "Macasandig", "Bulua"],
+    },
+    "South Cotabato": {
+      "General Santos": ["Poblacion", "San Jose", "Calumpang", "Bula", "Conel", "Fatima"],
+    },
+    "Davao de Oro": {
+      "Compostela": ["Poblacion", "San Jose", "Moncado", "Maparat", "Ngan"],
+    },
+    "Davao Oriental": {
+      "Mati City": ["Dahican", "Poblacion", "Sainz", "Macambol", "Badas"],
+    },
+    "Davao del Norte": {
+      "Panabo City": ["Poblacion", "Kasilak", "San Francisco", "Quezon", "Cacao"],
+      "Tagum City": ["Poblacion", "Madaum", "San Agustin", "Apokon", "Liboganon"],
+    },
+  };
+  const PROVINCES = Object.keys(PH_LOCATIONS).sort();
+
+  const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort() : [];
+  const availableBarangays =
+    regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort() : [];
 
   const go = (s: MobileScreen) => setScreen(s);
 
   useEffect(() => {
     if (screen === "splash") {
+      // Always clear any leftover login on app start
+      Waste2GoodsAPI.logout();
+      // Splash -> Always go to onboarding first screen first, user can skip/sign in if account existing
+      const t = setTimeout(() => go("onboard1"), 1200);
+      return () => clearTimeout(t);
+    }
+  }, [screen]);
+
+  // AUTH GUARD: If screen is a protected route but no valid auth token, force back to login.
+  // (Prevents stale state or manual state tampering from bypassing sign-in.)
+  useEffect(() => {
+    const unprotected: MobileScreen[] = [
+      "splash", "onboard1", "onboard2", "onboard3",
+      "login", "register", "mfa", "profile-setup"
+    ];
+    if (!unprotected.includes(screen)) {
       const auth = Waste2GoodsAPI.getAuthState();
-      if (auth?.isAuthenticated) {
-        const t = setTimeout(() => go("home"), 1000);
-        return () => clearTimeout(t);
-      } else {
-        const t = setTimeout(() => go("onboard1"), 1800);
-        return () => clearTimeout(t);
+      if (!auth || !auth.isAuthenticated || !auth.token) {
+        console.log("🔐 Mobile auth guard: no valid token — returning to login");
+        Waste2GoodsAPI.logout();
+        setScreen("login");
       }
     }
   }, [screen]);
+
+  // Helper to get current user's display data (falls back to empty state when unauthenticated)
+  const currentUser = (() => {
+    const auth = Waste2GoodsAPI.getAuthState();
+    if (auth?.isAuthenticated && auth.user) {
+      const name = auth.user.name || `${auth.user.firstName || ""} ${auth.user.lastName || ""}`.trim();
+      const initials = name
+        .split(/\s+/)
+        .map((p: string) => p[0])
+        .filter(Boolean)
+        .join("")
+        .toUpperCase()
+        .slice(0, 2);
+      return {
+        name: name || "Guest User",
+        initials: initials || "GU",
+        email: auth.user.email || "",
+        phone: auth.user.phone || "",
+        barangay: (auth.user as any).barangay || (auth.user as any).barangayName || "Cabantian",
+        province: (auth.user as any).province || "",
+        city: (auth.user as any).city || "",
+        points: (auth.user as any).points ?? (auth.user as any).pointsBalance ?? 0,
+        submissions: (auth.user as any).submissions ?? (auth.user as any).totalSubmissions ?? 0,
+      };
+    }
+    // Auth SKIP mode: fallback demo user data so the app is still usable without signing in
+    return {
+      name: "Guest User",
+      initials: "GU",
+      email: "",
+      phone: "",
+      barangay: "Cabantian",
+      province: "Davao del Sur",
+      city: "Davao City",
+      points: 0,
+      submissions: 0,
+    };
+  })();
 
   useEffect(() => {
     if (screen === "submit-scan") {
@@ -358,25 +509,113 @@ export default function App() {
                     <div>
                       <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-3">Step 1 of 3 — Account Info</p>
                       <div className="space-y-3">
-                        <Field label="Full Name" placeholder="Maria Santos" icon={<User className="w-4 h-4" />} />
-                        <Field label="Email Address" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} />
-                        <Field label="Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} />
-                        <Field label="Confirm Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} />
+                        <Field label="Full Name" placeholder="Maria Santos" icon={<User className="w-4 h-4" />} value={regFullName} onChange={setRegFullName} />
+                        <Field label="Email Address" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} value={regEmail} onChange={setRegEmail} />
+                        <Field label="Phone Number" placeholder="+63 912 345 6789" icon={<Phone className="w-4 h-4" />} value={regPhone} onChange={setRegPhone} />
+                        <Field label="Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={regPassword} onChange={setRegPassword} />
+                        <Field label="Confirm Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={regConfirmPassword} onChange={setRegConfirmPassword} />
                       </div>
                     </div>
-                    <button onClick={() => setRegStep(1)} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Continue</button>
+                    {regError && (
+                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>{regError}</span>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => {
+                        setRegError("");
+                        if (!regFullName || !regEmail || !regPassword || !regConfirmPassword) {
+                          setRegError("Please fill in all fields: name, email, phone, password, confirm password");
+                          return;
+                        }
+                        if (regPassword !== regConfirmPassword) {
+                          setRegError("Passwords do not match");
+                          return;
+                        }
+                        if (regPassword.length < 6) {
+                          setRegError("Password must be at least 6 characters");
+                          return;
+                        }
+                        setRegStep(1);
+                      }}
+                      className="w-full py-4 rounded-2xl bg-primary text-white font-black"
+                    >
+                      Continue
+                    </button>
                   </div>
                 )}
                 {regStep === 1 && (
                   <div className="space-y-4">
-                    <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 2 of 3 — Community Info</p>
-                    <Field label="Phone Number" placeholder="+63 912 345 6789" icon={<Phone className="w-4 h-4" />} />
-                    <Field label="Region" placeholder="NCR" icon={<MapPin className="w-4 h-4" />} />
-                    <Field label="Province" placeholder="Metro Manila" icon={<MapPin className="w-4 h-4" />} />
-                    <Field label="City / Municipality" placeholder="Quezon City" icon={<MapPin className="w-4 h-4" />} />
-                    <Field label="Barangay" placeholder="Cabantian" icon={<MapPin className="w-4 h-4" />} />
-                    <Field label="Street / House Building" placeholder="123 Sampaguita St." icon={<MapPin className="w-4 h-4" />} />
-                    <button onClick={() => setRegStep(2)} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Continue</button>
+                    <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 2 of 3 — Community Address</p>
+                    {regError && (
+                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>{regError}</span>
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground mb-1">
+                      Select your <strong>Province</strong> first — City and Barangay options will auto-filter based on your choice.
+                    </p>
+                    <SelectField
+                      label="Province"
+                      placeholder="Select a Province..."
+                      icon={<MapPin className="w-4 h-4" />}
+                      value={regProvince}
+                      options={PROVINCES}
+                      onChange={(v) => {
+                        setRegProvince(v);
+                        setRegCity("");
+                        setRegBarangay("");
+                      }}
+                    />
+                    <SelectField
+                      label="City / Municipality"
+                      placeholder={regProvince ? "Select a City..." : "Select a Province first"}
+                      icon={<MapPin className="w-4 h-4" />}
+                      value={regCity}
+                      options={availableCities}
+                      disabled={!regProvince}
+                      onChange={(v) => {
+                        setRegCity(v);
+                        setRegBarangay("");
+                      }}
+                    />
+                    <SelectField
+                      label="Barangay"
+                      placeholder={regCity ? "Select a Barangay..." : "Select a City first"}
+                      icon={<MapPin className="w-4 h-4" />}
+                      value={regBarangay}
+                      options={availableBarangays}
+                      disabled={!regCity}
+                      onChange={setRegBarangay}
+                    />
+                    <Field
+                      label="Street / House / Building No."
+                      placeholder="e.g. Block 12 Lot 5, Rizal Street or Purok 7"
+                      icon={<MapPin className="w-4 h-4" />}
+                      value={regStreetAddress}
+                      onChange={setRegStreetAddress}
+                    />
+                    <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
+                      <Info className="w-4 h-4 text-emerald-700 flex-shrink-0 mt-0.5" />
+                      <p className="text-xs text-emerald-800 font-semibold">
+                        No Region required. Leaderboards are based on Barangay level only; the street address above is used for delivery of redeemed items.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setRegError("");
+                        if (!regProvince || !regCity || !regBarangay) {
+                          setRegError("Please select Province, City/Municipality, and Barangay");
+                          return;
+                        }
+                        setRegStep(2);
+                      }}
+                      className="w-full py-4 rounded-2xl bg-primary text-white font-black"
+                    >
+                      Continue
+                    </button>
                     <button onClick={() => setRegStep(0)} className="w-full text-center text-sm text-muted-foreground font-semibold">Back</button>
                   </div>
                 )}
@@ -400,8 +639,102 @@ export default function App() {
                         </label>
                       ))}
                     </div>
-                    <button onClick={() => { setRegStep(0); go("mfa"); }} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Enable MFA & Continue</button>
-                    <button onClick={() => { setRegStep(0); go("profile-setup"); }} className="w-full text-center text-sm text-muted-foreground font-semibold">Skip for now</button>
+                    <button
+                      disabled={regLoading}
+                      onClick={async () => {
+                        setRegError("");
+                        if (!regFullName || !regEmail || !regPassword) {
+                          setRegError("Please fill in all fields from Step 1");
+                          setRegStep(0);
+                          return;
+                        }
+                        if (regPassword !== regConfirmPassword) {
+                          setRegError("Passwords do not match");
+                          setRegStep(0);
+                          return;
+                        }
+                        if (!regProvince || !regCity || !regBarangay) {
+                          setRegError("Please select Province, City, and Barangay in Step 2");
+                          setRegStep(1);
+                          return;
+                        }
+                        const names = regFullName.trim().split(/\s+/);
+                        const firstName = names[0] || "User";
+                        const lastName = names.slice(1).join(" ") || "Lastname";
+                        try {
+                          setRegLoading(true);
+                          await Waste2GoodsAPI.register({
+                            firstName,
+                            lastName,
+                            email: regEmail,
+                            password: regPassword,
+                            phone: regPhone,
+                            province: regProvince,
+                            city: regCity,
+                            barangayName: regBarangay,
+                            streetAddress: regStreetAddress,
+                          });
+                          setRegLoading(false);
+                          setRegStep(0);
+                          go("mfa");
+                        } catch (e) {
+                          setRegLoading(false);
+                          setRegError(e instanceof Error ? e.message : "Registration failed");
+                          setRegStep(0);
+                        }
+                      }}
+                      className="w-full py-4 rounded-2xl bg-primary text-white font-black disabled:opacity-60"
+                    >
+                      {regLoading ? "Creating account..." : "Enable MFA & Continue"}
+                    </button>
+                    <button
+                      disabled={regLoading}
+                      onClick={async () => {
+                        setRegError("");
+                        if (!regFullName || !regEmail || !regPassword) {
+                          setRegError("Please fill in all fields from Step 1");
+                          setRegStep(0);
+                          return;
+                        }
+                        if (regPassword !== regConfirmPassword) {
+                          setRegError("Passwords do not match");
+                          setRegStep(0);
+                          return;
+                        }
+                        if (!regProvince || !regCity || !regBarangay) {
+                          setRegError("Please select Province, City, and Barangay in Step 2");
+                          setRegStep(1);
+                          return;
+                        }
+                        const names = regFullName.trim().split(/\s+/);
+                        const firstName = names[0] || "User";
+                        const lastName = names.slice(1).join(" ") || "Lastname";
+                        try {
+                          setRegLoading(true);
+                          await Waste2GoodsAPI.register({
+                            firstName,
+                            lastName,
+                            email: regEmail,
+                            password: regPassword,
+                            phone: regPhone,
+                            province: regProvince,
+                            city: regCity,
+                            barangayName: regBarangay,
+                            streetAddress: regStreetAddress,
+                          });
+                          setRegLoading(false);
+                          setRegStep(0);
+                          go("profile-setup");
+                        } catch (e) {
+                          setRegLoading(false);
+                          setRegError(e instanceof Error ? e.message : "Registration failed");
+                          setRegStep(0);
+                        }
+                      }}
+                      className="w-full text-center text-sm text-muted-foreground font-semibold disabled:opacity-60"
+                    >
+                      Skip for now
+                    </button>
                   </div>
                 )}
               </div>
@@ -457,7 +790,7 @@ export default function App() {
                   </div>
                   <p className="text-xs text-muted-foreground font-semibold">Upload a profile photo (optional)</p>
                 </div>
-                <Field label="Display Name" placeholder="Maria" icon={<User className="w-4 h-4" />} defaultVal="Maria Santos" />
+                <Field label="Display Name" placeholder="Your display name" icon={<User className="w-4 h-4" />} defaultVal={currentUser.name && currentUser.name !== "Guest User" ? currentUser.name : ""} />
                 <div>
                   <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Bio (optional)</label>
                   <textarea className="w-full px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" rows={3} placeholder="I recycle because I care about my community..." />
@@ -526,14 +859,14 @@ export default function App() {
               <div className="px-5 pt-14 pb-3 flex items-center justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground font-semibold">Good morning,</p>
-                  <h2 className="text-xl font-black text-foreground">Maria Santos 👋</h2>
+                  <h2 className="text-xl font-black text-foreground">{currentUser.name} 👋</h2>
                 </div>
                 <div className="flex items-center gap-2">
                   <button className="relative p-2 rounded-xl border border-border bg-white">
                     <Bell className="w-4 h-4 text-muted-foreground" />
                     <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
                   </button>
-                  <button onClick={() => go("profile")} className="w-9 h-9 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">MS</button>
+                  <button onClick={() => go("profile")} className="w-9 h-9 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{currentUser.initials}</button>
                 </div>
               </div>
 
@@ -547,7 +880,7 @@ export default function App() {
                     <Leaf className="w-4 h-4 opacity-60" />
                   </div>
                   <div className="flex items-end gap-2 mb-2">
-                    <span className="text-5xl font-black tracking-tight">2,840</span>
+                    <span className="text-5xl font-black tracking-tight">{currentUser.points.toLocaleString()}</span>
                     <span className="text-base font-bold opacity-75 mb-1">pts</span>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -909,15 +1242,15 @@ export default function App() {
             <div className="h-full flex flex-col">
               <div className="pt-14 pb-6 px-5 flex flex-col items-center gap-3" style={{ background: "linear-gradient(160deg, #052e16, #15803d)" }}>
                 <div className="relative">
-                  <div className="w-16 h-16 rounded-full border-3 border-white/30 bg-white/10 flex items-center justify-center text-2xl font-black text-white">MS</div>
+                  <div className="w-16 h-16 rounded-full border-3 border-white/30 bg-white/10 flex items-center justify-center text-2xl font-black text-white">{currentUser.initials}</div>
                   <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-400 border-2 border-green-900 flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white" /></div>
                 </div>
                 <div className="text-center">
-                  <h2 className="text-lg font-black text-white">Maria Santos</h2>
-                  <p className="text-xs text-green-300 flex items-center gap-1 justify-center"><MapPin className="w-3 h-3" />Bagong Pag-asa · Since Mar 2025</p>
+                  <h2 className="text-lg font-black text-white">{currentUser.name}</h2>
+                  <p className="text-xs text-green-300 flex items-center gap-1 justify-center"><MapPin className="w-3 h-3" />{currentUser.barangay} · Since Mar 2025</p>
                 </div>
                 <div className="flex gap-6 mt-1 bg-white/10 rounded-2xl px-6 py-3 border border-white/10">
-                  {[["2,840","Points"],["34","Submissions"],["#3","Weekly Rank"]].map(([v,l]) => (
+                  {[[currentUser.points.toLocaleString(),"Points"],[String(currentUser.submissions),"Submissions"],["#3","Weekly Rank"]].map(([v,l]) => (
                     <div key={l} className="text-center">
                       <p className="text-base font-black text-white">{v}</p>
                       <p className="text-xs text-green-300">{l}</p>
@@ -978,7 +1311,14 @@ export default function App() {
                 <h2 className="text-base font-black">Account Settings</h2>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                {[["Full Name","Maria Santos"],["Email","maria.santos@gmail.com"],["Phone","+63 912 345 6789"],["Barangay","Bagong Pag-asa"]].map(([l,v]) => (
+                {[
+                  ["Full Name", currentUser.name],
+                  ["Email", currentUser.email || "guest@waste2goods.ph"],
+                  ["Phone", currentUser.phone || "+63 9xx xxx xxxx"],
+                  ["Barangay", currentUser.barangay],
+                  ["City", currentUser.city],
+                  ["Province", currentUser.province],
+                ].map(([l,v]) => (
                   <div key={l}>
                     <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{l}</label>
                     <div className="flex items-center gap-2">

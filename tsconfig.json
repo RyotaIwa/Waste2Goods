@@ -28,10 +28,5 @@
       "node_modules/@types"
     ]
   },
-  "references": [
-    { "path": "packages/admin-panel" },
-    { "path": "packages/mobile-app" },
-    { "path": "packages/kiosk-app" }
-  ],
   "exclude": ["node_modules", "**/node_modules"]
 }

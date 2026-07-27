@@ -206,6 +206,16 @@ export interface AuthUser {
   role: "admin" | "resident" | "kiosk";
   barangay?: string;
   points?: number;
+  // ER diagram aligned fields
+  userId?: string;
+  firstName?: string;
+  lastName?: string;
+  pointsBalance?: number;
+  phone?: string;
+  barangayId?: number;
+  totalSubmissions?: number;
+  status?: string;
+  createdAt?: string;
 }
 
 export interface AuthState {

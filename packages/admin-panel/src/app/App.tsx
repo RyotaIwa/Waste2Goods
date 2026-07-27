@@ -1,11 +1,10 @@
-
 import { useState, useEffect } from "react";
 import {
   BarChart3, Users, TrendingUp, Bell, Search, LogOut, Recycle,
-  ArrowLeft, Zap, Award, ShoppingCart, Scale,
+  ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
   X, Plus, Filter, Download, Eye, Edit, Trash2, MoreHorizontal,
   AlertCircle, MapPin, Cpu, RefreshCw, Battery, Gift,
-  Lock, Mail, AlertTriangle
+  Lock, Mail, AlertTriangle, Check
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -72,13 +71,13 @@ const kiosks = [
   { id: "K-05", location: "Cabantian Gym", status: "maintenance", weight: "—", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
 ];
 
-type AdminSection = "dashboard" | "users" | "users-detail" | "rewards" | "analytics" | "monitoring";
+type AdminSection = "dashboard" | "users" | "users-detail" | "rewards" | "analytics" | "monitoring" | "admins";
 type AppScreen = "login" | "admin";
 
 // Login Screen Component
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [email, setEmail] = useState("admin@waste2goods.ph");
-  const [password, setPassword] = useState("AdminCabantian2025");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -165,13 +164,23 @@ export default function App() {
   const [selectedUser, setSelectedUser] = useState<typeof adminUsers[0] | null>(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
 
-  // Check auth state on mount
+  // Clear any persisted auth on mount to force manual login
   useEffect(() => {
-    const auth = Waste2GoodsAPI.getAuthState();
-    if (auth?.isAuthenticated) {
-      setScreen("admin");
-    }
+    Waste2GoodsAPI.logout();
   }, []);
+
+  // AUTH GUARD: If screen === 'admin' but no real token is stored, force back to login screen.
+  // (Prevents leftover stale state or tampering from showing the dashboard without auth.)
+  useEffect(() => {
+    if (screen !== "login") {
+      const auth = Waste2GoodsAPI.getAuthState();
+      if (!auth || !auth.isAuthenticated || !auth.token) {
+        console.log("🔐 Auth guard: no valid token — returning to login screen");
+        Waste2GoodsAPI.logout();
+        setScreen("login");
+      }
+    }
+  }, [screen]);
 
   const handleLogout = () => {
     Waste2GoodsAPI.logout();
@@ -184,6 +193,7 @@ export default function App() {
     { id: "rewards" as AdminSection, icon: <Gift className="w-4 h-4" />, label: "Reward Management" },
     { id: "analytics" as AdminSection, icon: <TrendingUp className="w-4 h-4" />, label: "Reports & Analytics" },
     { id: "monitoring" as AdminSection, icon: <Cpu className="w-4 h-4" />, label: "IoT Kiosk Monitor" },
+    { id: "admins" as AdminSection, icon: <Shield className="w-4 h-4" />, label: "Admin Management" },
   ];
 
   // Show login screen if not authenticated
@@ -261,6 +271,7 @@ export default function App() {
             {section === "rewards" && <AdminRewards />}
             {section === "analytics" && <AdminAnalytics />}
             {section === "monitoring" && <AdminMonitoring />}
+            {section === "admins" && <AdminAdmins />}
           </div>
         </div>
       </div>
@@ -642,6 +653,215 @@ function AdminMonitoring() {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminAdmins() {
+  const [showForm, setShowForm] = useState(false);
+  const [admins, setAdmins] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState("");
+  const [success, setSuccess] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const rows = await Waste2GoodsAPI.fetchAdminAdmins();
+      setAdmins(Array.isArray(rows) ? rows : []);
+    } catch {
+      setAdmins([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const resetForm = () => {
+    setFirstName(""); setLastName(""); setEmail("");
+    setPassword(""); setConfirmPassword(""); setErr(""); setSuccess("");
+  };
+
+  const submitForm = async () => {
+    setErr(""); setSuccess("");
+    if (!firstName.trim() || !lastName.trim() || !email.trim() || !password) {
+      setErr("Please fill in all required fields"); return;
+    }
+    if (password.length < 6) { setErr("Password must be at least 6 characters"); return; }
+    if (password !== confirmPassword) { setErr("Passwords do not match"); return; }
+    try {
+      setCreating(true);
+      await Waste2GoodsAPI.createAdmin({ firstName: firstName.trim(), lastName: lastName.trim(), email: email.trim(), password });
+      setSuccess(`Admin ${firstName} ${lastName} created successfully!`);
+      resetForm(); setShowForm(false);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to create admin");
+    } finally { setCreating(false); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-xl font-black text-foreground">Admin Management</h2>
+          <p className="text-xs text-muted-foreground mt-1">Manage administrators with access to this panel</p>
+        </div>
+        <button
+          onClick={() => { setShowForm(v => !v); resetForm(); }}
+          className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors"
+        >
+          <Plus className="w-4 h-4" />{showForm ? "Cancel" : "Add New Admin"}
+        </button>
+      </div>
+
+      {showForm && (
+        <div className="bg-white rounded-2xl border border-border p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-black text-foreground">Create New Admin Account</h3>
+              <p className="text-xs text-muted-foreground">New admin will be able to sign in and manage the barangay</p>
+            </div>
+          </div>
+
+          {err && (
+            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+              <AlertTriangle className="w-4 h-4" />{err}
+            </div>
+          )}
+          {success && (
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-xs font-semibold">
+              <Check className="w-4 h-4" />{success}
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
+              <input
+                value={firstName} onChange={e => setFirstName(e.target.value)}
+                placeholder="Juan"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
+              <input
+                value={lastName} onChange={e => setLastName(e.target.value)}
+                placeholder="Reyes"
+                className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="email" value={email} onChange={e => setEmail(e.target.value)}
+                  placeholder="barangay.assistant@waste2goods.ph"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password *</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="Min 6 chars"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm Password *</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+                  placeholder="Re-type password"
+                  className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-5 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">
+              Cancel
+            </button>
+            <button
+              disabled={creating}
+              onClick={submitForm}
+              className="px-6 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-2"
+            >
+              {creating ? "Creating..." : "Create Admin Account"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-2xl border border-border overflow-hidden">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+          <div>
+            <h3 className="font-black text-foreground">Registered Admins ({admins.length})</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Barangay-level admins with full dashboard access</p>
+          </div>
+          <button onClick={load} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
+            <RefreshCw className="w-3 h-3" />Refresh
+          </button>
+        </div>
+        <div className="divide-y divide-border">
+          {loading && (
+            <div className="px-5 py-16 text-center text-sm text-muted-foreground">Loading admins...</div>
+          )}
+          {!loading && admins.length === 0 && (
+            <div className="px-5 py-16 text-center">
+              <Shield className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">No admins loaded. Click "Add New Admin" to create one.</p>
+            </div>
+          )}
+          {!loading && admins.map(a => {
+            const fullName = a.name || `${a.firstName || ""} ${a.lastName || ""}`.trim();
+            const initials = fullName.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0,2).toUpperCase();
+            const date = a.createdAt ? new Date(a.createdAt) : null;
+            const joined = date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "—";
+            return (
+              <div key={a.adminId || a.email} className="px-5 py-4 flex items-center gap-4">
+                <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary">
+                  {initials || "A"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="font-black text-sm text-foreground truncate">{fullName || "Unnamed Admin"}</p>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase tracking-wide">
+                      {a.roleId === 1 ? "Full" : "Admin"}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
+                    <span><Mail className="w-3 h-3 inline -mt-0.5 mr-1" />{a.email}</span>
+                    <span className="opacity-30">•</span>
+                    <span>ID: {a.adminId}</span>
+                    <span className="opacity-30">•</span>
+                    <span>Joined {joined}</span>
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

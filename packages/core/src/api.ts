@@ -102,16 +102,18 @@ function getMockData(endpoint: string) {
 // API Methods
 export const Waste2GoodsAPI = {
   // Auth
-  login: async (email: string, password: string) => {
-    // Try backend first, fall back to mock if fails
+  register: async (data: { firstName: string; lastName: string; email: string; password: string; phone?: string; province?: string; city?: string; barangayName?: string; streetAddress?: string }) => {
+    // Registration ALWAYS goes through the real backend (no mock fallback).
+    // This ensures every new user is INSERTed into the MySQL/XAMPP database correctly.
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(data),
       });
       if (!response.ok) {
-        throw new Error("API login failed");
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Registration failed");
       }
       const result = await response.json();
       const authState: AuthState = {
@@ -121,28 +123,33 @@ export const Waste2GoodsAPI = {
       };
       setStoredAuth(authState);
       return authState;
-    } catch {
-      // Fallback to mock
-      await new Promise(resolve => setTimeout(resolve, 800));
-      if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-        const authState: AuthState = {
-          isAuthenticated: true,
-          user: DEMO_ADMIN_USER,
-          token: "mock_admin_token_123",
-        };
-        setStoredAuth(authState);
-        return authState;
+    } catch (e) {
+      throw e instanceof Error ? e : new Error("Registration failed — check backend connection");
+    }
+  },
+  login: async (email: string, password: string) => {
+    // Login ALWAYS goes through the real backend (no demo shortcut fallbacks for residents).
+    // Admin login is still handled by the backend's hardcoded ADMIN_CREDENTIALS check.
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Login failed");
       }
-      if (email === DEMO_RESIDENT_CREDENTIALS.email && password === DEMO_RESIDENT_CREDENTIALS.password) {
-        const authState: AuthState = {
-          isAuthenticated: true,
-          user: DEMO_RESIDENT_USER,
-          token: "mock_resident_token_456",
-        };
-        setStoredAuth(authState);
-        return authState;
-      }
-      throw new Error("Invalid credentials");
+      const result = await response.json();
+      const authState: AuthState = {
+        isAuthenticated: true,
+        user: result.user,
+        token: result.token,
+      };
+      setStoredAuth(authState);
+      return authState;
+    } catch (e) {
+      throw e instanceof Error ? e : new Error("Login failed — check backend connection or credentials");
     }
   },
   kioskLogin: async (pin: string) => {
@@ -202,10 +209,22 @@ export const Waste2GoodsAPI = {
   // Analytics
   getWeeklyData: () => fetchApi<WeeklyData[]>("/analytics/weekly"),
   getMonthlyData: () => fetchApi<MonthlyData[]>("/analytics/monthly"),
+  getSummary: () => fetchApi<any>("/analytics/summary"),
 
   // Leaderboard
   getLeaderboard: () => fetchApi<LeaderboardUser[]>("/leaderboard"),
 
   // Tasks
   getTasks: () => fetchApi<Task[]>("/tasks"),
+
+  // Redemptions
+  getRedemptions: () => fetchApi<any[]>("/redemptions"),
+
+  // Admin Management (only usable by authenticated admins)
+  fetchAdminAdmins: () => fetchApi<any[]>("/admin/admins"),
+  createAdmin: (data: { firstName: string; lastName: string; email: string; password: string; barangayId?: number; roleId?: number }) =>
+    fetchApi<any>("/admin/admins", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
