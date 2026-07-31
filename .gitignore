@@ -1,9 +1,13 @@
+@'
 # Dependencies
 node_modules/
 
 # Build outputs
 dist/
 build/
+**/dist/
+**/build/
+packages/backend/database/*.db
 
 # IDE files
 .vscode/
@@ -20,4 +24,34 @@ Thumbs.db
 # Environment variables
 .env
 .env.local
-node_modules
+
+# Flutter / Dart generated
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+
+# Entire Flutter standalone project (kept untracked per earlier choice)
+waste2goods_mobile/
+
+# Un-versioned design diagrams (kept untracked per earlier choice)
+Untitled Diagram.drawio.png
+packages/backend/database/database design.png
+
+# Flutter build caches
+waste2goods_mobile/build/
+waste2goods_mobile/.dart_tool/
+waste2goods_mobile/.idea/
+waste2goods_mobile/android/.gradle/
+waste2goods_mobile/android/build/
+waste2goods_mobile/android/app/build/
+waste2goods_mobile/ios/Pods/
+waste2goods_mobile/ios/.symlinks/
+waste2goods_mobile/macos/Pods/
+waste2goods_mobile/linux/build/
+waste2goods_mobile/windows/build/
+
+# JVM crash logs (hs_err / replay_pid)
+hs_err_pid*.log
+replay_pid*.log
+'@ | Set-Content -Path .gitignore -Encoding UTF8
