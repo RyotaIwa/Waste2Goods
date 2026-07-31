@@ -10,6 +10,8 @@ build/
 .idea/
 *.swp
 *.swo
+.cursorindexingignore
+.specstory/
 
 # OS files
 .DS_Store

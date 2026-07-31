@@ -16,7 +16,10 @@ export interface Barangay {
   street?: string;
   province?: string;
   city?: string;
-  contactNumber?: string;
+  contactInfo?: string;
+  contactNumber?: string; // Legacy alias (UI compatibility)
+  barangayCaptain?: string;
+  userId?: number;
 }
 
 export interface Administrator {
@@ -27,6 +30,10 @@ export interface Administrator {
   passwordHash: string;
   createdAt: string;
   barangayId: number; // Foreign Key to Barangay
+  roleId?: number; // Foreign Key to Roles (1=Super Admin, 2=Barangay Admin, 3=Secretary, 4=Treasurer)
+  // Convenience alias (UI compatibility)
+  email?: string;
+  name?: string;
 }
 
 export interface UserRecyclingTask {
@@ -50,6 +57,15 @@ export interface User {
   createdAt: string;
   collectionCoords?: string;
   status: "active" | "inactive";
+  // Convenience aliases (UI / admin panel uses id / name / points often)
+  id?: string;
+  name?: string;
+  points?: number;
+  phone?: string;
+  province?: string;
+  city?: string;
+  barangayName?: string;
+  streetAddress?: string;
 }
 
 export interface LeaderboardUser {
@@ -109,6 +125,14 @@ export interface Reward {
   category?: string;
   icon?: string;
   seasonal?: boolean;
+  isSeasonal?: boolean;
+  status?: string;
+  // Convenience aliases (UI / admin panel uses these short names)
+  id?: number;
+  name?: string;
+  points?: number;
+  stock?: number;
+  stockCount?: number;
 }
 
 export interface RewardRedemption {

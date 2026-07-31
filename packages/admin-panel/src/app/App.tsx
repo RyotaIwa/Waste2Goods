@@ -161,8 +161,152 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("login");
   const [section, setSection] = useState<AdminSection>("dashboard");
-  const [selectedUser, setSelectedUser] = useState<typeof adminUsers[0] | null>(null);
+  const [selectedUser, setSelectedUser] = useState<any | null>(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
+
+  // ── UI state: search, notifications, forms ──
+  const [searchQuery, setSearchQuery] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<any[] | null>(null);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [adjustType, setAdjustType] = useState<"Add" | "Deduct" | "Set">("Add");
+  const [adjustAmount, setAdjustAmount] = useState<string>("100");
+  const [adjustReason, setAdjustReason] = useState<string>("Community event participation");
+  const [adjustSubmitting, setAdjustSubmitting] = useState(false);
+  const [adjustMsg, setAdjustMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  // ── Live data state (merged with demo fallbacks) ──
+  const [liveUsers, setLiveUsers] = useState<Array<any> | null>(null);
+  const [liveRewards, setLiveRewards] = useState<Array<any> | null>(null);
+  const [liveKiosks, setLiveKiosks] = useState<Array<any> | null>(null);
+  const [liveTx, setLiveTx] = useState<Array<any> | null>(null);
+  const [liveWeekly, setLiveWeekly] = useState<Array<any> | null>(null);
+  const [liveMonthly, setLiveMonthly] = useState<Array<any> | null>(null);
+  const [liveRedemptions, setLiveRedemptions] = useState<Array<any> | null>(null);
+  const [liveLeaderboard, setLiveLeaderboard] = useState<Array<any> | null>(null);
+  const [dashboardSummary, setDashboardSummary] = useState<{
+    totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number;
+    kgDelta: number; newUsers: number; redeemedDelta: number;
+  } | null>(null);
+  // ── Admin profile state (reactive; refreshed from DB on mount / section change) ──
+  const [adminProfile, setAdminProfile] = useState<any | null>(null);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+
+  // Human-readable role labels from the roles table schema:
+  //  roleId=1 Super Admin (full access), 2=Barangay Admin, 3=Secretary, 4=Treasurer
+  const ROLE_NAME: Record<number, string> = {
+    1: "Super Admin",
+    2: "Barangay Admin",
+    3: "Secretary",
+    4: "Treasurer",
+  };
+
+  // ── Refresh all modules from live DB (call after writes) ──
+  const refreshData = async () => {
+    let cancelled = false;
+    try {
+      const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs, adminProf] = await Promise.allSettled([
+        Waste2GoodsAPI.fetchUsers(),
+        Waste2GoodsAPI.fetchRewards(),
+        Waste2GoodsAPI.fetchKiosks(),
+        Waste2GoodsAPI.fetchTransactions(),
+        Waste2GoodsAPI.fetchAnalyticsWeekly(),
+        Waste2GoodsAPI.fetchAnalyticsMonthly(),
+        Waste2GoodsAPI.fetchLeaderboard(),
+        Waste2GoodsAPI.fetchRedemptions(),
+        Waste2GoodsAPI.fetchAnalyticsSummary(),
+        Waste2GoodsAPI.fetchNotifications(),
+        // Call new profile helper (refreshes session storage with latest DB row + returns user)
+        Waste2GoodsAPI.refreshCurrentUser ? Waste2GoodsAPI.refreshCurrentUser() : Promise.resolve(null),
+      ]);
+      if (cancelled) return;
+      if (users.status === "fulfilled") setLiveUsers(Array.isArray(users.value) ? users.value : null);
+      if (rewards.status === "fulfilled") setLiveRewards(Array.isArray(rewards.value) ? rewards.value : null);
+      if (kiosks.status === "fulfilled") setLiveKiosks(Array.isArray(kiosks.value) ? kiosks.value : null);
+      if (tx.status === "fulfilled") setLiveTx(Array.isArray(tx.value) ? tx.value : null);
+      if (weekly.status === "fulfilled") setLiveWeekly(Array.isArray(weekly.value) ? weekly.value : null);
+      if (monthly.status === "fulfilled") setLiveMonthly(Array.isArray(monthly.value) ? monthly.value : null);
+      if (leaderboard.status === "fulfilled") setLiveLeaderboard(Array.isArray(leaderboard.value) ? leaderboard.value : null);
+      if (redemptions.status === "fulfilled") setLiveRedemptions(Array.isArray(redemptions.value) ? redemptions.value : null);
+      if (summary.status === "fulfilled" && summary.value && typeof summary.value === "object") {
+        const s: any = summary.value;
+        setDashboardSummary({
+          totalKg: Number(s.totalKgCollected || s.totalKg || s.totalCollected || 0),
+          activeResidents: Number(s.activeResidents || s.totalUsers || 0),
+          pointsAwarded: Number(s.totalPointsAwarded || s.pointsAwarded || s.totalPoints || 0),
+          redeemed: Number(s.rewardsRedeemed || s.redeemed || 0),
+          kgDelta: Number(s.totalTransactions || s.kgDelta || 0),
+          newUsers: Number(s.totalUsers || s.newUsers || 0),
+          redeemedDelta: Number(s.rewardsRedeemed || s.redeemedDelta || 0),
+        });
+      }
+      if (notifs.status === "fulfilled" && notifs.value && Array.isArray((notifs.value as any).items)) {
+        setNotifications((notifs.value as any).items);
+        setNotifUnread(Number((notifs.value as any).unread || 0));
+      }
+      if (adminProf.status === "fulfilled" && adminProf.value) {
+        setAdminProfile(adminProf.value);
+        // Bump key so profile sections re-read from localStorage if needed
+        setProfileRefreshKey(k => k + 1);
+      } else {
+        // fallback: read what's in storage so name is at least login-time accurate
+        setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
+      }
+    } catch {
+      // Swallow network errors; demo fallback will render
+      setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
+    }
+  };
+
+  // Fetch all modules whenever the section changes (and logged into admin)
+  useEffect(() => {
+    if (screen !== "admin") return;
+    let cancelled = false;
+    (async () => {
+      // Try to call all real endpoints; on error fall back to demo (don't crash UI)
+      try {
+        const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs] = await Promise.allSettled([
+          Waste2GoodsAPI.fetchUsers(),
+          Waste2GoodsAPI.fetchRewards(),
+          Waste2GoodsAPI.fetchKiosks(),
+          Waste2GoodsAPI.fetchTransactions(),
+          Waste2GoodsAPI.fetchAnalyticsWeekly(),
+          Waste2GoodsAPI.fetchAnalyticsMonthly(),
+          Waste2GoodsAPI.fetchLeaderboard(),
+          Waste2GoodsAPI.fetchRedemptions(),
+          Waste2GoodsAPI.fetchAnalyticsSummary(),
+          Waste2GoodsAPI.fetchNotifications(),
+        ]);
+        if (cancelled) return;
+        if (users.status === "fulfilled") setLiveUsers(Array.isArray(users.value) ? users.value : null);
+        if (rewards.status === "fulfilled") setLiveRewards(Array.isArray(rewards.value) ? rewards.value : null);
+        if (kiosks.status === "fulfilled") setLiveKiosks(Array.isArray(kiosks.value) ? kiosks.value : null);
+        if (tx.status === "fulfilled") setLiveTx(Array.isArray(tx.value) ? tx.value : null);
+        if (weekly.status === "fulfilled") setLiveWeekly(Array.isArray(weekly.value) ? weekly.value : null);
+        if (monthly.status === "fulfilled") setLiveMonthly(Array.isArray(monthly.value) ? monthly.value : null);
+        if (leaderboard.status === "fulfilled") setLiveLeaderboard(Array.isArray(leaderboard.value) ? leaderboard.value : null);
+        if (redemptions.status === "fulfilled") setLiveRedemptions(Array.isArray(redemptions.value) ? redemptions.value : null);
+        if (summary.status === "fulfilled" && summary.value && typeof summary.value === "object") {
+          const s: any = summary.value;
+          setDashboardSummary({
+            totalKg: Number(s.totalKgCollected || s.totalKg || s.totalCollected || 0),
+            activeResidents: Number(s.activeResidents || s.totalUsers || 0),
+            pointsAwarded: Number(s.totalPointsAwarded || s.pointsAwarded || s.totalPoints || 0),
+            redeemed: Number(s.rewardsRedeemed || s.redeemed || 0),
+            kgDelta: Number(s.totalTransactions || s.kgDelta || 0),
+            newUsers: Number(s.totalUsers || s.newUsers || 0),
+            redeemedDelta: Number(s.rewardsRedeemed || s.redeemedDelta || 0),
+          });
+        }
+        if (notifs.status === "fulfilled" && notifs.value && Array.isArray((notifs.value as any).items)) {
+          setNotifications((notifs.value as any).items);
+          setNotifUnread(Number((notifs.value as any).unread || 0));
+        }
+      } catch {
+        // If everything fails, still render (null falls cause demo used)
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [screen, section]);
 
   // Clear any persisted auth on mount to force manual login
   useEffect(() => {
@@ -201,9 +345,21 @@ export default function App() {
     return <LoginScreen onLogin={() => setScreen("admin")} />;
   }
 
-  const auth = Waste2GoodsAPI.getAuthState();
-  const adminName = auth?.user?.name || "Juan Reyes";
-  const initials = adminName.split(' ').map(n => n[0]).join('').slice(0,2).toUpperCase();
+  // Admin profile data (reactive via adminProfile state; falls back to localStorage then defaults)
+  // profileRefreshKey added as dep-reader so React re-reads on refresh.
+  void profileRefreshKey;
+  const prof = adminProfile || Waste2GoodsAPI.getAuthState()?.user || null;
+  const adminName = prof?.name || "Juan Reyes";
+  const adminEmail = prof?.email || prof?.adminIdentifier || "";
+  const roleIdNum = Number(prof?.roleId ?? (prof?.role === "admin" ? 1 : 2));
+  const roleLabel = ROLE_NAME[roleIdNum] || "Barangay Admin";
+  const initials = adminName
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(n => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
 
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl" style={{ minHeight: 740, fontFamily: "'Inter', sans-serif" }}>
@@ -234,7 +390,7 @@ export default function App() {
               <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-black text-white flex-shrink-0">{initials}</div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-white truncate">{adminName}</p>
-                <p className="text-xs text-green-400">Barangay Admin</p>
+                <p className="text-xs text-green-400" title={adminEmail}>{roleLabel}{adminEmail ? ` · ${adminEmail}` : ""}</p>
               </div>
               <LogOut className="w-4 h-4 text-green-400 cursor-pointer hover:text-white transition-colors" onClick={handleLogout} />
             </div>
@@ -255,22 +411,84 @@ export default function App() {
             <div className="flex items-center gap-2">
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input className="pl-9 pr-4 py-2 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 w-44" placeholder="Search..." />
+                <input
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="pl-9 pr-4 py-2 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 w-64"
+                  placeholder={section === "users" ? "Search residents by name, email, or ID..." : section === "rewards" ? "Search rewards by name or category..." : "Search users, rewards, redemptions..."}
+                />
               </div>
-              <button className="relative p-2 rounded-xl border border-border hover:bg-muted transition-colors">
+              <button onClick={async () => { setNotificationsOpen(v => !v); if (!notificationsOpen) { try { const n = await Waste2GoodsAPI.fetchNotifications(); if (n && Array.isArray((n as any).items)) { setNotifications((n as any).items); setNotifUnread(Number((n as any).unread || 0)); } } catch {} } }} className="relative p-2 rounded-xl border border-border hover:bg-muted transition-colors">
                 <Bell className="w-4 h-4 text-muted-foreground" />
-                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-red-500" />
+                {notifUnread > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">{Math.min(notifUnread, 9)}</span>}
               </button>
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white">{initials}</div>
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto p-6">
-            {section === "dashboard" && <AdminDashboard />}
-            {(section === "users" || section === "users-detail") && <AdminUsers onSelect={u => { setSelectedUser(u); setSection("users-detail"); }} selectedUser={section === "users-detail" ? selectedUser : null} onBack={() => setSection("users")} onAdjust={() => setShowAdjustModal(true)} />}
-            {section === "rewards" && <AdminRewards />}
-            {section === "analytics" && <AdminAnalytics />}
-            {section === "monitoring" && <AdminMonitoring />}
+          <div className="flex-1 overflow-auto p-6 relative">
+            {/* Notifications drawer */}
+            {notificationsOpen && (
+              <div className="absolute top-0 right-6 w-80 bg-white rounded-2xl shadow-2xl border border-border z-40 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+                  <div>
+                    <h3 className="font-black text-sm text-foreground">Notifications</h3>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{notifUnread} unread · from MySQL redemptions, users, transactions</p>
+                  </div>
+                  <button onClick={() => setNotificationsOpen(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
+                </div>
+                <div className="max-h-96 overflow-auto divide-y divide-border">
+                  {(!notifications || notifications.length === 0) && (
+                    <div className="px-4 py-10 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
+                      <Bell className="w-8 h-8 text-muted-foreground/40" />
+                      No notifications yet.
+                    </div>
+                  )}
+                  {(notifications || []).slice(0, 20).map(n => (
+                    <div key={n.id} className="px-4 py-3 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-start gap-2">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${n.severity === 'success' ? 'bg-green-100' : n.severity === 'danger' ? 'bg-red-100' : 'bg-blue-100'}`}>
+                          {n.type === 'redemption' ? <ShoppingCart className={`w-4 h-4 ${n.severity === 'success' ? 'text-green-600' : n.severity === 'danger' ? 'text-red-500' : 'text-blue-600'}`} /> : n.type === 'newUser' ? <Users className="w-4 h-4 text-blue-600" /> : <Award className="w-4 h-4 text-green-600" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-foreground leading-tight">{n.title || ''}</p>
+                          {n.message && <p className="text-[11px] text-muted-foreground mt-0.5">{n.message}</p>}
+                          <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.time || Date.now()).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-4 py-3 border-t border-border bg-muted/20">
+                  <button onClick={() => refreshData()} className="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors flex items-center justify-center gap-1">
+                    <RefreshCw className="w-3 h-3" />Refresh from DB
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {section === "dashboard" && (
+              <AdminDashboard
+                liveSummary={dashboardSummary}
+                liveWeekly={liveWeekly}
+                liveLeaderboard={liveLeaderboard}
+                liveTx={liveTx}
+              />
+            )}
+            {(section === "users" || section === "users-detail") && (
+              <AdminUsers
+                liveUsers={liveUsers}
+                searchQuery={searchQuery}
+                onRefresh={refreshData}
+                onSelect={u => { setSelectedUser(u); setSection("users-detail"); }}
+                selectedUser={section === "users-detail" ? selectedUser : null}
+                onBack={() => setSection("users")}
+                onAdjust={() => { setAdjustType("Add"); setAdjustAmount("100"); setAdjustMsg(null); setShowAdjustModal(true); }}
+              />
+            )}
+            {section === "rewards" && <AdminRewards liveRewards={liveRewards} liveRedemptions={liveRedemptions} searchQuery={searchQuery} onRefresh={refreshData} />}
+            {section === "analytics" && <AdminAnalytics liveWeekly={liveWeekly} liveMonthly={liveMonthly} liveRedemptions={liveRedemptions} />}
+            {section === "monitoring" && <AdminMonitoring liveKiosks={liveKiosks} liveTx={liveTx} onRefresh={refreshData} />}
             {section === "admins" && <AdminAdmins />}
           </div>
         </div>
@@ -279,31 +497,62 @@ export default function App() {
       {/* Point Adjustment Modal */}
       {showAdjustModal && selectedUser && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
-          <div className="bg-white rounded-2xl p-6 w-80 shadow-2xl">
+          <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-foreground">Adjust Points</h3>
-              <button onClick={() => setShowAdjustModal(false)}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">Manually adjust points for <strong>{selectedUser.name}</strong></p>
+            <p className="text-sm text-muted-foreground mb-4">Manually adjust points for <strong>{selectedUser.name}</strong> (current: <span className="font-black text-primary">{(selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()} pts</span>)</p>
             <div className="space-y-3">
               <div>
                 <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Adjustment Type</label>
-                <select className="w-full px-3 py-2.5 rounded-xl border border-border text-sm">
-                  <option>Add Points</option><option>Deduct Points</option><option>Set Balance</option>
+                <select value={adjustType} onChange={e => setAdjustType(e.target.value as any)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm">
+                  <option value="Add">Add Points</option><option value="Deduct">Deduct Points</option><option value="Set">Set Balance</option>
                 </select>
               </div>
               <div>
                 <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Amount</label>
-                <input type="number" defaultValue="100" className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <input type="number" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
               <div>
                 <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reason</label>
-                <input defaultValue="Community event participation" className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <input value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
             </div>
+            {adjustMsg && (
+              <div className={`mt-3 text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 ${adjustMsg.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+                {adjustMsg.type === 'ok' ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+                {adjustMsg.text}
+              </div>
+            )}
             <div className="flex gap-2 mt-5">
-              <button onClick={() => setShowAdjustModal(false)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={() => setShowAdjustModal(false)} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors">Apply</button>
+              <button onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
+              <button
+                disabled={adjustSubmitting}
+                onClick={async () => {
+                  setAdjustMsg(null);
+                  const amt = Math.max(0, Number(adjustAmount) || 0);
+                  const curBal = Number(selectedUser.points ?? selectedUser.pointsBalance ?? 0);
+                  const uid = String(selectedUser.userId || selectedUser.id || '');
+                  let delta = 0;
+                  if (adjustType === 'Add') delta = amt;
+                  else if (adjustType === 'Deduct') delta = -amt;
+                  else delta = amt - curBal;
+                  try {
+                    setAdjustSubmitting(true);
+                    const res = await Waste2GoodsAPI.adjustUserPoints(uid, delta, adjustReason || 'Admin adjustment');
+                    if (!res || !(res as any).ok) throw new Error('API failed');
+                    const newBal = Number((res as any).newBalance ?? curBal + delta);
+                    setAdjustMsg({ type: 'ok', text: `Points updated! New balance: ${newBal.toLocaleString()} pts (${(res as any).delta >= 0 ? '+' : ''}${(res as any).delta}).` });
+                    setSelectedUser({ ...selectedUser, points: newBal, pointsBalance: newBal });
+                    await refreshData();
+                    setTimeout(() => { setShowAdjustModal(false); setAdjustMsg(null); }, 1500);
+                  } catch (e) {
+                    setAdjustMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to adjust points. Is backend running on :3001 with MySQL?' });
+                  } finally { setAdjustSubmitting(false); }
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >{adjustSubmitting ? 'Saving...' : 'Apply'}</button>
             </div>
           </div>
         </div>
@@ -312,20 +561,72 @@ export default function App() {
   );
 }
 
-function AdminDashboard() {
+function AdminDashboard({
+  liveSummary,
+  liveWeekly,
+  liveLeaderboard,
+  liveTx,
+}: {
+  liveSummary: null | { totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number; kgDelta: number; newUsers: number; redeemedDelta: number; };
+  liveWeekly: any[] | null;
+  liveLeaderboard: any[] | null;
+  liveTx: any[] | null;
+}) {
+  // Use REAL data where available; fall back to demo placeholders (#8 req: do not remove demo ones yet)
+  const demoVal = (s: any, demoStr: string, unit?: string) => {
+    if (s === null || s === undefined || Number.isNaN(Number(s))) return demoStr;
+    const n = Number(s);
+    if (!isFinite(n) || n <= 0) return demoStr;
+    return unit === "kg" ? `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg` : unit === "K" ? (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)) : `${n.toLocaleString()}`;
+  };
+  const totalCollectedStr = liveSummary ? demoVal(liveSummary.totalKg, "12,450 kg", "kg") : "12,450 kg";
+  const activeResidentsStr = liveSummary ? demoVal(liveSummary.activeResidents, "847") : "847";
+  const pointsAwardedStr = liveSummary ? demoVal(liveSummary.pointsAwarded, "284.5K", "K") : "284.5K";
+  const redeemedStr = liveSummary ? demoVal(liveSummary.redeemed, "234") : "234";
+  const mergedWeekly: any[] = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
+  const mergedLeaderboard: any[] = liveLeaderboard && liveLeaderboard.length > 0
+    ? liveLeaderboard.slice(0, 5).map((u, i) => ({
+        rank: Number(u.rank) || i + 1,
+        name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Resident",
+        avatar: (u.name || "RU").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase() || "RU",
+        points: Number(u.points || u.pointsBalance || 0),
+      }))
+    : leaderboard.slice(0, 5);
+  const mergedTx: any[] = liveTx && liveTx.length > 0
+    ? liveTx.slice(0, 5).map((t, i) => {
+        const residentName = t.residentName || t.firstName ? `${t.firstName || ""} ${t.lastName || ""}`.trim() : (typeof t.userId === "string" ? t.userId : "Resident");
+        const kg = Number(t.weightKg || t.kg || 0);
+        const material = t.materialName || t.materialId || "PET Plastic";
+        const kiosk = t.kioskId || "K-01";
+        const pts = Number(t.pointsEarned || t.points || 0);
+        const desc = pts > 0 ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}` : t.desc || `Reward redemption`;
+        const isEarn = pts > 0 && t.pointsEarned !== undefined ? true : (t.type === "earn");
+        return {
+          id: t.transactionId || t.id || `tx-${i}`,
+          date: t.timestamp || t.date || "Today",
+          type: isEarn ? "earn" : (t.type || "earn"),
+          desc,
+          pts: pts || 0,
+        };
+      })
+    : transactions.slice(0, 5);
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-4 gap-4">
-        <SCard label="Total Collected" value="12,450 kg" sub="↑ 18% vs May" icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend="+18%" />
-        <SCard label="Active Residents" value="847" sub="34 new this week" icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend="+34" />
-        <SCard label="Points Awarded" value="284.5K" sub="All time total" icon={<Award className="w-5 h-5 text-amber-600" />} color="bg-amber-100" />
-        <SCard label="Rewards Redeemed" value="234" sub="This month" icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend="+41" />
+        <SCard label="Total Collected" value={totalCollectedStr} sub={liveSummary ? `From ${liveSummary.kgDelta || 0} total recycling transactions` : "↑ 18% vs May"} icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveSummary && liveSummary.kgDelta > 0 ? `Tx:${liveSummary.kgDelta}` : "+18%"} />
+        <SCard label="Active Residents" value={activeResidentsStr} sub={liveSummary ? `${liveSummary.newUsers || 0} registered users (DB total)` : "34 new this week"} icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveSummary && liveSummary.newUsers > 0 ? `Users:${liveSummary.newUsers}` : "+34"} />
+        <SCard label="Points Awarded" value={pointsAwardedStr} sub="All time points distributed" icon={<Award className="w-5 h-5 text-amber-600" />} color="bg-amber-100" />
+        <SCard label="Rewards Redeemed" value={redeemedStr} sub={liveSummary ? `Total redemptions processed` : "All time total"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveSummary && liveSummary.redeemedDelta > 0 ? `Redeemed:${liveSummary.redeemedDelta}` : "+41"} />
       </div>
       <div className="grid grid-cols-5 gap-4">
         <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
-          <h3 className="font-black text-sm text-foreground mb-4">Weekly Collection (kg)</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
+            {liveWeekly && liveWeekly.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE from DB</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+          </div>
           <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={weeklyData}>
+            <AreaChart data={mergedWeekly}>
               <defs>
                 <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#16a34a" stopOpacity={0.25} />
@@ -363,28 +664,34 @@ function AdminDashboard() {
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-4 border border-border">
-          <h3 className="font-black text-sm text-foreground mb-3">Top Residents</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-black text-sm text-foreground">Top Residents</h3>
+            {liveLeaderboard && liveLeaderboard.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+          </div>
           <div className="space-y-2">
-            {leaderboard.slice(0,5).map(u => (
-              <div key={u.rank} className="flex items-center gap-2">
+            {mergedLeaderboard.map(u => (
+              <div key={String(u.rank)} className="flex items-center gap-2">
                 <RankIcon rank={u.rank} />
                 <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.avatar}</div>
                 <span className="text-xs font-semibold flex-1 truncate">{u.name}</span>
-                <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${(u.points/5000)*100}%` }} /></div>
-                <span className="text-xs font-black text-primary w-16 text-right">{u.points.toLocaleString()}</span>
+                <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (u.points/Math.max(5000,u.points))*100)}%` }} /></div>
+                <span className="text-xs font-black text-primary w-16 text-right">{Number(u.points||0).toLocaleString()}</span>
               </div>
             ))}
           </div>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-border">
-          <h3 className="font-black text-sm text-foreground mb-3">Recent Activity</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-black text-sm text-foreground">Recent Activity</h3>
+            {liveTx && liveTx.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+          </div>
           <div className="space-y-2">
-            {transactions.slice(0,5).map(t => (
-              <div key={t.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
+            {mergedTx.map(t => (
+              <div key={String(t.id)} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${t.type==="earn"?"bg-green-100":t.type==="redeem"?"bg-blue-100":"bg-amber-100"}`}>
                   {t.type==="earn"?<Recycle className="w-3 h-3 text-green-600" />:t.type==="redeem"?<Gift className="w-3 h-3 text-blue-600" />:<Zap className="w-3 h-3 text-amber-600" />}
                 </div>
-                <div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{t.desc}</p><p className="text-xs text-muted-foreground">{t.date}</p></div>
+                <div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{t.desc}</p><p className="text-xs text-muted-foreground">{String(t.date)}</p></div>
                 <span className={`text-xs font-black ${t.pts>0?"text-primary":"text-red-500"}`}>{t.pts>0?"+":""}{t.pts}</span>
               </div>
             ))}
@@ -395,18 +702,136 @@ function AdminDashboard() {
   );
 }
 
-function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u: typeof adminUsers[0]) => void; selectedUser: typeof adminUsers[0] | null; onBack: () => void; onAdjust: () => void }) {
+function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selectedUser, onBack, onAdjust }: { liveUsers: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void>; onSelect: (u: any) => void; selectedUser: any | null; onBack: () => void; onAdjust: () => void }) {
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [editUser, setEditUser] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [uFirst, setUFirst] = useState("");
+  const [uLast, setULast] = useState("");
+  const [uEmail, setUEmail] = useState("");
+  const [uPass, setUPass] = useState("");
+  const [uPass2, setUPass2] = useState("");
+  const [uPhone, setUPhone] = useState("");
+  const [uPoints, setUPoints] = useState<string>("0");
+
+  const resetForm = () => {
+    setUFirst(""); setULast(""); setUEmail(""); setUPass(""); setUPass2(""); setUPhone(""); setUPoints("0"); setBanner(null);
+  };
+
+  const openEdit = (u: any) => {
+    setEditUser(u);
+    setUFirst(u.firstName || "");
+    setULast(u.lastName || "");
+    setUEmail(u.email || "");
+    setUPass("");
+    setUPass2("");
+    setUPhone(u.phone || u.contactInfo || "");
+    setUPoints(String(u.points ?? u.pointsBalance ?? 0));
+    setShowEditForm(true);
+  };
+
+  const submitEdit = async () => {
+    setBanner(null);
+    if (!editUser) return;
+    if (!uFirst.trim() || !uLast.trim() || !uEmail.trim()) { setBanner({ type: "err", text: "First name, last name, and email are required." }); return; }
+    const uid = String(editUser.userId || editUser.id);
+    try {
+      setSaving(true);
+      const payload: any = { firstName: uFirst.trim(), lastName: uLast.trim(), email: uEmail.trim(), phone: uPhone.trim(), pointsBalance: Number(uPoints) || 0 };
+      if (uPass) {
+        if (uPass.length < 6) { setBanner({ type: "err", text: "Password must be at least 6 characters." }); return; }
+        if (uPass !== uPass2) { setBanner({ type: "err", text: "Passwords do not match." }); return; }
+        payload.passwordHash = `hashed_${uPass}`;
+      }
+      const res = await Waste2GoodsAPI.updateUser(uid, payload);
+      if (!res || !(res as any).ok) throw new Error("User update failed");
+      setBanner({ type: "ok", text: `User ${uFirst} ${uLast} updated successfully!` });
+      if (onRefresh) await onRefresh();
+      setTimeout(() => { setShowEditForm(false); setEditUser(null); resetForm(); }, 1500);
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Update failed. Is backend running with MySQL?" });
+    } finally { setSaving(false); }
+  };
+
+  const toggleStatus = async (u: any) => {
+    const uid = String(u.userId || u.id);
+    try {
+      const nextStatus = String(u.status || "active").toLowerCase() === "active" ? "inactive" : "active";
+      const res = await Waste2GoodsAPI.updateUser(uid, { status: nextStatus });
+      if (res && (res as any).ok && onRefresh) await onRefresh();
+    } catch {}
+  };
+
+  const exportCSV = () => {
+    const rows = [["User ID","Name","Barangay","Email","Phone","Points","Submissions","Joined","Status"]];
+    mergedUsers.forEach((u: any) => rows.push([u.userId || u.id, u.name || "", u.barangay || "", u.email || "", u.phone || "", String(u.points || 0), String(u.submissions || 0), u.joined || "", u.status || ""]));
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `waste2goods-users-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Merge: live DB users first (convert to UI shape), fall back to demo adminUsers array when not available.
+  let mergedUsers: any[] = liveUsers && liveUsers.length > 0
+    ? liveUsers.map((u: any, i: number) => {
+        const name = u.name || `${u.firstName || "Resident"} ${u.lastName || String(i + 1)}`.trim();
+        const barangay = u.barangayName || u.barangay || "Cabantian";
+        const points = Number(u.pointsBalance || u.points || 0);
+        const submissions = Number(u.totalSubmissions || u.submissions || 0);
+        const redeemed = Number(u.redeemed || 0);
+        const rawJoined = u.createdAt || u.joined || u.registrationDate;
+        const joined = rawJoined ? (typeof rawJoined === "string" ? (rawJoined.includes("T") ? new Date(rawJoined).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : rawJoined) : new Date(Number(rawJoined)).toLocaleDateString()) : "May 14, 2025";
+        const statusBase = String(u.status || (points > 0 || submissions > 0 ? "active" : "inactive")).toLowerCase();
+        const status = statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
+        const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
+        const email = u.email || "";
+        const phone = u.contactInfo || u.phone || "";
+        return {
+          id, userId: id, email, phone,
+          firstName: u.firstName || name.split(" ")[0] || "",
+          lastName: u.lastName || name.split(" ").slice(1).join(" ") || "",
+          name, barangay, points, submissions, redeemed,
+          joined, status,
+        };
+      })
+    : adminUsers.slice();
+
+  // Apply search filter (name, email, id, barangay)
+  if (searchQuery && searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedUsers = mergedUsers.filter((u: any) =>
+      (u.name || "").toLowerCase().includes(q) ||
+      (u.email || "").toLowerCase().includes(q) ||
+      (u.id || "").toLowerCase().includes(q) ||
+      (u.userId || "").toLowerCase().includes(q) ||
+      (u.barangay || "").toLowerCase().includes(q) ||
+      (u.phone || "").toLowerCase().includes(q)
+    );
+  }
+
+  // users array for export (fallback)
+  const users = mergedUsers;
+
   if (selectedUser) {
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
           <h2 className="font-black text-foreground">User Profile</h2>
+          {banner && (
+            <div className={`ml-auto text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+              {banner.type === 'ok' ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}{banner.text}
+            </div>
+          )}
         </div>
         <div className="grid grid-cols-3 gap-4">
           <div className="col-span-1 bg-white rounded-2xl border border-border p-5 flex flex-col items-center gap-3 text-center">
             <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-xl font-black text-white">
-              {selectedUser.name.split(" ").map(n=>n[0]).join("").slice(0,2)}
+              {selectedUser.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}
             </div>
             <div>
               <p className="font-black text-foreground">{selectedUser.name}</p>
@@ -416,13 +841,24 @@ function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u
             <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active"?"bg-green-100 text-green-700":"bg-gray-100 text-gray-500"}`}>
               <StatusPip status={selectedUser.status} />{selectedUser.status}
             </span>
+            <div className="w-full space-y-1.5 text-xs">
+              {selectedUser.email && <p className="flex items-center gap-1 justify-center"><Mail className="w-3 h-3 text-muted-foreground" />{selectedUser.email}</p>}
+              {selectedUser.phone && <p className="flex items-center gap-1 justify-center text-muted-foreground">📞 {selectedUser.phone}</p>}
+              <p className="flex items-center gap-1 justify-center text-muted-foreground">ID: {selectedUser.userId || selectedUser.id}</p>
+            </div>
             <button onClick={onAdjust} className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5">
               <Zap className="w-3.5 h-3.5" /> Adjust Points
+            </button>
+            <button onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
+              <Edit className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+            <button onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100" : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"}`}>
+              {selectedUser.status==="active" ? "🚫 Suspend User" : "✅ Reactivate User"}
             </button>
           </div>
           <div className="col-span-2 space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              {[["Points Balance", selectedUser.points.toLocaleString()+" pts","text-primary"],["Submissions",selectedUser.submissions+" times","text-blue-600"],["Redeemed",selectedUser.redeemed+" items","text-purple-600"]].map(([l,v,c]) => (
+              {[["Points Balance", (selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()+" pts","text-primary"],["Submissions",(selectedUser.submissions??0)+" times","text-blue-600"],["Redeemed",(selectedUser.redeemed??0)+" items","text-purple-600"]].map(([l,v,c]) => (
                 <div key={String(l)} className="bg-white rounded-2xl border border-border p-3 text-center">
                   <p className={`text-xl font-black ${c}`}>{v}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{l}</p>
@@ -448,15 +884,83 @@ function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{adminUsers.length} registered residents</p>
+        <div>
+          <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
+          <p className="text-xs text-muted-foreground">Cabantian Barangay — real MySQL users table (users sign up via Mobile App){searchQuery ? ` · filtered for "${searchQuery}"` : ""}</p>
+        </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Filter className="w-3.5 h-3.5" />Filter</button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Download className="w-3.5 h-3.5" />Export</button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add User</button>
+          {onRefresh && <button onClick={onRefresh} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
+          <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Download className="w-3.5 h-3.5" />Export</button>
         </div>
       </div>
+
+      {banner && (
+        <div className={`text-xs px-4 py-3 rounded-2xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {banner.type === 'ok' ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}{banner.text}
+        </div>
+      )}
+
+      {showEditForm && editUser && (
+        <div className="bg-white rounded-2xl border border-border p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Users className="w-5 h-5 text-blue-700" />
+            </div>
+            <div>
+              <h3 className="font-black text-foreground">Edit Resident · {editUser.name || editUser.userId || ''}</h3>
+              <p className="text-xs text-muted-foreground">Update profile, contact info, password, or points balance</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
+              <input value={uFirst} onChange={e => setUFirst(e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
+              <input value={uLast} onChange={e => setULast(e.target.value)} placeholder="Reyes" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="email" value={uEmail} onChange={e => setUEmail(e.target.value)} placeholder="resident@example.com" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">New Password (leave blank to keep)</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="password" value={uPass} onChange={e => setUPass(e.target.value)} placeholder="Min 6 chars (optional)" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm New Password</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input type="password" value={uPass2} onChange={e => setUPass2(e.target.value)} placeholder="Only if updating password" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Phone</label>
+              <input value={uPhone} onChange={e => setUPhone(e.target.value)} placeholder="+63 9XX XXX XXXX" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Balance</label>
+              <input type="number" value={uPoints} onChange={e => setUPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowEditForm(false); setEditUser(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button disabled={saving} onClick={submitEdit} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+              {saving ? "Saving..." : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-border overflow-hidden">
         <table className="w-full text-xs">
           <thead>
@@ -467,12 +971,15 @@ function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u
             </tr>
           </thead>
           <tbody>
-            {adminUsers.map(u => (
+            {mergedUsers.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-muted-foreground">{searchQuery ? `No results for "${searchQuery}".` : "No users."}</td></tr>
+            )}
+            {mergedUsers.map(u => (
               <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => onSelect(u)}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.name.split(" ").map(n=>n[0]).join("").slice(0,2)}</div>
-                    <div><p className="font-semibold text-foreground">{u.name}</p><p className="text-muted-foreground">{u.id}</p></div>
+                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}</div>
+                    <div><p className="font-semibold text-foreground">{u.name}</p><p className="text-muted-foreground">{u.id}{u.email ? ` · ${u.email}` : ""}</p></div>
                   </div>
                 </td>
                 <td className="px-4 py-3 text-muted-foreground">{u.barangay}</td>
@@ -486,9 +993,9 @@ function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors"><Eye className="w-3.5 h-3.5" /></button>
-                    <button className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors"><Edit className="w-3.5 h-3.5" /></button>
-                    <button className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="View"><Eye className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => openEdit(u)} className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status==="active" ? "Suspend" : "Reactivate"}>{u.status==="active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
                   </div>
                 </td>
               </tr>
@@ -500,63 +1007,343 @@ function AdminUsers({ onSelect, selectedUser, onBack, onAdjust }: { onSelect: (u
   );
 }
 
-function AdminRewards() {
+function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh }: { liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any | null>(null);
+  const [restock, setRestock] = useState<any | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [confirmDel, setConfirmDel] = useState<any | null>(null);
+  const [rName, setRName] = useState("");
+  const [rPoints, setRPoints] = useState<string>("100");
+  const [rStock, setRStock] = useState<string>("0");
+  const [rDesc, setRDesc] = useState("");
+  const [rCat, setRCat] = useState("Eco Essentials");
+  const [rIcon, setRIcon] = useState("🎁");
+  const [rSeasonal, setRSeasonal] = useState(false);
+  const [rRestockQty, setRRestockQty] = useState<string>("50");
+
+  const resetForm = () => {
+    setRName(""); setRPoints("100"); setRStock("0"); setRDesc(""); setRCat("Eco Essentials"); setRIcon("🎁"); setRSeasonal(false);
+  };
+
+  const openCreate = () => { resetForm(); setEditing(null); setBanner(null); setShowForm(true); };
+  const openEdit = (rw: any) => {
+    setEditing(rw);
+    setRName(rw.rewardName || rw.name || "");
+    setRPoints(String(rw.pointsCost ?? rw.points ?? 0));
+    setRStock(String(rw.stockQuantity ?? rw.stock ?? rw.stockCount ?? 0));
+    setRDesc(rw.description || "");
+    setRCat(rw.category || "Eco Essentials");
+    setRIcon(rw.icon || "🎁");
+    setRSeasonal(Boolean(rw.isSeasonal || rw.seasonal));
+    setBanner(null); setShowForm(true);
+  };
+
+  const submitForm = async () => {
+    setBanner(null);
+    if (!rName.trim() || Number(rPoints) < 0) { setBanner({ type: "err", text: "Reward name and a valid points cost are required." }); return; }
+    const payload: any = {
+      rewardName: rName.trim(),
+      pointsCost: Number(rPoints) || 0,
+      stockQuantity: Number(rStock) || 0,
+      description: rDesc.trim(),
+      category: rCat.trim() || "Uncategorized",
+      icon: rIcon.trim() || "🎁",
+      isSeasonal: rSeasonal ? 1 : 0,
+      status: "active",
+    };
+    try {
+      setSaving(true);
+      let res: any;
+      if (editing) {
+        const rid = Number(editing.rewardId ?? editing.id ?? 0);
+        if (!rid) throw new Error("Missing reward ID");
+        res = await Waste2GoodsAPI.updateReward(rid, payload);
+      } else {
+        res = await Waste2GoodsAPI.createReward(payload);
+      }
+      if (!res || !(res as any).ok) throw new Error((res as any)?.error || "Reward save failed");
+      setBanner({ type: "ok", text: editing ? `Reward "${rName}" updated successfully!` : `Reward "${rName}" created (ID: ${(res as any).reward?.rewardId || 'NEW'}).` });
+      if (onRefresh) await onRefresh();
+      setTimeout(() => { setShowForm(false); setEditing(null); resetForm(); }, 1500);
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Save failed. Run backend with MySQL." });
+    } finally { setSaving(false); }
+  };
+
+  const submitRestock = async () => {
+    if (!restock) return;
+    setBanner(null);
+    const rid = Number(restock.rewardId ?? restock.id ?? 0);
+    const curStock = Number(restock.stockQuantity ?? restock.stock ?? restock.stockCount ?? 0);
+    const add = Math.max(0, Number(rRestockQty) || 0);
+    try {
+      setSaving(true);
+      const res = await Waste2GoodsAPI.updateReward(rid, { stockQuantity: curStock + add });
+      if (!res || !(res as any).ok) throw new Error("Restock failed");
+      setBanner({ type: "ok", text: `Restocked! Added ${add} to "${restock.rewardName || restock.name || ''}" (now: ${curStock + add} stock).` });
+      if (onRefresh) await onRefresh();
+      setTimeout(() => { setRestock(null); setRRestockQty("50"); }, 1200);
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Restock failed." });
+    } finally { setSaving(false); }
+  };
+
+  const doDelete = async () => {
+    if (!confirmDel) return;
+    setBanner(null);
+    try {
+      const rid = Number(confirmDel.rewardId ?? confirmDel.id ?? 0);
+      if (!rid) throw new Error("Missing reward ID");
+      const res = await Waste2GoodsAPI.deleteReward(rid);
+      if (!res || !(res as any).ok) throw new Error("Delete failed");
+      setBanner({ type: "ok", text: `Reward "${confirmDel.rewardName || confirmDel.name || ''}" deleted / archived.` });
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Delete failed." });
+    } finally { setConfirmDel(null); }
+  };
+
+  let mergedRewards: any[] = liveRewards && liveRewards.length > 0
+    ? liveRewards.map((r, i) => {
+        const rid = Number(r.rewardId ?? r.id ?? i + 1);
+        return {
+          id: rid,
+          rewardId: rid,
+          icon: r.icon || "🎁",
+          rewardName: r.rewardName || r.name || `Reward ${i + 1}`,
+          name: r.rewardName || r.name || `Reward ${i + 1}`,
+          description: r.description || "",
+          category: r.category || "Essentials",
+          points: Number(r.pointsCost || r.points || 0),
+          pointsCost: Number(r.pointsCost || r.points || 0),
+          stock: Number(r.stockQuantity ?? r.stock ?? r.stockCount ?? 0),
+          stockQuantity: Number(r.stockQuantity ?? r.stock ?? r.stockCount ?? 0),
+          seasonal: Boolean(r.isSeasonal ?? r.seasonal ?? false),
+          isSeasonal: Boolean(r.isSeasonal ?? r.seasonal ?? false),
+          status: r.status || 'active',
+        };
+      })
+    : rewards.slice();
+
+  // Apply search filter (name, desc, category, icon)
+  if (searchQuery && searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedRewards = mergedRewards.filter((r: any) =>
+      (r.name || "").toLowerCase().includes(q) ||
+      (r.category || "").toLowerCase().includes(q) ||
+      (r.description || "").toLowerCase().includes(q) ||
+      String(r.rewardId || r.id || "").includes(q)
+    );
+  }
+
+  const redeemedCounts: Record<string, number> = {};
+  (liveRedemptions || []).forEach(rr => {
+    const key = String(rr.rewardId || rr.rewardName || "");
+    redeemedCounts[key] = (redeemedCounts[key] || 0) + Number(rr.quantity || 1);
+  });
+  const totalLiveRedemptions = (liveRedemptions || []).length;
+  const ICON_CHOICES = ["🥤","🥢","👜","🛍️","📓","✏️","🖊️","🍚","🍜","🐟","☕","🧂","🧺","🧽","🧼","🪥","🧸","🌟","🎨","🌱","👕","🎊","🎁","🎄","🥬","🧃","📱","🪴","🎟️","🎒","🖼️","🎮"];
+  const CAT_CHOICES = ["Eco Essentials","School Supplies","Groceries","Household","Kids","Community","Seasonal","Other"];
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-black text-foreground">{rewards.length} reward items</p>
-          <p className="text-xs text-muted-foreground">3 seasonal · {rewards.filter(r=>r.stock<10).length} low stock</p>
+          <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
+          <p className="text-xs text-muted-foreground">{mergedRewards.filter((r: any) => !!r.seasonal).length} seasonal · {mergedRewards.filter((r: any) => Number(r.stock) < 10).length} low stock · {totalLiveRedemptions} redemptions{searchQuery ? ` · filter "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Filter className="w-3.5 h-3.5" />Filter</button>
-          <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add Reward</button>
+          {onRefresh && <button onClick={() => onRefresh()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
+          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add Reward</button>
         </div>
       </div>
+
+      {banner && (
+        <div className={`text-xs px-4 py-3 rounded-2xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {banner.type === 'ok' ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}{banner.text}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="bg-white rounded-2xl border border-border p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-xl">{rIcon}</div>
+              <div>
+                <h3 className="font-black text-foreground">{editing ? "Edit Reward" : "Add New Reward"}</h3>
+                <p className="text-xs text-muted-foreground">Saved to MySQL `rewards` table immediately</p>
+              </div>
+            </div>
+            <button onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="text-xs font-bold text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reward Name *</label>
+              <input value={rName} onChange={e => setRName(e.target.value)} placeholder="Eco Water Bottle" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Cost *</label>
+              <input type="number" value={rPoints} onChange={e => setRPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Stock Quantity</label>
+              <input type="number" value={rStock} onChange={e => setRStock(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Short Description</label>
+              <textarea value={rDesc} onChange={e => setRDesc(e.target.value)} rows={2} placeholder="Describe the reward..." className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm resize-none" />
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Category</label>
+              <select value={rCat} onChange={e => setRCat(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm">
+                {CAT_CHOICES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Icon Emoji</label>
+              <div className="relative">
+                <select value={rIcon} onChange={e => setRIcon(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm appearance-none">
+                  {ICON_CHOICES.map(ic => <option key={ic} value={ic}>{ic}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="col-span-2 flex items-center gap-3">
+              <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                <input type="checkbox" checked={rSeasonal} onChange={e => setRSeasonal(e.target.checked)} /> Mark as Seasonal reward
+              </label>
+              <span className="text-xs text-muted-foreground">(displayed with seasonal badge)</span>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button disabled={saving} onClick={submitForm} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+              {saving ? "Saving..." : (editing ? "Save Changes" : "Create Reward")}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-4 gap-3">
-        {rewards.map(r => (
+        {mergedRewards.map(r => (
           <div key={r.id} className="bg-white rounded-2xl border border-border p-4 flex flex-col gap-2 relative">
             <div className="flex items-start justify-between">
               <span className="text-3xl">{r.icon}</span>
-              <button className="p-1 rounded-lg hover:bg-muted transition-colors"><MoreHorizontal className="w-4 h-4 text-muted-foreground" /></button>
+              <div className="flex gap-1">
+                <button onClick={() => openEdit(r)} className="p-1 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
+                <button onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+              </div>
             </div>
             {r.seasonal && <span className="absolute top-3 left-3 text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Seasonal</span>}
             <div className="mt-1">
               <p className="text-xs font-black text-foreground leading-tight">{r.name}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{r.category}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{r.category}{r.description && <span> · {r.description.slice(0, 30)}{r.description.length > 30 ? "…" : ""}</span>}</p>
             </div>
             <div className="flex justify-between text-xs mt-auto">
               <div><p className="text-muted-foreground">Cost</p><p className="font-black text-primary">{r.points} pts</p></div>
-              <div className="text-right"><p className="text-muted-foreground">Stock</p><p className={`font-black ${r.stock<10?"text-red-500":"text-foreground"}`}>{r.stock}</p></div>
+              <div className="text-right"><p className="text-muted-foreground">Stock</p><p className={`font-black ${Number(r.stock)<10?"text-red-500":"text-foreground"}`}>{r.stock}</p></div>
             </div>
-            {r.stock < 10 && <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 p-1.5 rounded-lg"><AlertCircle className="w-3 h-3" />Low stock</div>}
+            {Number(r.stock) < 10 && <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 p-1.5 rounded-lg"><AlertCircle className="w-3 h-3" />Low stock</div>}
             <div className="flex gap-1.5 pt-1">
-              <button className="flex-1 py-1.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1"><Edit className="w-3 h-3" />Edit</button>
-              <button className="flex-1 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Restock</button>
+              <button onClick={() => openEdit(r)} className="flex-1 py-1.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1"><Edit className="w-3 h-3" />Edit</button>
+              <button onClick={() => { setRestock(r); setRRestockQty("50"); }} className="flex-1 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Restock</button>
             </div>
           </div>
         ))}
+        {mergedRewards.length === 0 && (
+          <div className="col-span-4 bg-white rounded-2xl border border-border p-10 text-center text-xs text-muted-foreground">
+            <Gift className="w-10 h-10 mx-auto mb-2 text-muted-foreground/40" />
+            {searchQuery ? `No rewards match "${searchQuery}".` : "No rewards. Click Add Reward to create one."}
+          </div>
+        )}
       </div>
+
+      {/* Restock Modal */}
+      {restock && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
+          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-black text-foreground">Restock Reward</h3>
+              <button onClick={() => setRestock(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+            </div>
+            <div className="flex items-center gap-3 mb-4 bg-muted/30 p-3 rounded-xl">
+              <span className="text-3xl">{restock.icon}</span>
+              <div className="min-w-0">
+                <p className="font-black text-sm text-foreground truncate">{restock.rewardName || restock.name || 'Reward'}</p>
+                <p className="text-xs text-muted-foreground">Current stock: <span className="font-black text-foreground">{Number(restock.stockQuantity ?? restock.stock ?? 0)}</span></p>
+              </div>
+            </div>
+            <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Quantity to add</label>
+            <input type="number" value={rRestockQty} onChange={e => setRRestockQty(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm mb-4" />
+            <div className="flex gap-2">
+              <button onClick={() => setRestock(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+              <button disabled={saving} onClick={submitRestock} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60">{saving ? "Saving..." : "Restock"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirm */}
+      {confirmDel && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
+          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
+              <div>
+                <h3 className="font-black text-foreground">Delete Reward?</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">{confirmDel.rewardName || confirmDel.name || ''}</p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">Existing redemptions are preserved (FK constraint). Will try hard delete, or mark inactive if needed.</p>
+            <div className="flex gap-2">
+              <button onClick={() => setConfirmDel(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+              <button onClick={doDelete} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function AdminAnalytics() {
+function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: { liveWeekly: any[] | null; liveMonthly: any[] | null; liveRedemptions: any[] | null }) {
+  const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
+  const mergedMonthly = liveMonthly && liveMonthly.length > 0 ? liveMonthly : monthlyData;
+  const redeemed = (liveRedemptions || []).length;
+
+  const exportAnalyticsCSV = () => {
+    const rows = [["Dataset","Key","Collected (kg)","Redeemed","Active Users","Notes"]];
+    mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.kg || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
+    mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i+1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
+    (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `waste2goods-analytics-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-4">
-        <SCard label="Avg. kg per user" value="14.7 kg" sub="This month" icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend="+2.1" />
-        <SCard label="Participation Rate" value="68.4%" sub="847 / 1,238 residents" icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend="+4%" />
-        <SCard label="Redemption Rate" value="27.6%" sub="234 of 847 users" icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend="+12%" />
+        <SCard label="Avg. kg per user" value={liveWeekly && liveWeekly.length > 0 ? `${(liveWeekly.reduce((a: any, b: any) => a + Number(b.kg || 0), 0) / Math.max(1, liveWeekly.length)).toFixed(1)} kg` : "14.7 kg"} sub="Weekly avg." icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveWeekly && liveWeekly.length > 0 ? "LIVE" : "+2.1"} />
+        <SCard label="Redemptions Total" value={String(redeemed || 234)} sub={liveRedemptions && liveRedemptions.length > 0 ? "Actual from DB" : "Demo value"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveRedemptions && liveRedemptions.length > 0 ? "● LIVE" : "+12%"} />
+        <SCard label="Weeks with data" value={String(liveWeekly?.length || 7)} sub={liveWeekly && liveWeekly.length > 0 ? "Weekly points filled" : "Demo default 7"} icon={<BarChart3 className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveWeekly && liveWeekly.length > 0 ? "DB" : "DEMO"} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-4 border border-border">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-black text-sm text-foreground">Monthly Collection & Redemption</h3>
-            <button className="text-xs text-primary font-semibold flex items-center gap-1"><Download className="w-3 h-3" />CSV</button>
-          </div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={monthlyData}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-black text-sm text-foreground">Monthly Collection & Redemption</h3>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${liveMonthly && liveMonthly.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveMonthly && liveMonthly.length > 0 ? "● LIVE" : "DEMO"}</span>
+                <button onClick={exportAnalyticsCSV} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={mergedMonthly}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -568,9 +1355,9 @@ function AdminAnalytics() {
           </ResponsiveContainer>
         </div>
         <div className="bg-white rounded-2xl p-4 border border-border">
-          <h3 className="font-black text-sm text-foreground mb-4">User Growth Trend</h3>
+          <h3 className="font-black text-sm text-foreground mb-4">User / Monthly Trend</h3>
           <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={monthlyData}>
+            <LineChart data={mergedMonthly}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -602,15 +1389,72 @@ function AdminAnalytics() {
   );
 }
 
-function AdminMonitoring() {
+function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void> }) {
+  const [openLogsKiosk, setOpenLogsKiosk] = useState<string | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsMsg, setLogsMsg] = useState<string>("");
+  const [calibratingId, setCalibratingId] = useState<string | null>(null);
+  const [calibrateMsg, setCalibrateMsg] = useState<{ id: string; text: string; ok: boolean } | null>(null);
+
+  const openLogs = async (k: any) => {
+    setOpenLogsKiosk(k.id);
+    setLogsMsg("");
+    setLogs([]);
+    try {
+      setLogsLoading(true);
+      const res = await Waste2GoodsAPI.getKioskLogs(k.kioskId || k.id);
+      if (res && Array.isArray((res as any).logs)) setLogs((res as any).logs);
+      else setLogsMsg("No logs returned from server (demo or backend offline).");
+    } catch (e) {
+      setLogsMsg(e instanceof Error ? e.message : "Failed to load logs. Is backend :3001 + MySQL running?");
+    } finally { setLogsLoading(false); }
+  };
+
+  const doCalibrate = async (k: any) => {
+    const id = String(k.kioskId || k.id);
+    setCalibratingId(id);
+    setCalibrateMsg(null);
+    try {
+      const res = await Waste2GoodsAPI.calibrateKiosk(id);
+      if (res && (res as any).ok) {
+        setCalibrateMsg({ id, text: `✓ ${(res as any).message || `Calibration dispatched to ${id}. lastPing set to 'just now'.`}`, ok: true });
+        if (onRefresh) await onRefresh();
+      } else throw new Error("API didn't return ok");
+    } catch (e) {
+      setCalibrateMsg({ id, text: e instanceof Error ? e.message : "Calibration failed. Run backend + MySQL.", ok: false });
+    } finally {
+      setCalibratingId(null);
+      setTimeout(() => setCalibrateMsg(cur => (cur && cur.id === id ? null : cur)), 3500);
+    }
+  };
+
+  const mergedKiosks: any[] = liveKiosks && liveKiosks.length > 0
+    ? liveKiosks.map((k, i) => ({
+        id: k.kioskId || k.id || `K-0${i + 1}`,
+        kioskId: k.kioskId || k.id || `K-0${i + 1}`,
+        location: k.locationName || k.location || "Cabantian",
+        status: k.status || (k.isOnline ? "online" : "offline"),
+        weight: `${Number(k.weightKg || k.lastWeight || 0).toFixed(1)} kg`,
+        submissions: Number(k.todaySubmissions || k.submissionsToday || k.totalSubmissions || 0),
+        temp: k.temperature ? `${k.temperature}°C` : k.temp || "29°C",
+        lastPing: k.lastPing || (k.lastHeartbeatAt ? new Date(String(k.lastHeartbeatAt)).toLocaleTimeString() : "5 min ago"),
+        battery: Number(k.batteryPct || k.battery || 85),
+      }))
+    : kiosks.slice();
+  const online = mergedKiosks.filter(k => String(k.status).toLowerCase() === "online").length;
+  const offline = mergedKiosks.filter(k => String(k.status).toLowerCase() === "offline").length;
+  const maintenance = mergedKiosks.filter(k => String(k.status).toLowerCase() === "maintenance").length;
+  const totalSubmissions = mergedKiosks.reduce((a, k) => a + Number(k.submissions || 0), 0) || (liveTx ? liveTx.length : 38);
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
+    <div className="space-y-4 relative">
+      <div className="grid grid-cols-5 gap-3">
         {[
-          { label: "Online", value: "3", sub: "of 5 kiosks", color: "text-green-700", bg: "bg-green-100" },
-          { label: "Offline", value: "1", sub: "K-03 Cabantian Market", color: "text-red-600", bg: "bg-red-100" },
-          { label: "Maintenance", value: "1", sub: "K-05 Cabantian Gym", color: "text-amber-700", bg: "bg-amber-100" },
-          { label: "Submissions Today", value: "38", sub: "Across all kiosks", color: "text-blue-700", bg: "bg-blue-100" },
+          { label: "Total Kiosks", value: String(mergedKiosks.length), sub: liveKiosks && liveKiosks.length > 0 ? "Real from DB" : "Demo default 5", color: "text-foreground", bg: "bg-muted" },
+          { label: "Online", value: String(online), sub: `of ${mergedKiosks.length} kiosks`, color: "text-green-700", bg: "bg-green-100" },
+          { label: "Offline", value: String(offline), sub: offline > 0 ? "Requires attention" : "All good", color: "text-red-600", bg: "bg-red-100" },
+          { label: "Maintenance", value: String(maintenance), sub: maintenance > 0 ? "Scheduled checks" : "None", color: "text-amber-700", bg: "bg-amber-100" },
+          { label: "Submissions Today", value: String(totalSubmissions), sub: liveTx ? "From transactions table" : "Demo default", color: "text-blue-700", bg: "bg-blue-100" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-2xl border border-border p-4">
             <p className="text-xs text-muted-foreground font-semibold mb-1">{s.label}</p>
@@ -619,8 +1463,17 @@ function AdminMonitoring() {
           </div>
         ))}
       </div>
+      <div className="flex items-center justify-between mb-1 px-1">
+        <div className="flex items-center gap-3">
+          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
+          {calibrateMsg && (
+            <p className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${calibrateMsg.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
+          )}
+        </div>
+        {onRefresh && <button onClick={() => onRefresh()} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"><RefreshCw className="w-3 h-3" />Refresh all</button>}
+      </div>
       <div className="space-y-3">
-        {kiosks.map(k => (
+        {mergedKiosks.map(k => (
           <div key={k.id} className="bg-white rounded-2xl border border-border p-4 flex items-center gap-4">
             <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${k.status==="online"?"bg-green-100":k.status==="maintenance"?"bg-amber-100":"bg-red-100"}`}>
               <Cpu className={`w-5 h-5 ${k.status==="online"?"text-green-600":k.status==="maintenance"?"text-amber-600":"text-red-500"}`} />
@@ -646,14 +1499,50 @@ function AdminMonitoring() {
                 <span className="text-xs font-bold text-muted-foreground">{k.battery}%</span>
               </div>
               <div className="flex gap-1.5">
-                <button className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1"><Eye className="w-3 h-3" />Logs</button>
+                <button onClick={() => openLogs(k)} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"><Eye className="w-3 h-3" />Logs</button>
                 <span className="text-muted-foreground">·</span>
-                <button className="text-xs font-semibold text-primary hover:underline flex items-center gap-1"><RefreshCw className="w-3 h-3" />Calibrate</button>
+                <button disabled={calibratingId === k.id} onClick={() => doCalibrate(k)} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 disabled:opacity-50">
+                  <RefreshCw className={`w-3 h-3 ${calibratingId === k.id ? "animate-spin" : ""}`} />{calibratingId === k.id ? "Calibrating..." : "Calibrate"}
+                </button>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* Kiosk Logs Modal */}
+      {openLogsKiosk && (
+        <div className="absolute inset-0 bg-black/50 flex items-start justify-center pt-8 z-50 rounded-2xl">
+          <div className="bg-white rounded-2xl p-5 w-[640px] max-w-[95%] shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="font-black text-foreground flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" />{openLogsKiosk} · Activity Logs</h3>
+                <p className="text-[10px] text-muted-foreground mt-0.5">{logsLoading ? "Loading from MySQL /api/kiosks/:id/logs..." : `${logs.length} entries loaded`}</p>
+              </div>
+              <button onClick={() => setOpenLogsKiosk(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+            </div>
+            {logsMsg && <div className="mb-2 text-xs px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-semibold">{logsMsg}</div>}
+            <div className="max-h-80 overflow-auto border border-border rounded-xl divide-y divide-border bg-background">
+              {logsLoading && (
+                <div className="px-4 py-10 text-center text-xs text-muted-foreground">Loading logs...</div>
+              )}
+              {!logsLoading && logs.length === 0 && !logsMsg && (
+                <div className="px-4 py-10 text-center text-xs text-muted-foreground">No logs.</div>
+              )}
+              {!logsLoading && logs.map((l: any, i: number) => (
+                <div key={i} className="px-4 py-2 flex items-start gap-2">
+                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${l.level === 'error' ? 'bg-red-100 text-red-700' : l.level === 'warn' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{l.level || 'info'}</span>
+                  <span className="text-[10px] text-muted-foreground w-32 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleString()}</span>
+                  <span className="text-xs font-semibold text-foreground flex-1 min-w-0 break-words">{l.message || l.msg || String(l)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button onClick={() => setOpenLogsKiosk(null)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -663,6 +1552,7 @@ function AdminAdmins() {
   const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [success, setSuccess] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -708,6 +1598,30 @@ function AdminAdmins() {
     } finally { setCreating(false); }
   };
 
+  const handleDeleteAdmin = async (admin: any) => {
+    const id = admin.adminId || admin.email;
+    const name = admin.name || `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || id;
+    if (admin.adminId === "A-001" || admin.email === "admin@waste2goods.ph") {
+      alert("Primary super administrator A-001 cannot be deleted.");
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete administrator "${name}"? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      setErr(""); setSuccess("");
+      setDeletingId(id);
+      const res = await (Waste2GoodsAPI as any).deleteAdmin(admin.adminId || admin.email);
+      if (res && (res as any).error) throw new Error((res as any).error);
+      setSuccess(`Admin ${name} deleted successfully!`);
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Failed to delete admin account.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -723,6 +1637,17 @@ function AdminAdmins() {
         </button>
       </div>
 
+      {err && (
+        <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+          <AlertTriangle className="w-4 h-4" />{err}
+        </div>
+      )}
+      {success && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-xs font-semibold">
+          <Check className="w-4 h-4" />{success}
+        </div>
+      )}
+
       {showForm && (
         <div className="bg-white rounded-2xl border border-border p-5 space-y-4">
           <div className="flex items-center gap-2">
@@ -734,17 +1659,6 @@ function AdminAdmins() {
               <p className="text-xs text-muted-foreground">New admin will be able to sign in and manage the barangay</p>
             </div>
           </div>
-
-          {err && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
-              <AlertTriangle className="w-4 h-4" />{err}
-            </div>
-          )}
-          {success && (
-            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-xs font-semibold">
-              <Check className="w-4 h-4" />{success}
-            </div>
-          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -858,6 +1772,19 @@ function AdminAdmins() {
                     <span>Joined {joined}</span>
                   </p>
                 </div>
+                {a.adminId !== "A-001" && a.email !== "admin@waste2goods.ph" ? (
+                  <button
+                    disabled={deletingId === (a.adminId || a.email)}
+                    onClick={() => handleDeleteAdmin(a)}
+                    className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                    title="Delete Admin"
+                  >
+                    <Trash2 className="w-4 h-4 text-red-500" />
+                    <span className="hidden sm:inline">Delete</span>
+                  </button>
+                ) : (
+                  <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-500">Primary Admin</span>
+                )}
               </div>
             );
           })}

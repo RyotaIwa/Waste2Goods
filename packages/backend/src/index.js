@@ -312,8 +312,57 @@ app.get("/api/leaderboard", authenticate, (req, res) => {
 });
 app.get("/api/tasks", authenticate, (req, res) => res.json(TASKS));
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Waste2Goods API Server running at http://localhost:${PORT}`);
+// ── Kiosk ↔ Mobile session (in-memory; tracks which user is active on a kiosk) ──
+const kioskSessions = new Map();
+const KIOSK_SESSION_TTL_MS = 120000;
+
+function getActiveKioskSession(userId) {
+  const s = kioskSessions.get(userId);
+  if (!s) return null;
+  if (Date.now() - s.lastPing > KIOSK_SESSION_TTL_MS) {
+    kioskSessions.delete(userId);
+    return null;
+  }
+  return s;
+}
+
+app.post("/api/kiosk/session/connect", (req, res) => {
+  const { userId, userName, kioskId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  const session = {
+    userId,
+    userName: userName || "User",
+    kioskId: kioskId || "K-01",
+    connectedAt: Date.now(),
+    lastPing: Date.now(),
+  };
+  kioskSessions.set(userId, session);
+  res.json({ ok: true, connected: true, ...session });
+});
+
+app.post("/api/kiosk/session/ping", (req, res) => {
+  const { userId } = req.body || {};
+  const s = getActiveKioskSession(userId);
+  if (!s) return res.json({ connected: false });
+  s.lastPing = Date.now();
+  res.json({ connected: true, ...s });
+});
+
+app.post("/api/kiosk/session/disconnect", (req, res) => {
+  const { userId } = req.body || {};
+  if (userId) kioskSessions.delete(userId);
+  res.json({ ok: true, connected: false });
+});
+
+app.get("/api/kiosk/session/:userId", (req, res) => {
+  const s = getActiveKioskSession(req.params.userId);
+  if (!s) return res.json({ connected: false });
+  res.json({ connected: true, kioskId: s.kioskId, userName: s.userName, connectedAt: s.connectedAt, lastPing: s.lastPing });
+});
+
+// Start server — bind on 0.0.0.0 so phones on the LAN can reach us via the PC's Wi-Fi IP
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Waste2Goods API Server running at http://localhost:${PORT} (with SQLite)`);
+  console.log(`📡 LAN access: http://<YOUR-PC-WIFI-IP>:${PORT} — find your IP with: ipconfig`);
   console.log(`📡 Available endpoints: /api/users, /api/kiosks, /api/rewards, /api/transactions, /api/analytics/weekly, /api/analytics/monthly, /api/leaderboard, /api/tasks`);
 });

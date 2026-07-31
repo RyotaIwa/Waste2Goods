@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     barangayId INTEGER NOT NULL,
     pointsBalance INTEGER DEFAULT 0,
     totalSubmissions INTEGER DEFAULT 0,
+    tier TEXT DEFAULT 'Bronze',
     createdAt TEXT DEFAULT CURRENT_TIMESTAMP,
     status TEXT DEFAULT 'active',
     phone TEXT,

@@ -11,6 +11,7 @@
     "dev:kiosk": "cd packages/kiosk-app && npm run dev",
     "dev:mobile": "cd packages/mobile-app && npm run dev",
     "dev:backend": "cd packages/backend && npm run dev",
+    "dev:backend-mysql": "cd packages/backend && npm run dev-mysql",
     "dev:backend-laravel": "cd packages/backend-laravel && npm run dev",
     "build:admin": "cd packages/admin-panel && npm run build",
     "build:kiosk": "cd packages/kiosk-app && npm run build",

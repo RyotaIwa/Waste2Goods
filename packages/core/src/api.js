@@ -16,8 +16,44 @@ import {
   DEMO_KIOSK_USER,
 } from "./constants.js";
 
-// API Configuration
-const API_BASE_URL = "http://localhost:3001/api";
+// API Configuration — host in localStorage (change Wi‑Fi without rebuild)
+const API_HOST_STORAGE_KEY = "w2g_api_host";
+const DEFAULT_API_HOST = "localhost";
+
+export function getApiHost() {
+  try {
+    const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
+    return (stored && stored.trim()) || DEFAULT_API_HOST;
+  } catch {
+    return DEFAULT_API_HOST;
+  }
+}
+
+export function setApiHost(host) {
+  try {
+    localStorage.setItem(API_HOST_STORAGE_KEY, host.trim());
+  } catch {
+    console.warn("Failed to save API host");
+  }
+}
+
+export function getApiBaseUrl() {
+  return `http://${getApiHost()}:3001/api`;
+}
+
+export async function testApiConnection() {
+  const host = getApiHost();
+  try {
+    const res = await fetch(`http://${host}:3001/`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (res.ok) return { ok: true, message: `Connected to http://${host}:3001` };
+    return { ok: false, message: `Server responded with HTTP ${res.status}` };
+  } catch {
+    return { ok: false, message: `Cannot reach http://${host}:3001 — check IP and that the backend is running` };
+  }
+}
 
 // Auth Helpers
 const AUTH_STORAGE_KEY = "w2g_auth_state";
@@ -48,7 +84,10 @@ export function clearStoredAuth() {
 }
 
 // Generic Fetcher
+// forceMockFallback = true (default for pre-login screens, kiosk) → returns mock on network error.
+// forceMockFallback = false (admin use) → returns null on any error so caller can properly render DEMO badge.
 async function fetchApi(endpoint, options) {
+  const forceMockFallback = options?.forceMockFallback === true;
   const auth = getStoredAuth();
   const headers = {
     "Content-Type": "application/json",
@@ -57,20 +96,23 @@ async function fetchApi(endpoint, options) {
   };
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       headers,
       ...options,
     });
 
     if (!response.ok) {
-      console.warn(`API Error: ${response.status} ${response.statusText} - Falling back to mock data`);
-      throw new Error("Network error, using mock data");
+      console.warn(`API Error: ${response.status} ${response.statusText} for ${endpoint}`);
+      throw new Error(`HTTP ${response.status}`);
     }
     return await response.json();
-  } catch {
-    // Fallback to mock data if API fails
-    console.info(`Using mock data for endpoint ${endpoint}`);
-    return getMockData(endpoint);
+  } catch (err) {
+    console.info(`fetchApi failed for ${endpoint} (forceMockFallback=${forceMockFallback})`, err?.message || err);
+    if (forceMockFallback) {
+      return getMockData(endpoint);
+    }
+    // Admin mode: return null so caller correctly marks data as DEMO-only and shows DEMO badge.
+    return null;
   }
 }
 
@@ -95,7 +137,7 @@ export const Waste2GoodsAPI = {
     // Registration ALWAYS goes through the real backend (no mock fallback).
     // This ensures every new user is INSERTed into the MySQL/XAMPP database correctly.
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
@@ -120,7 +162,7 @@ export const Waste2GoodsAPI = {
     // Login ALWAYS goes through the real backend (no demo shortcut fallbacks for residents).
     // Admin login is still handled by the backend's hardcoded ADMIN_CREDENTIALS check.
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
@@ -144,7 +186,7 @@ export const Waste2GoodsAPI = {
   kioskLogin: async (pin) => {
     // Try backend first, fall back to mock if fails
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/kiosk-login`, {
+      const response = await fetch(`${getApiBaseUrl()}/auth/kiosk-login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pin }),
@@ -180,6 +222,129 @@ export const Waste2GoodsAPI = {
   },
   getAuthState: () => getStoredAuth(),
 
+  // Profile refresh & save (see api.ts for docs)
+  async refreshCurrentUser() {
+    const auth = getStoredAuth();
+    if (!auth?.isAuthenticated || !auth?.user) return null;
+    const userId = auth.user.id || auth.user.userId;
+    const isAdmin = auth.user.role === "admin" || auth.user.adminId;
+    if (!userId) return auth.user;
+
+    let fresh = null;
+    if (isAdmin) {
+      const admins = await fetchApi("/admin/admins");
+      if (Array.isArray(admins)) {
+        const match = admins.find(a =>
+          a.adminId === userId || a.id === userId || a.adminId === auth.user.adminId
+        );
+        if (match) {
+          const fullName = match.name || `${match.firstName || ""} ${match.lastName || ""}`.trim();
+          fresh = {
+            ...auth.user,
+            id: match.adminId || userId,
+            adminId: match.adminId || auth.user.adminId,
+            name: fullName || auth.user.name,
+            firstName: match.firstName || auth.user.firstName,
+            lastName: match.lastName || auth.user.lastName,
+            email: match.email || match.adminIdentifier || auth.user.email,
+            roleId: match.roleId ?? auth.user.roleId ?? 1,
+            barangayId: match.barangayId ?? auth.user.barangayId,
+          };
+        }
+      }
+    } else {
+      const resident = await fetchApi(`/users/${userId}`);
+      if (resident) {
+        const r = resident;
+        const fullName = r.name || `${r.firstName || ""} ${r.lastName || ""}`.trim();
+        const submissions =
+          (typeof r.submissions === "number" ? r.submissions : 0) ||
+          (typeof r.totalSubmissions === "number" ? r.totalSubmissions : 0);
+        fresh = {
+          ...auth.user,
+          id: r.userId || r.id || userId,
+          userId: r.userId || r.id || userId,
+          name: fullName,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          email: r.email || auth.user.email,
+          phone: r.phone,
+          barangay: r.barangayName || r.barangay || auth.user.barangay,
+          barangayName: r.barangayName || r.barangay,
+          province: r.province,
+          city: r.city,
+          streetAddress: r.streetAddress,
+          points: (typeof r.points === "number" ? r.points : r.pointsBalance) ?? auth.user.points,
+          pointsBalance: r.pointsBalance,
+          submissions,
+          totalSubmissions: submissions,
+          redeemed: typeof r.redeemed === "number" ? r.redeemed : 0,
+          createdAt: r.createdAt,
+          joined: r.createdAt
+            ? new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+            : auth.user.joined,
+          status: r.status,
+          tier: r.tier,
+        };
+      }
+    }
+
+    if (fresh) {
+      const next = { ...auth, user: fresh };
+      setStoredAuth(next);
+      return next.user;
+    }
+    return auth.user;
+  },
+
+  async saveProfile(patches) {
+    const auth = getStoredAuth();
+    if (!auth?.isAuthenticated || !auth?.user) return false;
+    const userId = auth.user.id || auth.user.userId;
+    if (!userId) return false;
+    const body = { ...patches };
+    if (patches.password) body.passwordHash = `hashed_${patches.password}`;
+    delete body.password;
+    const result = await fetchApi(`/users/${userId}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+    if (result !== null) {
+      await this.refreshCurrentUser();
+      try {
+        window.dispatchEvent(new StorageEvent("storage", { key: "w2g_auth_state" }));
+      } catch { /* ignore */ }
+      return true;
+    }
+    return false;
+  },
+
+  async getCurrentRank(authUserId) {
+    const auth = getStoredAuth();
+    const uid = authUserId || (auth?.user?.id || auth?.user?.userId);
+    if (!uid) return "#-";
+    const board = await fetchApi("/leaderboard");
+    if (!Array.isArray(board) || !board.length) return "#-";
+    const idx = board.findIndex(r => r.userId === uid || r.id === uid);
+    if (idx === -1) return "#-";
+    return `#${idx + 1}`;
+  },
+
+  // Mobile notification bell: notifications for ONE logged-in resident
+  async getMyNotifications() {
+    const auth = getStoredAuth();
+    const userId = auth?.user?.id || auth?.user?.userId;
+    if (!userId) return { count: 0, unread: 0, items: [] };
+    const result = await fetchApi(`/users/${userId}/notifications`);
+    if (!result) return { count: 0, unread: 0, items: [], forUser: userId };
+    return {
+      forUser: result.forUser || userId,
+      count: Number(result.count || 0),
+      unread: Number(result.unread || 0),
+      items: Array.isArray(result.items) ? result.items : [],
+    };
+  },
+
   // Users
   getUsers: () => fetchApi("/users"),
   getUserById: (userId) => fetchApi(`/users/${userId}`),
@@ -212,4 +377,45 @@ export const Waste2GoodsAPI = {
   // Admin Management
   fetchAdminAdmins: () => fetchApi("/admin/admins"),
   createAdmin: (data) => fetchApi("/admin/admins", { method: "POST", body: JSON.stringify(data) }),
+
+  // Redeem
+  redeemReward: (data) => fetchApi("/rewards/redeem", { method: "POST", body: JSON.stringify(data) }),
+
+  // Rewards CRUD (Admin)
+  createReward: (data) => fetchApi("/rewards", { method: "POST", body: JSON.stringify(data) }),
+  updateReward: (rewardId, data) => fetchApi(`/rewards/${rewardId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteReward: (rewardId) => fetchApi(`/rewards/${rewardId}`, { method: "DELETE" }),
+
+  // Users CRUD / Points Adjust (Admin)
+  createUser: (data) => fetchApi("/users", { method: "POST", body: JSON.stringify(data) }),
+  updateUser: (userId, data) => fetchApi(`/users/${userId}`, { method: "PUT", body: JSON.stringify(data) }),
+  adjustUserPoints: (userId, delta, reason, adminId) =>
+    fetchApi(`/users/${userId}/points`, { method: "PUT", body: JSON.stringify({ delta, reason, adminId }) }),
+
+  // Notifications feed
+  getNotifications: () => fetchApi("/notifications"),
+  fetchNotifications: () => fetchApi("/notifications"),
+
+  // Kiosk operations (Admin)
+  calibrateKiosk: (kioskId) => fetchApi(`/kiosks/${kioskId}/calibrate`, { method: "POST" }),
+  getKioskLogs: (kioskId) => fetchApi(`/kiosks/${kioskId}/logs`),
+
+  // Convenience aliases (fetchXYZ ↔ getXYZ naming for admin-panel parity)
+  fetchUsers: () => fetchApi("/users"),
+  fetchRewards: () => fetchApi("/rewards"),
+  fetchKiosks: () => fetchApi("/kiosks"),
+  fetchTransactions: () => fetchApi("/transactions"),
+  fetchAnalyticsWeekly: () => fetchApi("/analytics/weekly"),
+  fetchAnalyticsMonthly: () => fetchApi("/analytics/monthly"),
+  fetchAnalyticsSummary: () => fetchApi("/analytics/summary"),
+  fetchRedemptions: () => fetchApi("/redemptions"),
+  fetchLeaderboard: () => fetchApi("/leaderboard"),
+
+  connectKioskSession: (data) =>
+    fetchApi("/kiosk/session/connect", { method: "POST", body: JSON.stringify(data) }),
+  pingKioskSession: (userId) =>
+    fetchApi("/kiosk/session/ping", { method: "POST", body: JSON.stringify({ userId }) }),
+  disconnectKioskSession: (userId) =>
+    fetchApi("/kiosk/session/disconnect", { method: "POST", body: JSON.stringify({ userId }) }),
+  getKioskSessionStatus: (userId) => fetchApi(`/kiosk/session/${userId}`),
 };

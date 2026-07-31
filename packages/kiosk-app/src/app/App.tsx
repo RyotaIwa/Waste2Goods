@@ -4,7 +4,7 @@ import {
   Recycle, QrCode, Wifi, Clock, Battery, CheckCircle, Trophy, Scale,
   Check, Lock, Mail, ArrowLeft, LogIn, Smartphone, X, AlertCircle
 } from "lucide-react";
-import { Waste2GoodsAPI } from "@waste2goods/core";
+import { Waste2GoodsAPI, KIOSK_PIN } from "@waste2goods/core";
 
 type KioskScreen =
   | "idle"
@@ -55,48 +55,37 @@ export default function App() {
 
   const go = (s: KioskScreen) => setKs(s);
 
-  // QR <-> Kiosk bridge: listen for mobile scan events
-  useEffect(() => {
-    const checkBridge = () => {
-      try {
-        const data = localStorage.getItem(QR_BRIDGE_KEY);
-        if (!data) return;
-        const parsed = JSON.parse(data);
-        if (parsed && parsed.user && parsed.timestamp && Date.now() - parsed.timestamp < 60000) {
-          setConnectedUser({
-            name: parsed.user.name || "User",
-            balance: Number(parsed.user.points || parsed.user.pointsBalance || 0),
-            id: parsed.user.id || parsed.user.userId || "U-000",
-          });
-          setBalanceAfterEarn(Number(parsed.user.points || parsed.user.pointsBalance || 0));
-          localStorage.removeItem(QR_BRIDGE_KEY);
-          setKs("deposit");
-        }
-      } catch {}
-    };
-    checkBridge();
-    const iv = setInterval(checkBridge, 800);
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === QR_BRIDGE_KEY) checkBridge();
-    };
-    window.addEventListener("storage", onStorage);
-    return () => {
-      clearInterval(iv);
-      window.removeEventListener("storage", onStorage);
-    };
-  }, []);
-
-  const startFlow = () => {
-    if (!connectedUser) {
-      setKs("idle");
-      return;
-    }
-    setKs("scanning");
-    setTimeout(() => {
-      if (connectedUser) {
-        setKs("deposit");
+  // Demo: Simulate Scan — actually fetches a real user from the DB via backend
+  // (acts as if user scanned with their phone, so kiosk "shows user dashboard" based on actual DB user
+  const handleSimulateScan = async () => {
+    try {
+      const list = await Waste2GoodsAPI.getUsers();
+      let userToConnect: ConnectedUser | null = null;
+      if (Array.isArray(list) && list.length > 0) {
+        const match = list.find(u => (u as any).email === "dmcb@gmail.com") || list.find(u => (u as any).userId === "U-002") || list[0];
+        userToConnect = {
+          name: match.name || `${match.firstName || ""} ${match.lastName || ""}`.trim() || "dm cb",
+          balance: Number(match.points ?? match.pointsBalance ?? 50),
+          id: match.id || match.userId || "U-002",
+        };
       }
-    }, 2500);
+      if (!userToConnect) {
+        userToConnect = { name: "dm cb", balance: 50, id: "U-002" };
+      }
+      setConnectedUser(userToConnect);
+      setBalanceAfterEarn(userToConnect.balance);
+      Waste2GoodsAPI.connectKioskSession?.({
+        userId: userToConnect.id,
+        userName: userToConnect.name,
+        kioskId: "K-01",
+      });
+      setKs("deposit");
+    } catch {
+      const fallback = { name: "dm cb", balance: 50, id: "U-002" };
+      setConnectedUser(fallback);
+      setBalanceAfterEarn(fallback.balance);
+      setKs("deposit");
+    }
   };
 
   const startWeigh = () => {
@@ -117,9 +106,86 @@ export default function App() {
         : 25)
   );
 
-  const handleConfirmDone = () => {
+  const handleConfirmDone = async () => {
+    const w = weight > 0 ? weight : 2.3;
+    if (connectedUser?.id) {
+      try {
+        await Waste2GoodsAPI.createTransaction({
+          userId: connectedUser.id,
+          materialId: selectedType === "Metal Cans" ? 2 : selectedType === "Cardboard" ? 3 : 1,
+          weightKg: w,
+          kioskId: "K-01"
+        });
+      } catch (err) {
+        console.warn("Transaction DB submission failed:", err);
+      }
+    }
     setBalanceAfterEarn((connectedUser?.balance || 0) + pts);
     setKs("done");
+  };
+
+  // QR <-> Kiosk bridge: listen for mobile scan events
+  useEffect(() => {
+    const checkBridge = () => {
+      try {
+        const data = localStorage.getItem(QR_BRIDGE_KEY);
+        if (!data) return;
+        const parsed = JSON.parse(data);
+        if (parsed && parsed.user && parsed.timestamp && Date.now() - parsed.timestamp < 60000) {
+          const linked = {
+            name: parsed.user.name || "User",
+            balance: Number(parsed.user.points || parsed.user.pointsBalance || 0),
+            id: parsed.user.id || parsed.user.userId || "U-000",
+          };
+          setConnectedUser(linked);
+          setBalanceAfterEarn(linked.balance);
+          localStorage.removeItem(QR_BRIDGE_KEY);
+          Waste2GoodsAPI.connectKioskSession?.({
+            userId: linked.id,
+            userName: linked.name,
+            kioskId: parsed.kioskPayload?.includes?.("K-") ? parsed.kioskPayload : "K-01",
+          });
+          setKs("deposit");
+        }
+      } catch {}
+    };
+    checkBridge();
+    const iv = setInterval(checkBridge, 800);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === QR_BRIDGE_KEY) checkBridge();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
+
+  // Keep backend session alive while a resident is linked to this kiosk
+  useEffect(() => {
+    if (!connectedUser?.id) return;
+    Waste2GoodsAPI.connectKioskSession?.({
+      userId: connectedUser.id,
+      userName: connectedUser.name,
+      kioskId: "K-01",
+    });
+    const pingIv = setInterval(() => {
+      Waste2GoodsAPI.pingKioskSession?.(connectedUser.id);
+    }, 30000);
+    return () => clearInterval(pingIv);
+  }, [connectedUser?.id, connectedUser?.name]);
+
+  const startFlow = () => {
+    if (!connectedUser) {
+      setKs("idle");
+      return;
+    }
+    setKs("scanning");
+    setTimeout(() => {
+      if (connectedUser) {
+        setKs("deposit");
+      }
+    }, 2500);
   };
 
   const handleManualLogin = async () => {
@@ -133,12 +199,18 @@ export default function App() {
       const auth = await Waste2GoodsAPI.login(manualEmail, manualPassword);
       setManualLoading(false);
       if (auth?.user) {
-        setConnectedUser({
+        const linked = {
           name: auth.user.name || `${auth.user.firstName || ""} ${auth.user.lastName || ""}`.trim() || "User",
           balance: Number(auth.user.points || auth.user.pointsBalance || 0),
           id: auth.user.id || auth.user.userId || "U-000",
+        };
+        setConnectedUser(linked);
+        setBalanceAfterEarn(linked.balance);
+        Waste2GoodsAPI.connectKioskSession?.({
+          userId: linked.id,
+          userName: linked.name,
+          kioskId: "K-01",
         });
-        setBalanceAfterEarn(Number(auth.user.points || auth.user.pointsBalance || 0));
         setManualEmail("");
         setManualPassword("");
         go("deposit");
@@ -152,6 +224,9 @@ export default function App() {
   };
 
   const handleResetKiosk = () => {
+    if (connectedUser?.id) {
+      Waste2GoodsAPI.disconnectKioskSession?.(connectedUser.id);
+    }
     setConnectedUser(null);
     setSelectedType("PET Plastic");
     setWeighing(false);
@@ -159,63 +234,63 @@ export default function App() {
   };
 
   const renderWelcome = () => (
-    <div className="flex flex-col items-center gap-8 text-center px-10">
-      <div className="relative">
-        <div className="w-20 h-20 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
-          <Recycle className="w-10 h-10 text-green-400" />
+    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-center px-8 py-4 overflow-auto">
+      <div className="relative flex-shrink-0">
+        <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center">
+          <Recycle className="w-8 h-8 text-green-400" />
         </div>
       </div>
-      <div>
-        <h1 className="text-5xl font-black text-white tracking-tight mb-3" style={{ textShadow: "0 0 40px rgba(74,222,128,0.2)" }}>
+      <div className="flex-shrink-0">
+        <h1 className="text-4xl font-black text-white tracking-tight mb-2" style={{ textShadow: "0 0 40px rgba(74,222,128,0.2)" }}>
           Welcome to Waste2Goods
         </h1>
-        <p className="text-green-300 text-xl max-w-2xl mx-auto leading-relaxed">
+        <p className="text-green-300 text-base max-w-2xl mx-auto leading-relaxed">
           Sign in to submit your recyclables and earn rewards points instantly!
         </p>
       </div>
-      <div className="grid grid-cols-2 gap-6 w-full max-w-2xl pt-4">
+      <div className="grid grid-cols-2 gap-4 w-full max-w-xl pt-2 flex-shrink-0">
         <button
           onClick={() => go("idle")}
-          className="flex flex-col items-center gap-4 p-6 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-green-400/40 transition-all group"
+          className="flex flex-col items-center gap-2 p-5 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-green-400/40 transition-all group"
         >
-          <div className="w-16 h-16 rounded-2xl bg-green-500/15 border border-green-400/30 flex items-center justify-center group-hover:scale-105 transition-transform">
-            <QrCode className="w-8 h-8 text-green-400" />
+          <div className="w-14 h-14 rounded-2xl bg-green-500/15 border border-green-400/30 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <QrCode className="w-7 h-7 text-green-400" />
           </div>
           <div>
-            <p className="text-white font-black text-lg">Scan QR Code</p>
-            <p className="text-green-300 text-xs mt-1">Use Waste2Goods mobile app</p>
+            <p className="text-white font-black text-base">Scan QR Code</p>
+            <p className="text-green-300 text-xs mt-0.5">Use Waste2Goods mobile app</p>
           </div>
-          <div className="flex items-center gap-2 mt-1 px-4 py-2 rounded-xl bg-green-500/10 text-green-300 text-xs font-bold">
-            <Smartphone className="w-4 h-4" />
+          <div className="flex items-center gap-2 mt-0.5 px-3 py-1.5 rounded-xl bg-green-500/10 text-green-300 text-xs font-bold">
+            <Smartphone className="w-3.5 h-3.5" />
             Mobile App
           </div>
         </button>
 
         <button
           onClick={() => go("manual-login")}
-          className="flex flex-col items-center gap-4 p-6 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-blue-400/40 transition-all group"
+          className="flex flex-col items-center gap-2 p-5 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-blue-400/40 transition-all group"
         >
-          <div className="w-16 h-16 rounded-2xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center group-hover:scale-105 transition-transform">
-            <LogIn className="w-8 h-8 text-blue-400" />
+          <div className="w-14 h-14 rounded-2xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center group-hover:scale-105 transition-transform">
+            <LogIn className="w-7 h-7 text-blue-400" />
           </div>
           <div>
-            <p className="text-white font-black text-lg">Manual Sign In</p>
-            <p className="text-green-300 text-xs mt-1">Use email &amp; password</p>
+            <p className="text-white font-black text-base">Manual Sign In</p>
+            <p className="text-green-300 text-xs mt-0.5">Use email &amp; password</p>
           </div>
-          <div className="flex items-center gap-2 mt-1 px-4 py-2 rounded-xl bg-blue-500/10 text-blue-300 text-xs font-bold">
-            <Mail className="w-4 h-4" />
+          <div className="flex items-center gap-2 mt-0.5 px-3 py-1.5 rounded-xl bg-blue-500/10 text-blue-300 text-xs font-bold">
+            <Mail className="w-3.5 h-3.5" />
             Email Login
           </div>
         </button>
       </div>
 
-      <div className="flex gap-5 pt-4">
+      <div className="flex gap-4 pt-1 flex-shrink-0">
         {[["♻️", "PET Plastic", "50 pts/kg"]].map(([e, l, p]) => (
           <div
             key={String(l)}
-            className="flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl bg-white/5 border border-white/10"
+            className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10"
           >
-            <span className="text-2xl">{String(e)}</span>
+            <span className="text-xl">{String(e)}</span>
             <span className="text-xs text-white font-semibold">{String(l)}</span>
             <span className="text-xs text-green-400 font-bold">{String(p)}</span>
           </div>
@@ -225,9 +300,9 @@ export default function App() {
   );
 
   const renderIdle = () => (
-    <div className="flex flex-col items-center gap-7 text-center">
-      <div className="relative">
-        <div className="w-40 h-40 rounded-3xl bg-white p-2 border border-white/15 flex items-center justify-center" style={{ boxShadow: "0 0 80px rgba(22,163,74,0.25)" }}>
+    <div className="w-full h-full flex flex-col items-center justify-center gap-4 text-center px-10 py-4 overflow-auto">
+      <div className="relative flex-shrink-0">
+        <div className="w-32 h-32 rounded-3xl bg-white p-2 border border-white/15 flex items-center justify-center" style={{ boxShadow: "0 0 80px rgba(22,163,74,0.25)" }}>
           <img
             src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
               JSON.stringify({ kioskId: "K-01", action: "signin", ts: Date.now() })
@@ -236,41 +311,41 @@ export default function App() {
             className="w-full h-full"
           />
         </div>
-        <div className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-green-400 border-2 border-green-900 flex items-center justify-center animate-pulse">
-          <Wifi className="w-3.5 h-3.5 text-green-900" />
+        <div className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-green-400 border-2 border-green-900 flex items-center justify-center animate-pulse">
+          <Wifi className="w-3 h-3 text-green-900" />
         </div>
       </div>
-      <div>
-        <h1 className="text-6xl font-black text-white tracking-tight mb-3" style={{ textShadow: "0 0 40px rgba(74,222,128,0.2)" }}>
+      <div className="flex-shrink-0">
+        <h1 className="text-4xl font-black text-white tracking-tight mb-2" style={{ textShadow: "0 0 40px rgba(74,222,128,0.2)" }}>
           Scan to Sign In
         </h1>
-        <p className="text-green-300 text-lg max-w-md mx-auto leading-relaxed">
+        <p className="text-green-300 text-sm max-w-md mx-auto leading-relaxed">
           Open the Waste2Goods app, tap <strong className="text-white">Submit Recyclables</strong>, and scan this screen to begin.
         </p>
       </div>
-      <div className="flex gap-5">
+      <div className="flex gap-4 flex-shrink-0">
         {[["♻️", "PET Plastic", "50 pts/kg"]].map(([e, l, p]) => (
           <div
             key={String(l)}
-            className="flex flex-col items-center gap-1.5 px-4 py-3 rounded-2xl bg-white/5 border border-white/10"
+            className="flex flex-col items-center gap-1 px-4 py-2.5 rounded-2xl bg-white/5 border border-white/10"
           >
-            <span className="text-2xl">{String(e)}</span>
+            <span className="text-xl">{String(e)}</span>
             <span className="text-xs text-white font-semibold">{String(l)}</span>
             <span className="text-xs text-green-400 font-bold">{String(p)}</span>
           </div>
         ))}
       </div>
-      <div className="flex gap-3 pt-2">
+      <div className="flex gap-3 pt-1 flex-wrap justify-center flex-shrink-0">
         <button
           onClick={() => go("welcome")}
-          className="px-6 py-3 rounded-2xl border border-white/20 text-white/70 text-sm font-semibold hover:bg-white/5 transition-colors flex items-center gap-2"
+          className="px-5 py-2.5 rounded-2xl border border-white/20 text-white/70 text-sm font-semibold hover:bg-white/5 transition-colors flex items-center gap-2"
         >
           <ArrowLeft className="w-4 h-4" />
           Back
         </button>
         <button
-          onClick={startFlow}
-          className="px-10 py-4 rounded-2xl bg-green-500 text-white font-black text-xl hover:bg-green-400 transition-all"
+          onClick={handleSimulateScan}
+          className="px-8 py-3 rounded-2xl bg-green-500 text-white font-black text-base hover:bg-green-400 transition-all flex-shrink-0"
           style={{ boxShadow: "0 0 40px rgba(74,222,128,0.3)" }}
         >
           Demo: Simulate Scan
@@ -802,9 +877,11 @@ export default function App() {
           </div>
         </div>
 
-        {/* Content area */}
-        <div className="h-full pt-14 flex items-center justify-center px-10">
-          {renderScreen()}
+        {/* Content area — absolute inside kiosk frame, avoids overlap with status bar */}
+        <div className="absolute top-14 left-0 right-0 bottom-0 flex items-center justify-center overflow-hidden px-5 pb-3">
+          <div className="w-full h-full flex items-center justify-center overflow-auto">
+            {renderScreen()}
+          </div>
         </div>
       </div>
     </div>

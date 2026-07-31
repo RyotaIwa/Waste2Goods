@@ -46,11 +46,13 @@ const authenticate = (req, res, next) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.slice(7);
-  // Accept mock tokens + any dynamic tokens we generate (token_U-XXX_...)
+  // Accept mock tokens + ANY dynamic tokens emitted by /api/auth/* (token_U-*, token_A-*, admin_token_*, kiosk_token_*)
   if (
     ['mock_admin_token_123', 'mock_resident_token_456', 'mock_kiosk_token_789'].includes(token) ||
     token.startsWith('token_U-') ||
-    token.startsWith('token_A-')
+    token.startsWith('token_A-') ||
+    token.startsWith('admin_token_') ||
+    token.startsWith('kiosk_token_')
   ) {
     next();
   } else {
@@ -81,19 +83,25 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    // Generate user ID
-    const [countResult] = await db.query('SELECT COUNT(*) as cnt FROM users');
-    const userNumber = (countResult[0].cnt || 0) + 1;
+    // Generate user ID — use MAX numeric suffix, NOT COUNT(*)
+    // COUNT(*) is buggy: if you delete U-002 (count drops to 3),
+    // next ID would be U-004 which collides with existing U-004 PK.
+    // Instead, MAX(userId parsed number) + 1 guarantees no collisions regardless of gaps/deletions.
+    const [[maxUserRow]] = await db.query(
+      "SELECT COALESCE(MAX(CAST(SUBSTRING(userId, 3) AS UNSIGNED)), 0) AS maxNum FROM users"
+    );
+    const userNumber = Number(maxUserRow.maxNum || 0) + 1;
     const userId = `U-${String(userNumber).padStart(3, '0')}`;
+    const qrCode = `${userId}-${Math.random().toString(36).slice(2, 7)}`;
 
     // Insert user (with province/city/barangayName/phone/streetAddress columns now present after schema migration)
     const passwordHash = `hashed_${password}`;
     await db.query(
       `INSERT INTO users 
-         (userId, firstName, lastName, email, passwordHash, barangayId,
-          pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
-       VALUES (?, ?, ?, ?, ?, ?, 50, 0, 'active', ?, ?, ?, ?, ?)`,
-      [userId, firstName, lastName, email, passwordHash, barangayId,
+         (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
+          total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 50, 50, 0, 'active', ?, ?, ?, ?, ?)`,
+      [userId, firstName, lastName, email, passwordHash, qrCode, barangayId,
        phone, province, city, barangayName, streetAddress]
     );
 
@@ -148,7 +156,8 @@ app.post('/api/auth/login', async (req, res) => {
           roleId: adm.roleId || 1,
           adminId: adm.adminId || null,
         };
-        const token = `admin_token_${adm.adminId || 'A001'}_${Date.now()}`;
+        // IMPORTANT: authenticate accepts token_A-* (and admin_token_* fallback). Use canonical token_A- prefix.
+        const token = `token_${adm.adminId || 'A-001'}_${Date.now()}`;
         console.log(`🔐 Admin logged in from DB: ${adminUser.name} (${adminUser.id})`);
         return res.json({ token, user: adminUser });
       }
@@ -166,7 +175,15 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   // ──────────────────────────────────────────────────────
-  // 3. RESIDENT LOGIN (users table - NO demo shortcuts)
+  // 3. HARDCODED RESIDENT FALLBACK (if DB resident check fails/missing users or seed)
+  // ──────────────────────────────────────────────────────
+  if (email === DEMO_RESIDENT_CREDENTIALS.email && password === DEMO_RESIDENT_CREDENTIALS.password) {
+    console.log('🔐 Resident logged in via hardcoded fallback (users row not found / DB seed missing)');
+    return res.json({ token: 'mock_resident_token_456', user: DEMO_RESIDENT_USER });
+  }
+
+  // ──────────────────────────────────────────────────────
+  // 4. RESIDENT LOGIN (users table)
   // ──────────────────────────────────────────────────────
   // All residents MUST be registered via the Mobile App Sign-Up first.
   try {
@@ -210,17 +227,32 @@ app.post('/api/auth/kiosk-login', (req, res) => {
 // Protected API Routes (require authentication)
 app.get('/api/users', authenticate, async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM users');
-    const usersWithCompat = rows.map(user => ({
-      ...user,
-      id: user.userId,
-      name: `${user.firstName} ${user.lastName}`,
-      barangay: 'Cabantian',
-      points: user.pointsBalance,
-      joined: new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      submissions: user.totalSubmissions,
-      redeemed: 0
-    }));
+    const [rows] = await db.query('SELECT * FROM users ORDER BY createdAt ASC');
+    const [txCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(weightKg),0) as totalKg, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions GROUP BY userId');
+    const [redCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions GROUP BY userId');
+    const txByUser = Object.fromEntries(txCounts.map(t => [String(t.userId), t]));
+    const rdByUser = Object.fromEntries(redCounts.map(r => [String(r.userId), r]));
+    const usersWithCompat = rows.map(user => {
+      const tx = txByUser[String(user.userId)];
+      const rd = rdByUser[String(user.userId)];
+      // Live submissions = COUNT of recycling_transactions rows (more accurate than cached totalSubmissions column which may be stale)
+      const submissionsLive = Number(tx?.cnt || 0);
+      const redeemedLive = Number(rd?.totalQty || rd?.cnt || 0);
+      const barangayLive = user.barangayName || 'Cabantian';
+      return {
+        ...user,
+        id: user.userId,
+        name: `${user.firstName} ${user.lastName}`,
+        barangay: barangayLive,
+        barangayName: barangayLive,
+        points: user.pointsBalance,
+        // submissions = prefer actual SQL transaction count over cached column (stale inserts often skip updating totalSubmissions)
+        submissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+        totalSubmissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+        redeemed: redeemedLive,
+        joined: new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      };
+    });
     res.json(usersWithCompat);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -234,15 +266,22 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
     const user = rows[0];
+    const [[txRow]] = await db.query('SELECT COUNT(*) as cnt, COALESCE(SUM(weightKg),0) as totalKg, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions WHERE userId = ?', [user.userId]);
+    const [[rdRow]] = await db.query('SELECT COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions WHERE userId = ?', [user.userId]);
+    const submissionsLive = Number(txRow?.cnt || 0);
+    const redeemedLive = Number(rdRow?.totalQty || rdRow?.cnt || 0);
+    const barangayLive = user.barangayName || 'Cabantian';
     res.json({
       ...user,
       id: user.userId,
       name: `${user.firstName} ${user.lastName}`,
-      barangay: 'Cabantian',
+      barangay: barangayLive,
+      barangayName: barangayLive,
       points: user.pointsBalance,
-      joined: new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      submissions: user.totalSubmissions,
-      redeemed: 0
+      submissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+      totalSubmissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+      redeemed: redeemedLive,
+      joined: new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -266,8 +305,24 @@ app.get('/api/kiosks', authenticate, async (req, res) => {
 
 app.get('/api/rewards', authenticate, async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM rewards');
-    res.json(rows);
+    const [rows] = await db.query('SELECT * FROM rewards ORDER BY rewardId ASC');
+    const [redCounts] = await db.query('SELECT rewardId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions GROUP BY rewardId');
+    const rdByReward = Object.fromEntries(redCounts.map(r => [Number(r.rewardId), r]));
+    const rewardsWithCompat = rows.map(r => {
+      const rd = rdByReward[Number(r.rewardId)];
+      return {
+        ...r,
+        id: r.rewardId,
+        name: r.rewardName,
+        points: r.pointsCost,
+        stock: r.stockQuantity,
+        stockCount: r.stockQuantity,
+        redeemed: Number(rd?.totalQty || rd?.cnt || 0),
+        isSeasonal: Boolean(r.isSeasonal),
+        seasonal: Boolean(r.isSeasonal),
+      };
+    });
+    res.json(rewardsWithCompat);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -448,21 +503,33 @@ app.get('/api/analytics/summary', authenticate, async (req, res) => {
 
     // ── Top 5 Leaderboard ──
     const [lbRows] = await db.query(`
-      SELECT userId, firstName, lastName, pointsBalance, totalSubmissions
+      SELECT userId, firstName, lastName, barangayName, pointsBalance, totalSubmissions, tier, phone
       FROM users
       ORDER BY pointsBalance DESC
       LIMIT 5
     `);
-    const leaderboard = lbRows.map((u, i) => ({
-      rank: i + 1,
-      userId: u.userId,
-      name: `${u.firstName} ${u.lastName}`,
-      barangay: 'Cabantian',
-      points: Number(u.pointsBalance),
-      avatar: `${u.firstName.charAt(0)}${u.lastName.charAt(0)}`,
-      submissions: Number(u.totalSubmissions),
-      streak: 1,
-    }));
+    const leaderboard = lbRows.map((u, i) => {
+      const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.userId || 'Resident';
+      const avatar = name.split(/\s+/).filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+      const subs = Number(u.totalSubmissions || 0);
+      return {
+        rank: i + 1,
+        userId: u.userId,
+        id: u.userId,
+        name,
+        firstName: u.firstName || '',
+        lastName: u.lastName || '',
+        barangay: u.barangayName || 'Cabantian',
+        barangayName: u.barangayName || 'Cabantian',
+        points: Number(u.pointsBalance || 0),
+        pointsBalance: Number(u.pointsBalance || 0),
+        submissions: subs,
+        totalSubmissions: subs,
+        tier: u.tier || null,
+        avatar,
+        streak: subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
+      };
+    });
 
     res.json({
       totalKgCollected: Number(sum1[0].totalKgCollected),
@@ -477,6 +544,65 @@ app.get('/api/analytics/summary', authenticate, async (req, res) => {
       recentTransactions: recent,
       topResidents: leaderboard,
       computedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────
+// REDEEM: User spends points to claim a reward
+// (deducts points, inserts redemption row, decrements stock)
+// ──────────────────────────────────────────────────────
+app.post('/api/rewards/redeem', authenticate, async (req, res) => {
+  try {
+    const { userId, rewardId, quantity = 1 } = req.body;
+    if (!userId || !rewardId) {
+      return res.status(400).json({ error: 'userId and rewardId are required' });
+    }
+    const [users] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    if (users.length === 0) return res.status(404).json({ error: 'User not found' });
+    const user = users[0];
+
+    const [rewards] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [rewardId]);
+    if (rewards.length === 0) return res.status(404).json({ error: 'Reward not found' });
+    const reward = rewards[0];
+    const stock = Number(reward.stockQuantity ?? reward.stock ?? reward.stockCount ?? 0);
+    if (stock < quantity) return res.status(400).json({ error: 'Not enough stock' });
+
+    const totalPoints = Number(reward.pointsCost || reward.points || 0) * Number(quantity);
+    const userBal = Number(user.pointsBalance || 0);
+    if (userBal < totalPoints) {
+      return res.status(400).json({ error: `Not enough points. Balance: ${userBal}, needed: ${totalPoints}` });
+    }
+
+    const redemptionId = `RR-${Date.now()}`;
+    const approvedBy = 'A-001';
+
+    await db.query('START TRANSACTION');
+    try {
+      await db.query(
+        'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, approvedBy, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+        [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'ready', approvedBy]
+      );
+      await db.query('UPDATE users SET pointsBalance = pointsBalance - ? WHERE userId = ?', [totalPoints, userId]);
+      await db.query('UPDATE rewards SET stockQuantity = stockQuantity - ? WHERE rewardId = ?', [quantity, rewardId]);
+      await db.query('COMMIT');
+    } catch (txErr) {
+      await db.query('ROLLBACK');
+      throw txErr;
+    }
+
+    const [updatedUserRows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    const updatedUser = updatedUserRows[0];
+    res.json({
+      ok: true,
+      redemptionId,
+      status: 'ready',
+      newBalance: Number(updatedUser.pointsBalance || 0),
+      totalPointsUsed: totalPoints,
+      rewardName: reward.rewardName || reward.name,
+      message: 'Pick up at Barangay Hall within 7 days. Bring a valid ID.'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -504,16 +630,38 @@ app.get('/api/redemptions', authenticate, async (req, res) => {
 
 app.get('/api/leaderboard', authenticate, async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM users ORDER BY pointsBalance DESC LIMIT 10');
-    const leaderboard = rows.map((user, index) => ({
-      rank: index + 1,
-      name: `${user.firstName} ${user.lastName}`,
-      barangay: 'Cabantian',
-      points: user.pointsBalance,
-      avatar: `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`,
-      streak: 1,
-      isMe: user.userId === 'U-001'
-    }));
+    const [rows] = await db.query('SELECT userId, firstName, lastName, email, barangayId, barangayName, pointsBalance, totalSubmissions, tier, phone, createdAt, status FROM users ORDER BY pointsBalance DESC LIMIT 10');
+    const leaderboard = rows.map((user, index) => {
+      const name = `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.userId || 'Resident';
+      const avatar = name
+        .split(/\s+/)
+        .filter(Boolean)
+        .map(p => p[0])
+        .join('')
+        .slice(0, 2)
+        .toUpperCase();
+      const subs = Number(user.totalSubmissions || 0);
+      return {
+        rank: index + 1,
+        userId: user.userId,
+        id: user.userId,
+        name,
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
+        email: user.email || '',
+        barangay: user.barangayName || 'Cabantian',
+        barangayName: user.barangayName || 'Cabantian',
+        barangayId: user.barangayId || null,
+        points: Number(user.pointsBalance || 0),
+        pointsBalance: Number(user.pointsBalance || 0),
+        submissions: subs,
+        totalSubmissions: subs,
+        tier: user.tier || null,
+        phone: user.phone || '',
+        avatar,
+        streak: subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
+      };
+    });
     res.json(leaderboard);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -564,14 +712,17 @@ app.post('/api/admin/admins', authenticate, async (req, res) => {
     if (existing.length > 0) {
       return res.status(400).json({ error: 'An admin with this email already exists' });
     }
-    const [cnt] = await db.query('SELECT COUNT(*) as cnt FROM administrators');
-    const nextNum = (cnt[0].cnt || 0) + 1;
+    // Admin ID generation: use MAX numeric suffix (same fix as user IDs)
+    const [[maxAdminRow]] = await db.query(
+      "SELECT COALESCE(MAX(CAST(SUBSTRING(adminId, 3) AS UNSIGNED)), 0) AS maxNum FROM administrators"
+    );
+    const nextNum = Number(maxAdminRow.maxNum || 0) + 1;
     const adminId = `A-${String(nextNum).padStart(3, '0')}`;
     const passwordHash = `hashed_${password}`;
     const createdAt = new Date();
     await db.query(
-      'INSERT INTO administrators (adminId, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [adminId, email.toLowerCase().trim(), firstName, lastName, passwordHash, barangayId, roleId, createdAt]
+      'INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [adminId, email.toLowerCase().trim(), email.toLowerCase().trim(), firstName, lastName, passwordHash, barangayId, roleId, createdAt]
     );
     res.json({
       ok: true,
@@ -591,8 +742,540 @@ app.post('/api/admin/admins', authenticate, async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
+// Delete Admin Account
+app.delete('/api/admin/admins/:id', authenticate, async (req, res) => {
+  try {
+    const adminId = String(req.params.id).trim();
+    if (adminId === 'A-001' || adminId.toLowerCase() === 'admin@waste2goods.ph') {
+      return res.status(400).json({ error: 'Primary super administrator A-001 cannot be deleted' });
+    }
+    const [exists] = await db.query('SELECT * FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
+    if (!exists.length) {
+      return res.status(404).json({ error: 'Admin account not found' });
+    }
+    await db.query('DELETE FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
+    res.json({ ok: true, adminId, message: 'Admin account deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────
+// REWARDS CRUD (Admin: Create / Update / Delete reward)
+// ─────────────────────────────────────────────────────────
+app.post('/api/rewards', authenticate, async (req, res) => {
+  try {
+    const { rewardName, pointsCost, stockQuantity = 0, description = '', category = 'Eco Essentials', icon = '🎁', isSeasonal = 0, status = 'active' } = req.body;
+    if (!rewardName || pointsCost == null) {
+      return res.status(400).json({ error: 'rewardName and pointsCost are required' });
+    }
+    await db.query(
+      'INSERT INTO rewards (rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [String(rewardName).trim(), Number(pointsCost), Number(stockQuantity), String(description), String(category), String(icon), isSeasonal ? 1 : 0, String(status)]
+    );
+    const [rows] = await db.query('SELECT * FROM rewards ORDER BY rewardId DESC LIMIT 1');
+    const r = rows[0];
+    res.json({
+      ok: true,
+      reward: {
+        ...r,
+        id: r.rewardId,
+        name: r.rewardName,
+        points: r.pointsCost,
+        stock: r.stockQuantity,
+        stockCount: r.stockQuantity,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/rewards/:id', authenticate, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status } = req.body;
+    const [exists] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
+    if (!exists.length) return res.status(404).json({ error: 'Reward not found' });
+    const curr = exists[0];
+    const nextName = rewardName != null ? String(rewardName).trim() : curr.rewardName;
+    const nextPoints = pointsCost != null ? Number(pointsCost) : curr.pointsCost;
+    const nextStock = stockQuantity != null ? Number(stockQuantity) : curr.stockQuantity;
+    const nextDesc = description != null ? String(description) : curr.description;
+    const nextCat = category != null ? String(category) : curr.category;
+    const nextIcon = icon != null ? String(icon) : curr.icon;
+    const nextSeason = isSeasonal != null ? (isSeasonal ? 1 : 0) : curr.isSeasonal;
+    const nextStatus = status != null ? String(status) : curr.status;
+    await db.query(
+      'UPDATE rewards SET rewardName = ?, pointsCost = ?, stockQuantity = ?, description = ?, category = ?, icon = ?, isSeasonal = ?, status = ? WHERE rewardId = ?',
+      [nextName, nextPoints, nextStock, nextDesc, nextCat, nextIcon, nextSeason, nextStatus, id]
+    );
+    const [rows] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
+    const r = rows[0];
+    res.json({
+      ok: true,
+      reward: {
+        ...r,
+        id: r.rewardId,
+        name: r.rewardName,
+        points: r.pointsCost,
+        stock: r.stockQuantity,
+        stockCount: r.stockQuantity,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/rewards/:id', authenticate, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [exists] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
+    if (!exists.length) return res.status(404).json({ error: 'Reward not found' });
+    // Soft delete: set status to 'inactive' (foreign key constraints prevent hard delete if there are redemptions)
+    try {
+      await db.query('DELETE FROM rewards WHERE rewardId = ?', [id]);
+    } catch {
+      await db.query("UPDATE rewards SET status = 'inactive' WHERE rewardId = ?", [id]);
+    }
+    res.json({ ok: true, rewardId: id, deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────
+// USERS — Admin Create / Update / Adjust Points
+// ─────────────────────────────────────────────────────────
+app.post('/api/users', authenticate, async (req, res) => {
+  try {
+    const { firstName, lastName, email, password, barangayId = 1, pointsBalance = 0, phone = '', province = '', city = '', barangayName = 'Cabantian', streetAddress = '' } = req.body;
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({ error: 'firstName, lastName, email, password are required' });
+    }
+    const [existing] = await db.query('SELECT userId FROM users WHERE email = ?', [String(email).toLowerCase().trim()]);
+    if (existing.length) return res.status(400).json({ error: 'A user with this email already exists' });
+    // Admin Create User endpoint: use MAX-based ID generation (same fix as register)
+    const [[maxUserRow2]] = await db.query(
+      "SELECT COALESCE(MAX(CAST(SUBSTRING(userId, 3) AS UNSIGNED)), 0) AS maxNum FROM users"
+    );
+    const nextNum = Number(maxUserRow2.maxNum || 0) + 1;
+    const userId = `U-${String(nextNum).padStart(3, '0')}`;
+    const passwordHash = `hashed_${password}`;
+    await db.query(
+      'INSERT INTO users (userId, firstName, lastName, email, passwordHash, barangayId, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress) VALUES (?, ?, ?, ?, ?, ?, ?, 0, "active", ?, ?, ?, ?, ?)',
+      [userId, String(firstName).trim(), String(lastName).trim(), String(email).toLowerCase().trim(), passwordHash, Number(barangayId), Number(pointsBalance), String(phone), String(province), String(city), String(barangayName), String(streetAddress)]
+    );
+    const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    const u = rows[0];
+    res.json({
+      ok: true,
+      user: {
+        ...u,
+        id: u.userId,
+        name: `${u.firstName} ${u.lastName}`,
+        points: u.pointsBalance,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:id', authenticate, async (req, res) => {
+  try {
+    const userId = String(req.params.id).toUpperCase();
+    const { firstName, lastName, email, barangayId, pointsBalance, phone, province, city, barangayName, streetAddress, status, passwordHash } = req.body;
+    const [exists] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    if (!exists.length) return res.status(404).json({ error: 'User not found' });
+    const curr = exists[0];
+    const nextFirstName = firstName != null ? String(firstName).trim() : curr.firstName;
+    const nextLastName = lastName != null ? String(lastName).trim() : curr.lastName;
+    const nextEmail = email != null ? String(email).toLowerCase().trim() : curr.email;
+    const nextBarangayId = barangayId != null ? Number(barangayId) : curr.barangayId;
+    const nextPoints = pointsBalance != null ? Number(pointsBalance) : curr.pointsBalance;
+    const nextPhone = phone != null ? String(phone) : curr.phone ?? '';
+    const nextProvince = province != null ? String(province) : curr.province ?? '';
+    const nextCity = city != null ? String(city) : curr.city ?? '';
+    const nextBarangayName = barangayName != null ? String(barangayName) : curr.barangayName ?? '';
+    const nextStreet = streetAddress != null ? String(streetAddress) : curr.streetAddress ?? '';
+    const nextStatus = status != null ? String(status) : curr.status ?? 'active';
+    const nextPasswordHash = passwordHash != null ? String(passwordHash) : curr.passwordHash;
+    await db.query(
+      'UPDATE users SET firstName = ?, lastName = ?, email = ?, barangayId = ?, pointsBalance = ?, phone = ?, province = ?, city = ?, barangayName = ?, streetAddress = ?, status = ?, passwordHash = ? WHERE userId = ?',
+      [nextFirstName, nextLastName, nextEmail, nextBarangayId, nextPoints, nextPhone, nextProvince, nextCity, nextBarangayName, nextStreet, nextStatus, nextPasswordHash, userId]
+    );
+    const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    const u = rows[0];
+    res.json({
+      ok: true,
+      user: {
+        ...u,
+        id: u.userId,
+        name: `${u.firstName} ${u.lastName}`,
+        points: u.pointsBalance,
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:id/points', authenticate, async (req, res) => {
+  try {
+    const userId = String(req.params.id).toUpperCase();
+    const { delta, reason = 'Admin adjustment', adminId = 'A-001' } = req.body;
+    if (delta == null) return res.status(400).json({ error: 'delta is required (+/- integer points)' });
+    const [exists] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
+    if (!exists.length) return res.status(404).json({ error: 'User not found' });
+    const current = Number(exists[0].pointsBalance || 0);
+    const next = Math.max(0, current + Number(delta));
+    await db.query('UPDATE users SET pointsBalance = ? WHERE userId = ?', [next, userId]);
+    res.json({
+      ok: true,
+      userId,
+      previousBalance: current,
+      newBalance: next,
+      delta: Number(delta),
+      reason,
+      adminId,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────
+// NOTIFICATIONS — Recent admin activity feed
+// (new redemptions, new users, high-collection transactions)
+// ─────────────────────────────────────────────────────────
+app.get('/api/notifications', authenticate, async (req, res) => {
+  try {
+    const notifications = [];
+    const [redemptions] = await db.query(
+      "SELECT rr.redemptionId, rr.userId, rr.rewardId, rr.status, rr.redemptionDate, r.rewardName, u.firstName, u.lastName FROM reward_redemptions rr LEFT JOIN rewards r ON rr.rewardId = r.rewardId LEFT JOIN users u ON rr.userId = u.userId ORDER BY rr.redemptionDate DESC LIMIT 8"
+    );
+    for (const rd of redemptions) {
+      notifications.push({
+        id: `redeem-${rd.redemptionId}`,
+        type: 'redemption',
+        title: `${rd.firstName || ''} ${rd.lastName || ''}`.trim() || 'Resident' + ' redeemed a reward',
+        message: `${rd.rewardName || 'Reward'} — status: ${rd.status || 'pending'}`,
+        time: rd.redemptionDate ? new Date(rd.redemptionDate).toISOString() : new Date().toISOString(),
+        severity: rd.status === 'ready' || rd.status === 'approved' ? 'success' : rd.status === 'rejected' ? 'danger' : 'info',
+        meta: { redemptionId: rd.redemptionId, userId: rd.userId, rewardName: rd.rewardName, status: rd.status }
+      });
+    }
+    const [newUsers] = await db.query('SELECT userId, firstName, lastName, email, createdAt FROM users ORDER BY createdAt DESC LIMIT 5');
+    for (const u of newUsers) {
+      notifications.push({
+        id: `newuser-${u.userId}`,
+        type: 'newUser',
+        title: `New user registered: ${u.firstName} ${u.lastName}`,
+        message: u.email || '',
+        time: u.createdAt ? new Date(u.createdAt).toISOString() : new Date().toISOString(),
+        severity: 'info',
+        meta: { userId: u.userId, email: u.email }
+      });
+    }
+    const [tx] = await db.query(
+      "SELECT t.transactionId, t.userId, t.weightKg, t.pointsEarned, t.kioskId, t.timestamp, u.firstName, u.lastName FROM recycling_transactions t LEFT JOIN users u ON t.userId = u.userId ORDER BY t.timestamp DESC LIMIT 5"
+    );
+    for (const t of tx) {
+      if (Number(t.pointsEarned || 0) >= 100) {
+        notifications.push({
+          id: `tx-${t.transactionId}`,
+          type: 'milestone',
+          title: `Big drop-off: ${(t.firstName || '')} ${(t.lastName || '')}`.trim(),
+          message: `${t.weightKg} kg at ${t.kioskId} — earned +${t.pointsEarned} pts`,
+          time: t.timestamp ? new Date(t.timestamp).toISOString() : new Date().toISOString(),
+          severity: 'success',
+          meta: { transactionId: t.transactionId, userId: t.userId }
+        });
+      }
+    }
+    notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+    res.json({
+      count: notifications.length,
+      unread: Math.max(0, notifications.filter(n => n.type === 'redemption' && (n.meta?.status === 'pending' || n.meta?.status === 'ready')).length),
+      items: notifications,
+    });
+  } catch (err) {
+    res.json({ count: 0, unread: 0, items: [] });
+  }
+});
+
+// ─────────────────────────────────────────────────────────
+// USER-SPECIFIC NOTIFICATIONS — For the mobile app bell 🔔
+// (scoped to ONE resident: their submissions, redemptions,
+//  tasks completed, milestone badges, tier changes)
+// ─────────────────────────────────────────────────────────
+app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
+  const userId = String(req.params.id).toUpperCase();
+  const notifications = [];
+  const limit = 25;
+  try {
+    // 1) Recycling submissions (always shown — user wants to confirm drop-offs recorded)
+    const [txList] = await db.query(
+      "SELECT t.transactionId, t.weightKg, t.pointsEarned, t.kioskId, t.timestamp FROM recycling_transactions t WHERE t.userId = ? ORDER BY t.timestamp DESC LIMIT ?",
+      [userId, limit]
+    );
+    for (const t of txList) {
+      const kg = Number(t.weightKg || 0).toFixed(1);
+      const pts = Number(t.pointsEarned || 0);
+      const isBig = pts >= 100 || Number(t.weightKg || 0) >= 5;
+      notifications.push({
+        id: `tx-${t.transactionId}`,
+        type: isBig ? 'milestone' : 'submission',
+        title: isBig ? `🎉 Heavy drop-off recorded!` : `✅ Drop-off recorded`,
+        message: `${kg} kg PET plastic at ${t.kioskId || 'Kiosk'} · earned +${pts} points`,
+        time: t.timestamp ? new Date(t.timestamp).toISOString() : new Date().toISOString(),
+        severity: 'success',
+        read: true,
+        meta: { transactionId: t.transactionId, weightKg: t.weightKg, pointsEarned: t.pointsEarned }
+      });
+    }
+
+    // 2) Rewards redeemed by this user (status: pending → approved/rejected → claimed)
+    const [myRedeems] = await db.query(
+      "SELECT rr.redemptionId, rr.rewardId, rr.quantity, rr.totalPoints, rr.status, rr.redemptionDate, r.rewardName, r.icon FROM reward_redemptions rr LEFT JOIN rewards r ON rr.rewardId = r.rewardId WHERE rr.userId = ? ORDER BY rr.redemptionDate DESC LIMIT ?",
+      [userId, limit]
+    );
+    for (const rd of myRedeems) {
+      const status = rd.status || 'pending';
+      let title = "🎁 Reward redemption";
+      let severity = 'info';
+      if (status === 'ready' || status === 'approved') {
+        title = "✅ Reward is ready to claim!";
+        severity = 'success';
+      } else if (status === 'claimed' || status === 'completed') {
+        title = "🎁 Reward successfully claimed";
+        severity = 'success';
+      } else if (status === 'rejected') {
+        title = "⚠️ Redemption was not approved";
+        severity = 'danger';
+      } else if (status === 'pending') {
+        title = "⏳ Redemption is being processed";
+        severity = 'info';
+      }
+      notifications.push({
+        id: `redeem-${rd.redemptionId}`,
+        type: 'redemption',
+        title,
+        message: `${rd.rewardName || 'Reward'} × ${rd.quantity || 1} · ${rd.totalPoints || 0} pts · ${String(status).toUpperCase()}`,
+        time: rd.redemptionDate ? new Date(rd.redemptionDate).toISOString() : new Date().toISOString(),
+        severity,
+        // Unread = user hasn't "seen" this status yet. Anything pending/ready/claimed today counts as unread.
+        read: !(status === 'pending' || status === 'ready' || status === 'approved'),
+        meta: { redemptionId: rd.redemptionId, rewardId: rd.rewardId, rewardName: rd.rewardName, status }
+      });
+    }
+
+    // 3) Welcome bonus / first account creation
+    // IMPORTANT: `tier` column may not exist yet on freshly imported legacy DBs
+    // (it's added by db-mysql.js auto-migration on boot). So read column list dynamically and only SELECT it when present, then fall back to a derived tier (Bronze/Silver/Gold) from pointsBalance.
+    let userRow = [];
+    try {
+      [userRow] = await db.query(
+        "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, tier, phone FROM users WHERE userId = ? LIMIT 1",
+        [userId]
+      );
+    } catch (tierErr) {
+      if (tierErr && tierErr.code === 'ER_BAD_FIELD_ERROR' && /'tier'/.test(tierErr.sqlMessage || '')) {
+        [userRow] = await db.query(
+          "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, phone FROM users WHERE userId = ? LIMIT 1",
+          [userId]
+        );
+        if (userRow && userRow.length && userRow[0]) userRow[0].tier = null;
+      } else {
+        throw tierErr;
+      }
+    }
+    if (userRow && userRow.length) {
+      const u = userRow[0];
+      // Ensure tier exists: derive it from pointsBalance if DB column is missing / empty —
+      // Bronze < 500, Silver < 2000, Gold < 5000, Platinum >= 5000.
+      // (No mutation if the DB column was set explicitly, only synthesize on null/''.)
+      const ptsBal = Number(u.pointsBalance || 0);
+      if (!u.tier) {
+        if (ptsBal >= 5000) u.tier = 'Platinum';
+        else if (ptsBal >= 2000) u.tier = 'Gold';
+        else if (ptsBal >= 500) u.tier = 'Silver';
+        else u.tier = 'Bronze';
+      }
+      if (u.createdAt) {
+        notifications.push({
+          id: `welcome-${u.userId}`,
+          type: 'welcome',
+          title: "👋 Welcome to Waste2Goods!",
+          message: "Your account was created. Enjoy your 50 welcome bonus points!",
+          time: new Date(u.createdAt).toISOString(),
+          severity: 'info',
+          read: true,
+          meta: { userId: u.userId }
+        });
+      }
+      // Tier / milestone badges based on actual column values
+      const nSubs = Number(u.totalSubmissions || 0);
+      if (nSubs >= 10) {
+        notifications.push({
+          id: `milestone-10sub-${u.userId}`,
+          type: 'milestone',
+          title: "🏆 10 Submissions Badge unlocked!",
+          message: `Amazing job completing ${nSubs} recycling drop-offs. Keep it up!`,
+          time: new Date(u.createdAt).toISOString(),
+          severity: 'success',
+          read: true,
+          meta: { kind: 'submissions', count: nSubs }
+        });
+      }
+      if (nSubs >= 50) {
+        notifications.push({
+          id: `milestone-50sub-${u.userId}`,
+          type: 'milestone',
+          title: "👑 Eco Champion Badge!",
+          message: `${nSubs} drop-offs completed — you're a true eco warrior!`,
+          time: new Date(u.createdAt).toISOString(),
+          severity: 'success',
+          read: true,
+          meta: { kind: 'submissions', count: nSubs }
+        });
+      }
+      const pts = Number(u.pointsBalance || 0);
+      if (u.tier && u.tier !== 'Bronze') {
+        notifications.push({
+          id: `tier-${u.userId}-${u.tier}`,
+          type: 'milestone',
+          title: `⬆️ Tier upgraded to ${u.tier}!`,
+          message: `Tier ${u.tier} unlocked with ${pts} lifetime points — great work!`,
+          time: new Date(u.createdAt).toISOString(),
+          severity: 'success',
+          read: true,
+          meta: { tier: u.tier, pointsBalance: pts }
+        });
+      }
+    }
+
+    // 4) Active tasks (from tasks table, filter by eligible tier/global scope) — show as "new"
+    try {
+      const [tasks] = await db.query(
+        "SELECT taskId, taskName, description, pointsReward, status, startDate, endDate FROM tasks WHERE (status = 'active' OR status = '1' OR status = 1) ORDER BY startDate DESC LIMIT ?",
+        [limit]
+      );
+      for (const tk of tasks) {
+        notifications.push({
+          id: `task-${tk.taskId}`,
+          type: 'task',
+          title: `📋 New weekly task: ${tk.taskName}`,
+          message: `${tk.description || 'Complete and earn'} · Reward: ${tk.pointsReward || 0} pts`,
+          time: tk.startDate ? new Date(tk.startDate).toISOString() : new Date().toISOString(),
+          severity: 'info',
+          read: false,
+          meta: { taskId: tk.taskId, pointsReward: tk.pointsReward }
+        });
+      }
+    } catch { /* ignore tasks table if not present */ }
+
+    // Sort by newest first
+    notifications.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+    const unreadCount = notifications.filter(n => n.read === false).length;
+    res.json({
+      forUser: userId,
+      count: notifications.length,
+      unread: unreadCount,
+      items: notifications.slice(0, 50),
+    });
+  } catch (err) {
+    console.error("notif fetch err:", err);
+    res.json({ forUser: userId, count: 0, unread: 0, items: [] });
+  }
+});
+
+// ─────────────────────────────────────────────────────────
+// KIOSK OPS — Admin actions (Calibrate / View Logs / Restart)
+// ─────────────────────────────────────────────────────────
+app.post('/api/kiosks/:id/calibrate', authenticate, async (req, res) => {
+  try {
+    const kioskId = String(req.params.id).toUpperCase();
+    const lastPing = 'just now';
+    await db.query('UPDATE kiosks SET lastPing = ? WHERE kioskId = ?', [lastPing, kioskId]);
+    res.json({ ok: true, kioskId, calibratedAt: new Date().toISOString(), message: `Calibration job dispatched to ${kioskId}` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/kiosks/:id/logs', authenticate, async (req, res) => {
+  try {
+    const kioskId = String(req.params.id).toUpperCase();
+    const [tx] = await db.query(
+      'SELECT transactionId, userId, weightKg, pointsEarned, timestamp FROM recycling_transactions WHERE kioskId = ? ORDER BY timestamp DESC LIMIT 10',
+      [kioskId]
+    );
+    const logs = [
+      { level: 'info', time: new Date(Date.now() - 60000).toISOString(), message: `Kiosk ${kioskId} heartbeat OK` },
+      { level: 'info', time: new Date(Date.now() - 5 * 60000).toISOString(), message: 'Scale zero-cal check passed' },
+      ...tx.map((t, i) => ({ level: 'info', time: t.timestamp ? new Date(t.timestamp).toISOString() : new Date(Date.now() - (i + 2) * 60000).toISOString(), message: `Tx ${t.transactionId}: ${t.weightKg}kg → +${t.pointsEarned} pts` })),
+    ];
+    res.json({ ok: true, kioskId, logs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Kiosk ↔ Mobile session (in-memory; tracks which user is active on a kiosk) ──
+const kioskSessions = new Map();
+const KIOSK_SESSION_TTL_MS = 120000;
+
+function getActiveKioskSession(userId) {
+  const s = kioskSessions.get(userId);
+  if (!s) return null;
+  if (Date.now() - s.lastPing > KIOSK_SESSION_TTL_MS) {
+    kioskSessions.delete(userId);
+    return null;
+  }
+  return s;
+}
+
+app.post('/api/kiosk/session/connect', (req, res) => {
+  const { userId, userName, kioskId } = req.body || {};
+  if (!userId) return res.status(400).json({ error: 'userId required' });
+  const session = {
+    userId,
+    userName: userName || 'User',
+    kioskId: kioskId || 'K-01',
+    connectedAt: Date.now(),
+    lastPing: Date.now(),
+  };
+  kioskSessions.set(userId, session);
+  res.json({ ok: true, connected: true, ...session });
+});
+
+app.post('/api/kiosk/session/ping', (req, res) => {
+  const { userId } = req.body || {};
+  const s = getActiveKioskSession(userId);
+  if (!s) return res.json({ connected: false });
+  s.lastPing = Date.now();
+  res.json({ connected: true, ...s });
+});
+
+app.post('/api/kiosk/session/disconnect', (req, res) => {
+  const { userId } = req.body || {};
+  if (userId) kioskSessions.delete(userId);
+  res.json({ ok: true, connected: false });
+});
+
+app.get('/api/kiosk/session/:userId', (req, res) => {
+  const s = getActiveKioskSession(req.params.userId);
+  if (!s) return res.json({ connected: false });
+  res.json({ connected: true, kioskId: s.kioskId, userName: s.userName, connectedAt: s.connectedAt, lastPing: s.lastPing });
+});
+
+// Start server — bind on 0.0.0.0 so phones on the LAN can reach us via the PC's Wi-Fi IP
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Waste2Goods API Server running at http://localhost:${PORT} (with MySQL/XAMPP)`);
+  console.log(`📡 LAN access: http://<YOUR-PC-WIFI-IP>:${PORT} — find your IP with: ipconfig`);
   console.log(`📡 Available endpoints: /api/users, /api/admin/admins, /api/kiosks, /api/rewards, /api/transactions, /api/analytics/weekly, /api/analytics/monthly, /api/leaderboard, /api/tasks`);
 });

@@ -49,6 +49,7 @@ async function applySchemaMigrations() {
       { column: 'city',          definition: 'VARCHAR(100)' },
       { column: 'barangayName',  definition: 'VARCHAR(100)' },
       { column: 'streetAddress', definition: 'VARCHAR(255)' },
+      { column: 'tier',          definition: "VARCHAR(30) DEFAULT 'Bronze'" },
     ];
     const [userCols] = await db.query('SHOW COLUMNS FROM users');
     const userExisting = new Set(userCols.map(c => c.Field));
@@ -104,6 +105,8 @@ async function applySchemaMigrations() {
         }
       }
       totalApplied += adminApplied;
+      // Auto-fix: Ensure any admin row with empty email is synced with adminIdentifier
+      await db.query("UPDATE administrators SET email = adminIdentifier WHERE email IS NULL OR email = ''");
     } catch (_) {
       // administrators table might not exist yet (fresh DB); ignore
     }
@@ -171,6 +174,50 @@ async function insertAdminData() {
     console.log('   → Email: admin@waste2goods.ph  |  Password: AdminCabantian2025');
   } catch (err) {
     console.error('Warning inserting admin user:', err.message);
+  }
+}
+
+// Auto-insert default resident (Maria Santos U-001) into users table if missing.
+// This matches DEMO_RESIDENT_CREDENTIALS so users can log in immediately
+// (resident@cabantian.ph / ResidentCabantian2025) without registering first.
+async function insertResidentData() {
+  try {
+    const [rows] = await db.query(
+      "SELECT COUNT(*) as count FROM users WHERE userId = 'U-001' OR email = 'resident@cabantian.ph'"
+    );
+    if (rows[0].count > 0) {
+      console.log('✅ Demo resident (U-001 Maria Santos) already present in users table');
+      return;
+    }
+    await db.query(`
+      INSERT INTO users (
+        userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
+        total_points, pointsBalance, totalSubmissions, createdAt, status,
+        phone, province, city, barangayName, streetAddress
+      ) VALUES (
+        'U-001',
+        'Maria',
+        'Santos',
+        'resident@cabantian.ph',
+        'hashed_ResidentCabantian2025',
+        'U-001-QRSA1',
+        1,
+        50,
+        50,
+        0,
+        NOW(),
+        'active',
+        '+63 917 123 4567',
+        'Davao del Sur',
+        'Davao City',
+        'Cabantian',
+        'Cabantian Road'
+      )
+    `);
+    console.log('✅ Demo resident (U-001 Maria Santos) inserted into users table');
+    console.log('   → Email: resident@cabantian.ph  |  Password: ResidentCabantian2025');
+  } catch (err) {
+    console.error('Warning inserting demo resident user:', err.message);
   }
 }
 

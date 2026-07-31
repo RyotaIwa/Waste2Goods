@@ -1,6 +1,6 @@
 
-import { useState, useEffect, useRef } from "react";
-import { Waste2GoodsAPI } from "@waste2goods/core";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Waste2GoodsAPI, getApiHost, setApiHost, getApiBaseUrl, testApiConnection } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   Smartphone, Monitor, Cpu, Recycle, Home, QrCode, Gift,
@@ -21,7 +21,7 @@ type MobileScreen =
   | "login" | "register" | "mfa" | "profile-setup"
   | "home" | "submit" | "submit-scan" | "submit-confirm" | "submit-done"
   | "rewards" | "redeem-confirm" | "redeem-history"
-  | "tasks" | "profile" | "history" | "settings";
+  | "tasks" | "profile" | "history" | "settings" | "notifications";
 
 const weeklyData = [
   { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
@@ -38,10 +38,10 @@ const monthlyData = [
 const wasteTypes = [
   { name: "PET Plastic", value: 38, color: "#16a34a" },
 ];
-const leaderboard = [
+const DEMO_LEADERBOARD_FALLBACK = [
   { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR", streak: 14 },
   { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM", streak: 9 },
-  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", streak: 7, isMe: true },
+  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", streak: 7 },
   { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD", streak: 5 },
   { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV", streak: 3 },
   { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 },
@@ -176,6 +176,320 @@ function SelectField({
   );
 }
 
+// ── Functional Redemption (REAL DB writes via POST /api/rewards/redeem) ──
+function RedeemConfirmScreen({
+  reward,
+  currentUser,
+  onBack,
+  onCancel,
+}: {
+  reward: { id?: any; rewardId?: any; name: string; icon: string; category: string; points: number; stock?: number; };
+  currentUser: { id?: string; userId?: string; points: number; name: string; };
+  onBack: () => void;
+  onCancel: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState<null | { newBalance: number; redemptionId: string; rewardName: string; message: string }>(null);
+  const remaining = Math.max(0, currentUser.points - reward.points);
+  const disabled = loading || !!success || currentUser.points < reward.points;
+
+  const confirm = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      const userId = currentUser.id || currentUser.userId || "";
+      if (!userId) throw new Error("Please login (or register) first before redeeming.");
+      if (currentUser.points < reward.points) throw new Error("Not enough points to redeem this item.");
+      const rewardIdVal = reward.rewardId ?? reward.id;
+      if (rewardIdVal === undefined || rewardIdVal === null || rewardIdVal === "") throw new Error("Reward id missing.");
+      const res = await Waste2GoodsAPI.redeemReward({
+        userId,
+        rewardId: rewardIdVal,
+        quantity: 1,
+      });
+      if (!res?.ok) {
+        throw new Error((res as any)?.error || "Redemption failed.");
+      }
+      setSuccess({
+        newBalance: Number((res as any).newBalance ?? 0),
+        redemptionId: (res as any).redemptionId || "",
+        rewardName: (res as any).rewardName || reward.name,
+        message: (res as any).message || "Ready for pick-up.",
+      });
+      // Reflect updated balance in auth state (so UI reads correct number on next screen visit)
+      try {
+        const AUTH_STORAGE_KEY = "w2g_auth_state";
+        const auth = Waste2GoodsAPI.getAuthState();
+        if (auth?.user) {
+          const patchedUser = { ...auth.user, points: Number((res as any).newBalance ?? 0), pointsBalance: Number((res as any).newBalance ?? 0) };
+          const patchedAuth = { ...auth, user: patchedUser, isAuthenticated: true };
+          // Write directly to localStorage with the EXACT same key the core API reads from:
+          try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(patchedAuth)); } catch {}
+        }
+      } catch {}
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Redemption failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button onClick={onCancel}><ArrowLeft className="w-5 h-5" /></button>
+        <h2 className="text-base font-black">Confirm Redemption</h2>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-8">
+        <div className="flex flex-col items-center gap-3 py-4">
+          <div className="text-6xl">{reward.icon}</div>
+          <h3 className="text-xl font-black text-foreground text-center">{reward.name}</h3>
+          <span className="text-sm font-semibold px-3 py-1 rounded-full bg-secondary text-secondary-foreground">{reward.category}</span>
+        </div>
+
+        <div className="rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
+          <div className="flex justify-between"><span className="text-muted-foreground">Current balance</span><span className="font-bold">{currentUser.points.toLocaleString()} pts</span></div>
+          <div className="flex justify-between"><span className="text-muted-foreground">Cost</span><span className="font-bold text-red-600">−{reward.points} pts</span></div>
+          <div className="h-px bg-border" />
+          <div className="flex justify-between"><span className="font-black">Remaining balance</span><span className="font-black text-primary">{remaining.toLocaleString()} pts</span></div>
+        </div>
+
+        {reward.stock !== undefined && reward.stock < 10 && (
+          <div className="rounded-2xl bg-red-50 border border-red-200 p-3 flex gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700 font-semibold">Only {reward.stock} left! Claim now before stock runs out.</p>
+          </div>
+        )}
+
+        {error && (
+          <div className="rounded-2xl bg-red-50 border border-red-200 p-3 flex gap-2">
+            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700 font-semibold">{error}</p>
+          </div>
+        )}
+
+        {success && (
+          <div className="rounded-2xl bg-green-50 border border-green-200 p-4 space-y-2">
+            <div className="flex items-start gap-2">
+              <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-black text-foreground">Redemption confirmed! 🎉</p>
+                <p className="text-xs text-muted-foreground">Reference #: {success.redemptionId}</p>
+                <p className="text-xs text-green-800 mt-1 font-semibold">{success.message}</p>
+                <p className="text-xs text-muted-foreground mt-1">New balance: <strong className="text-primary">{success.newBalance.toLocaleString()} pts</strong></p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
+          <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700 font-semibold">Pick up your reward at the Barangay Hall within 7 days. Bring a valid ID.</p>
+        </div>
+
+        <div className="mt-auto space-y-3">
+          <button
+            onClick={confirm}
+            disabled={disabled}
+            className="w-full py-4 rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {loading ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                Processing...
+              </>
+            ) : success ? (
+              <>✅ Done — back to Rewards Catalog</>
+            ) : (
+              "Confirm Redemption"
+            )}
+          </button>
+          <button
+            onClick={success ? onCancel : onBack}
+            className="w-full py-3 rounded-2xl border border-border text-sm font-bold text-foreground hover:bg-secondary transition-colors"
+          >
+            {success ? "Back to Rewards" : "Cancel"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ServerIpPanel({
+  apiHost,
+  setApiHostState,
+  onSaved,
+  compact,
+}: {
+  apiHost: string;
+  setApiHostState: (v: string) => void;
+  onSaved?: (msg: { type: "ok" | "err"; text: string }) => void;
+  compact?: boolean;
+}) {
+  const [testing, setTesting] = useState(false);
+  const save = () => {
+    const trimmed = apiHost.trim();
+    if (!trimmed) {
+      onSaved?.({ type: "err", text: "Please enter an IP address or hostname" });
+      return;
+    }
+    setApiHost(trimmed);
+    onSaved?.({ type: "ok", text: `✅ Server saved: http://${trimmed}:3001 — no APK rebuild needed. This setting is saved on your device.` });
+  };
+  const test = async () => {
+    const trimmed = apiHost.trim();
+    if (!trimmed) {
+      onSaved?.({ type: "err", text: "Please enter an IP address first" });
+      return;
+    }
+    setTesting(true);
+    setApiHost(trimmed);
+    const result = await testApiConnection();
+    onSaved?.({ type: result.ok ? "ok" : "err", text: result.message });
+    setTesting(false);
+  };
+  const resetToDefault = () => {
+    setApiHostState("localhost");
+    setApiHost("localhost");
+    onSaved?.({ type: "ok", text: "Reset to localhost — use this when the backend runs on the same PC." });
+  };
+  return (
+    <div className={`rounded-2xl bg-blue-50 border border-blue-200 space-y-2.5 ${compact ? "p-2.5" : "p-4"}`}>
+      <div className="flex items-start gap-2">
+        <Globe className="w-4 h-4 text-blue-700 flex-shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-black text-blue-800 uppercase tracking-wide">Backend Server IP</p>
+          <p className="text-[11px] text-blue-700 leading-snug">
+            Enter your PC's <strong>LAN IP</strong>. Saved on device — no rebuild after Wi‑Fi changes.
+          </p>
+        </div>
+      </div>
+      <div>
+        <label className="text-[11px] font-black text-muted-foreground uppercase tracking-wide mb-1 block">PC IP Address</label>
+        <input
+          type="text"
+          value={apiHost}
+          onChange={e => setApiHostState(e.target.value)}
+          placeholder="e.g. 192.168.1.100 or localhost"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          className="w-full px-3 py-2.5 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 font-mono"
+        />
+        <div className="flex items-center justify-between mt-1 gap-2">
+          <p className="text-[10px] text-blue-600 font-mono truncate min-w-0">→ {getApiBaseUrl()}</p>
+          <button
+            type="button"
+            onClick={resetToDefault}
+            className="text-[10px] font-bold text-blue-700 hover:underline flex-shrink-0 whitespace-nowrap"
+          >
+            Reset to localhost
+          </button>
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={save}
+          className={`flex-1 ${compact ? "py-2.5 text-xs" : "py-3 text-sm"} rounded-xl bg-primary text-white font-black hover:bg-green-700 transition-colors`}
+        >
+          💾 Save IP
+        </button>
+        <button
+          type="button"
+          onClick={test}
+          disabled={testing}
+          className={`flex-1 ${compact ? "py-2.5 text-xs" : "py-3 text-sm"} rounded-xl border border-blue-300 bg-white text-blue-800 font-black disabled:opacity-60 hover:bg-blue-50 transition-colors`}
+        >
+          {testing ? (
+            <span className="inline-flex items-center justify-center gap-1.5">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Testing…
+            </span>
+          ) : "🔌 Test"}
+        </button>
+      </div>
+      {!compact && (
+        <div className="rounded-xl bg-white/60 border border-blue-100 p-2.5 text-[11px] text-blue-800 leading-snug space-y-1">
+          <p><strong>💡 Tip:</strong> To find your PC's LAN IP:</p>
+          <ul className="list-disc list-inside space-y-0.5 pl-1">
+            <li>Windows: Open CMD → type <span className="font-mono">ipconfig</span> → look for <strong>IPv4 Address</strong></li>
+            <li>Mac/Linux: Terminal → type <span className="font-mono">ifconfig</span> or <span className="font-mono">ip a</span></li>
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KioskLinkBadge({
+  connected,
+  kioskId,
+  checking,
+  connectedAt,
+  onDisconnect,
+}: {
+  connected: boolean;
+  kioskId?: string;
+  checking?: boolean;
+  connectedAt?: number;
+  onDisconnect?: () => void;
+}) {
+  const elapsed = connectedAt ? Math.floor((Date.now() - connectedAt) / 1000) : 0;
+  const elapsedLabel = (() => {
+    if (!connectedAt) return "";
+    if (elapsed < 60) return `${elapsed}s`;
+    if (elapsed < 3600) return `${Math.floor(elapsed / 60)}m`;
+    return `${Math.floor(elapsed / 3600)}h ${Math.floor((elapsed % 3600) / 60)}m`;
+  })();
+  return (
+    <div
+      className={`w-full rounded-xl px-3 py-2.5 flex items-center gap-2 border text-xs font-bold ${
+        connected ? "bg-green-50 border-green-200 text-green-800" : "bg-slate-50 border-border text-muted-foreground"
+      }`}
+    >
+      <Monitor className={`w-4 h-4 flex-shrink-0 ${connected ? "text-green-600" : ""}`} />
+      <div className="flex-1 min-w-0">
+        {checking && !connected ? (
+          <span className="truncate">Checking kiosk link…</span>
+        ) : connected ? (
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+            <span>Kiosk linked · <strong className="truncate">{kioskId || "K-01"}</strong></span>
+            {elapsedLabel && (
+              <>
+                <span className="text-green-600/70 font-normal">·</span>
+                <span className="text-[10px] font-semibold text-green-700/80">{elapsedLabel} elapsed</span>
+              </>
+            )}
+            <span className="block w-full text-[10px] font-semibold text-green-700/80 -mt-0.5">
+              You can submit PET plastic at this kiosk
+            </span>
+          </div>
+        ) : (
+          <span className="truncate">No kiosk linked — scan the kiosk QR via Submit tab</span>
+        )}
+      </div>
+      {checking && <RefreshCw className="w-3 h-3 ml-auto animate-spin flex-shrink-0 opacity-60" />}
+      {connected && !checking && (
+        <>
+          <span className="ml-auto w-2 h-2 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" title="Connected" />
+          {onDisconnect && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onDisconnect(); }}
+              className="ml-1 text-[10px] font-bold px-2 py-1 rounded-lg border border-green-300 bg-white/60 text-green-800 hover:bg-green-100 transition-colors flex-shrink-0"
+              title="End this kiosk session"
+            >
+              Disconnect
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileScreen) => void }) {
   const items = [
     { icon: <Home className="w-5 h-5" />, label: "Home", s: "home" as MobileScreen },
@@ -185,7 +499,7 @@ function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileS
     { icon: <User className="w-5 h-5" />, label: "Profile", s: "profile" as MobileScreen },
   ];
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-2 pb-2 pt-2 flex justify-around z-20">
+    <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-2 pt-2 flex justify-around z-20" style={{ paddingBottom: "calc(0.5rem + var(--sab))" }}>
       {items.map(i => (
         <button key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
           {i.icon}
@@ -206,6 +520,8 @@ export default function App() {
   const [weighing, setWeighing] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
   // Registration form state
   const [regFullName, setRegFullName] = useState("");
   const [regEmail, setRegEmail] = useState("");
@@ -218,6 +534,47 @@ export default function App() {
   const [regStreetAddress, setRegStreetAddress] = useState("");
   const [regLoading, setRegLoading] = useState(false);
   const [regError, setRegError] = useState("");
+  // ── Profile state (refreshed from DB when profile screen opens) ──
+  // Initialize immediately from localStorage so the greeting never shows
+  // "Guest User" flash on a real logged-in session (persistent auth restore).
+  const [profileUser, setProfileUser] = useState<any | null>(() => {
+    try {
+      const raw = localStorage.getItem("w2g_auth_state");
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed?.user && (parsed.user.id || parsed.user.userId) ? { ...parsed.user } : null;
+    } catch {
+      return null;
+    }
+  });
+  const [profileRank, setProfileRank] = useState<string>("#-");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileBanner, setProfileBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  // Live editable settings form (defaultValue on inputs is broken without controlled state)
+  const [setFName, setSetFName] = useState("");
+  const [setLName, setSetLName] = useState("");
+  const [setFormEmail, setSetFormEmail] = useState("");
+  const [setPhone, setSetPhone] = useState("");
+  const [setBrgy, setSetBrgy] = useState("");
+  const [setCity, setSetCity] = useState("");
+  const [setProvince, setSetProvince] = useState("");
+  // ── Live leaderboard from DB (fallback to DEMO_LEADERBOARD_FALLBACK if API unavailable) ──
+  const [liveLeaderboard, setLiveLeaderboard] = useState<any[] | null>(null);
+  // ── Notifications state (for mobile 🔔 bell) ──
+  const [notifItems, setNotifItems] = useState<any[]>([]);
+  const [notifUnread, setNotifUnread] = useState(0);
+  const [kioskSession, setKioskSession] = useState<{ connected: boolean; kioskId?: string; connectedAt?: number }>({ connected: false });
+  const [kioskChecking, setKioskChecking] = useState(false);
+  const [apiHost, setApiHostState] = useState(() => getApiHost());
+  const [showLoginServer, setShowLoginServer] = useState(() => {
+    try {
+      const hasSetIp = localStorage.getItem("w2g_api_host");
+      return !hasSetIp;
+    } catch {
+      return true;
+    }
+  });
+  const [loginServerBanner, setLoginServerBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const weight = useAnimatedWeight(2.3, weighing);
   const mfaRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -270,10 +627,18 @@ export default function App() {
 
   useEffect(() => {
     if (screen === "splash") {
-      // Always clear any leftover login on app start
-      Waste2GoodsAPI.logout();
-      // Splash -> Always go to onboarding first screen first, user can skip/sign in if account existing
-      const t = setTimeout(() => go("onboard1"), 1200);
+      // PERSISTENT AUTH: Do NOT logout on every app launch.
+      // Instead check localStorage for a valid saved session — if found,
+      // skip onboarding and jump straight to Home (user stays signed in
+      // until they explicitly tap "Sign Out" on the Profile screen).
+      const t = setTimeout(() => {
+        const existing = Waste2GoodsAPI.getAuthState();
+        if (existing && existing.isAuthenticated && existing.token && existing.user) {
+          go("home");
+        } else {
+          go("onboard1");
+        }
+      }, 1200);
       return () => clearTimeout(t);
     }
   }, [screen]);
@@ -295,43 +660,285 @@ export default function App() {
     }
   }, [screen]);
 
-  // Helper to get current user's display data (falls back to empty state when unauthenticated)
-  const currentUser = (() => {
-    const auth = Waste2GoodsAPI.getAuthState();
-    if (auth?.isAuthenticated && auth.user) {
-      const name = auth.user.name || `${auth.user.firstName || ""} ${auth.user.lastName || ""}`.trim();
-      const initials = name
+  // Helper to get current user's display data — reactive (reads from profileUser state when set)
+  const currentUser = useMemo(() => {
+    const userObj = profileUser || Waste2GoodsAPI.getAuthState()?.user || null;
+    if (userObj) {
+      const rawName = (userObj.name || `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim()) as string;
+      const fallbackFromFlds = `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim();
+      const id = (userObj as any).id || (userObj as any).userId || "";
+      // If user has a real id (authenticated), NEVER show "Guest User" — prefer empty/initials over confusing Guest fallback
+      const name = rawName || fallbackFromFlds || (id ? "" : "Guest User");
+      const initials = (name || `${userObj.firstName || ""} ${userObj.lastName || ""}` || (id ? "U" : ""))
         .split(/\s+/)
-        .map((p: string) => p[0])
         .filter(Boolean)
+        .map((p: string) => p[0])
         .join("")
         .toUpperCase()
         .slice(0, 2);
+      const points = (userObj as any).points ?? (userObj as any).pointsBalance ?? 0;
       return {
-        name: name || "Guest User",
-        initials: initials || "GU",
-        email: auth.user.email || "",
-        phone: auth.user.phone || "",
-        barangay: (auth.user as any).barangay || (auth.user as any).barangayName || "Cabantian",
-        province: (auth.user as any).province || "",
-        city: (auth.user as any).city || "",
-        points: (auth.user as any).points ?? (auth.user as any).pointsBalance ?? 0,
-        submissions: (auth.user as any).submissions ?? (auth.user as any).totalSubmissions ?? 0,
+        id,
+        userId: id,
+        name,
+        initials: initials || (id ? "U" : "GU"),
+        email: (userObj as any).email || "",
+        phone: (userObj as any).phone || "",
+        barangay: (userObj as any).barangay || (userObj as any).barangayName || "Cabantian",
+        barangayName: (userObj as any).barangayName || (userObj as any).barangay || "",
+        province: (userObj as any).province || "",
+        city: (userObj as any).city || "",
+        streetAddress: (userObj as any).streetAddress || "",
+        points: Number(points) || 0,
+        submissions: Number((userObj as any).submissions ?? (userObj as any).totalSubmissions ?? 0) || 0,
+        redeemed: Number((userObj as any).redeemed || 0),
+        joined: (userObj as any).joined || "",
+        createdAt: (userObj as any).createdAt || null,
+        firstName: (userObj as any).firstName || "",
+        lastName: (userObj as any).lastName || "",
       };
     }
-    // Auth SKIP mode: fallback demo user data so the app is still usable without signing in
     return {
-      name: "Guest User",
-      initials: "GU",
+      id: "",
+      userId: "",
+      name: "",
+      initials: "",
       email: "",
       phone: "",
       barangay: "Cabantian",
+      barangayName: "Cabantian",
       province: "Davao del Sur",
       city: "Davao City",
+      streetAddress: "",
       points: 0,
       submissions: 0,
+      redeemed: 0,
+      joined: "",
+      createdAt: null,
+      firstName: "",
+      lastName: "",
     };
+  }, [profileUser]);
+
+  // Merged leaderboard: prefer live DB rows (with correct user names from MySQL),
+  // otherwise fall back to the demo placeholder list. Always returns a non-empty array
+  // so the Community Leaderboard panel never appears empty.
+  const mergedLeaderboard = useMemo(() => {
+    const auth = (() => {
+      try { return Waste2GoodsAPI.getAuthState()?.user || null; } catch { return null; }
+    })();
+    const myId = String(auth?.id || auth?.userId || currentUser.id || currentUser.userId || "").toUpperCase();
+    if (liveLeaderboard && liveLeaderboard.length > 0) {
+      return liveLeaderboard.slice(0, 10).map((u: any, i: number) => {
+        const rank = Number(u.rank) || i + 1;
+        const firstName = u.firstName || "";
+        const lastName = u.lastName || "";
+        const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
+        const pts = Number(u.points ?? u.pointsBalance ?? 0);
+        const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
+        const uid = String(u.userId ?? u.id ?? "").toUpperCase();
+        const isMe = !!myId && !!uid && uid === myId;
+        const avatarChars = (name || "RU")
+          .split(/\s+/)
+          .filter(Boolean)
+          .map(p => p[0])
+          .join("")
+          .slice(0, 2)
+          .toUpperCase();
+        return {
+          rank,
+          name,
+          barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
+          points: pts,
+          submissions: subs,
+          avatar: avatarChars || "RU",
+          streak: Number(u.streak) || subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
+          isMe,
+          userId: uid,
+        };
+      });
+    }
+    return DEMO_LEADERBOARD_FALLBACK.map((u, i) => ({
+      ...u,
+      rank: i + 1,
+      isMe: false,
+    }));
+  }, [liveLeaderboard, currentUser.id, currentUser.userId, currentUser.barangay]);
+
+  // When user opens Profile, Settings, or History — re-pull their latest DB row
+  // (points, submissions, name) and their current leaderboard rank.
+  // Also seed the editable settings form fields so the "Save Changes" button works.
+  useEffect(() => {
+    if (!["profile", "settings", "history"].includes(screen)) return;
+    let cancelled = false;
+    (async () => {
+      setProfileBanner(null);
+      // Refresh user from GET /users/:id and sync to localStorage
+      const refreshed = Waste2GoodsAPI.refreshCurrentUser ? await Waste2GoodsAPI.refreshCurrentUser() : null;
+      if (cancelled) return;
+      if (refreshed) setProfileUser({ ...refreshed });
+      else setProfileUser({ ...(Waste2GoodsAPI.getAuthState()?.user || {}) });
+
+      const rankPromise = Waste2GoodsAPI.getCurrentRank ? Waste2GoodsAPI.getCurrentRank() : Promise.resolve("#-");
+      const rank = await rankPromise;
+      if (cancelled) return;
+      setProfileRank(rank || "#-");
+    })();
+    return () => { cancelled = true; };
+  }, [screen]);
+
+  // Fetch MY notifications (mobile 🔔 bell) when user enters Home or Notifications screen,
+  // or just after login/authenticated screens to keep the red-dot badge accurate.
+  // Also re-fetch whenever notifications screen is about to be entered for freshness.
+  useEffect(() => {
+    const authScreens: MobileScreen[] = ["home", "notifications", "profile", "tasks", "rewards", "submit", "history", "settings", "redeem-history", "redeem-confirm"];
+    if (!authScreens.includes(screen)) return;
+    let cancelled = false;
+    (async () => {
+      if (!Waste2GoodsAPI.getMyNotifications) return;
+      const res = await Waste2GoodsAPI.getMyNotifications();
+      if (cancelled || !res) return;
+      setNotifItems(res.items || []);
+      setNotifUnread(Number(res.unread || 0));
+    })();
+    return () => { cancelled = true; };
+  }, [screen]);
+
+  // Fetch LIVE leaderboard from real DB on Home + Rewards/Leaderboard views.
+  // Falls back to DEMO_LEADERBOARD_FALLBACK silently if backend unreachable so UI stays clean.
+  useEffect(() => {
+    const watchScreens: MobileScreen[] = ["home", "rewards", "leaderboard"];
+    if (!watchScreens.includes(screen)) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!Waste2GoodsAPI.fetchLeaderboard) return;
+        const rows = await Waste2GoodsAPI.fetchLeaderboard();
+        if (cancelled) return;
+        setLiveLeaderboard(Array.isArray(rows) && rows.length > 0 ? rows : null);
+      } catch (_) {
+        if (!cancelled) setLiveLeaderboard(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [screen]);
+
+  // Poll backend: is this user currently linked to a kiosk?
+  // Also tick every second so the "elapsed" label in the badge refreshes in real-time
+  const [, setKioskTick] = useState(0);
+  useEffect(() => {
+    const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
+    if (!watchScreens.includes(screen)) return;
+    const uid = currentUser.id || currentUser.userId;
+    if (!uid) return;
+    let cancelled = false;
+    const poll = async () => {
+      if (!Waste2GoodsAPI.getKioskSessionStatus) return;
+      setKioskChecking(true);
+      const res = await Waste2GoodsAPI.getKioskSessionStatus(uid);
+      if (cancelled) return;
+      setKioskChecking(false);
+      if (!res) {
+        setKioskSession({ connected: false });
+        return;
+      }
+      setKioskSession(prev => ({
+        connected: !!res.connected,
+        kioskId: res.kioskId,
+        connectedAt: res.connected
+          ? (res.connectedAt ?? prev.connectedAt ?? Date.now())
+          : undefined,
+      }));
+    };
+    poll();
+    const iv = setInterval(poll, 3000);
+    const tickIv = setInterval(() => setKioskTick(t => t + 1), 1000);
+    return () => { cancelled = true; clearInterval(iv); clearInterval(tickIv); };
+  }, [screen, currentUser.id, currentUser.userId]);
+
+  // Disconnect current kiosk session (callable from the badge)
+  const handleDisconnectKiosk = async () => {
+    const uid = currentUser.id || currentUser.userId;
+    if (!uid) return;
+    try {
+      await Waste2GoodsAPI.disconnectKioskSession?.(uid);
+    } catch { /* ignore */ }
+    setKioskSession({ connected: false });
+    try {
+      localStorage.removeItem("w2g_kiosk_qr_bridge");
+      window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge" }));
+    } catch { /* ignore */ }
+  };
+
+  // Seed the settings form inputs from currentUser whenever the screen opens
+  useEffect(() => {
+    if (screen !== "settings") return;
+    // Split name → first/last for editable fields (else leave blank)
+    const parts = (currentUser.name || "").trim().split(/\s+/);
+    const first = currentUser.firstName || parts[0] || "";
+    const last = currentUser.lastName || parts.slice(1).join(" ") || "";
+    setSetFName(first);
+    setSetLName(last);
+    setSetFormEmail(currentUser.email || "");
+    setSetPhone(currentUser.phone || "");
+    setSetBrgy(currentUser.barangay || "");
+    setSetCity(currentUser.city || "");
+    setSetProvince(currentUser.province || "");
+    setProfileBanner(null);
+    setApiHostState(getApiHost());
+  }, [screen, currentUser.id]);
+
+  // Build the "Since Month Year" string from the user's actual createdAt row
+  const profileSinceLabel = (() => {
+    if (currentUser.joined) return `Since ${currentUser.joined}`;
+    if (currentUser.createdAt) {
+      try {
+        return `Since ${new Date(currentUser.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`;
+      } catch { /* ignore */ }
+    }
+    return "Since Today";
   })();
+
+  // Handler for the Settings "Save Changes" button — PUTs to /users/:id via core helper
+  const handleSaveProfile = async () => {
+    setProfileSaving(true);
+    setProfileBanner(null);
+    try {
+      const patches: any = {};
+      if (setFName) patches.firstName = setFName;
+      if (setLName) patches.lastName = setLName;
+      if (setFormEmail) patches.email = setFormEmail;
+      if (setPhone) patches.phone = setPhone;
+      if (setProvince) patches.province = setProvince;
+      if (setCity) patches.city = setCity;
+      if (setBrgy) patches.barangayName = setBrgy;
+      let ok = false;
+      if (Waste2GoodsAPI.saveProfile) {
+        ok = await Waste2GoodsAPI.saveProfile(patches);
+      } else {
+        // Fallback PUT
+        const userId = currentUser.id || currentUser.userId;
+        const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${Waste2GoodsAPI.getAuthState()?.token || ""}` },
+          body: JSON.stringify(patches),
+        });
+        ok = res.ok;
+      }
+      if (ok) {
+        // Re-pull so profile + avatar update instantly
+        const fresh = Waste2GoodsAPI.refreshCurrentUser ? await Waste2GoodsAPI.refreshCurrentUser() : null;
+        if (fresh) setProfileUser({ ...fresh });
+        setProfileBanner({ type: "ok", text: "✅ Profile saved successfully!" });
+      } else {
+        setProfileBanner({ type: "err", text: "⚠️ Failed to save. Check backend connection." });
+      }
+    } catch (e) {
+      setProfileBanner({ type: "err", text: e instanceof Error ? e.message : "⚠️ Save failed" });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (screen === "submit-scan") {
@@ -358,8 +965,38 @@ export default function App() {
       );
       scanner.render(
         (decodedText) => {
-          // On success, proceed to next screen
           console.log("QR code scanned:", decodedText);
+          // Write QR BRIDGE so Kiosk (cross-tab) picks up this logged-in user
+          // This is how the mobile signals the kiosk: "I am [user], connect me"
+          try {
+            const auth = Waste2GoodsAPI.getAuthState();
+            const u = auth?.user || {};
+            const bridgePayload = {
+              user: {
+                id: (u as any).id || (u as any).userId || currentUser.id || "U-001",
+                userId: (u as any).id || (u as any).userId || currentUser.id || "U-001",
+                name: currentUser.name && currentUser.name !== "Guest User" ? currentUser.name : (u as any).name || `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || "Registered User",
+                firstName: (u as any).firstName,
+                lastName: (u as any).lastName,
+                email: currentUser.email || (u as any).email || "",
+                points: currentUser.points || (u as any).pointsBalance || 50,
+                pointsBalance: currentUser.points || (u as any).pointsBalance || 50,
+              },
+              kioskPayload: decodedText,
+              timestamp: Date.now(),
+            };
+            localStorage.setItem("w2g_kiosk_qr_bridge", JSON.stringify(bridgePayload));
+            // Also emit cross-tab storage event for same-origin kiosk tabs already listening
+            try { window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) })); } catch {}
+            Waste2GoodsAPI.connectKioskSession?.({
+              userId: bridgePayload.user.id || bridgePayload.user.userId,
+              userName: bridgePayload.user.name,
+              kioskId: decodedText.includes("K-") ? decodedText : "K-01",
+            });
+            console.log("✅ QR bridge written to localStorage (kiosk should pick up user within ~800ms):", bridgePayload.user.name);
+          } catch (bridgeErr) {
+            console.warn("QR bridge write failed:", bridgeErr);
+          }
           scanner.clear().catch(() => {});
           go("submit-confirm");
         },
@@ -378,33 +1015,15 @@ export default function App() {
   const filteredRewards = rewardFilter === "All" ? rewards : rewards.filter(r => r.category === rewardFilter);
 
   return (
-    <div className="flex flex-col items-center gap-4 min-h-screen bg-background p-8">
-      {/* Phone frame */}
-      <div className="relative" style={{ width: 390, height: 820, background: "#0f172a", borderRadius: 52, padding: 12, boxShadow: "0 50px 100px rgba(0,0,0,0.4), inset 0 0 0 1px rgba(255,255,255,0.07)" }}>
-        {/* Side buttons */}
-        <div className="absolute -left-1 top-32 w-1 h-10 bg-gray-700 rounded-l-sm" />
-        <div className="absolute -left-1 top-48 w-1 h-16 bg-gray-700 rounded-l-sm" />
-        <div className="absolute -left-1 top-68 w-1 h-16 bg-gray-700 rounded-l-sm" />
-        <div className="absolute -right-1 top-40 w-1 h-20 bg-gray-700 rounded-r-sm" />
-
-        <div className="relative overflow-hidden" style={{ width: "100%", height: "100%", borderRadius: 42, background: "#f0fdf4", fontFamily: "'Nunito', sans-serif" }}>
-          {/* Dynamic island */}
-          <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 w-32 h-8 bg-black rounded-full flex items-center justify-center gap-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-gray-800" />
-            <div className="w-12 h-2.5 rounded-full bg-gray-900" />
-          </div>
-
-          {/* Status bar */}
-          {!["splash","onboard1","onboard2","onboard3"].includes(screen) && (
-            <div className="absolute top-3 left-0 right-0 z-30 px-8 flex items-center justify-between">
-              <span className="text-xs font-bold text-muted-foreground" style={{ fontSize: 11 }}>9:41</span>
-              <div className="flex items-center gap-1">
-                <SignalIcon className="w-3 h-3 text-muted-foreground" />
-                <Wifi className="w-3 h-3 text-muted-foreground" />
-                <span className="text-xs font-bold text-muted-foreground" style={{ fontSize: 10 }}>94%</span>
-              </div>
-            </div>
-          )}
+    <div
+      className="flex flex-col w-full bg-background"
+      style={{
+        background: "#f0fdf4",
+        fontFamily: "'Nunito', sans-serif",
+        height: "100dvh",
+      }}
+    >
+      <div className="relative flex flex-col w-full flex-1 min-h-0" style={{ background: "#f0fdf4" }}>
 
           {/* ── Splash ── */}
           {screen === "splash" && (
@@ -427,8 +1046,8 @@ export default function App() {
 
           {/* ── Onboard 1 ── */}
           {screen === "onboard1" && (
-            <div className="h-full flex flex-col" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 pt-16 gap-6">
+            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
                 <div className="w-48 h-48 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(22,163,74,0.15)" }}>
                   <div className="text-8xl">♻️</div>
                 </div>
@@ -437,7 +1056,7 @@ export default function App() {
                   <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Bring your plastic bottles, cardboard, and metal cans to any Waste2Goods kiosk and earn points instantly.</p>
                 </div>
               </div>
-              <div className="px-8 pb-12 space-y-4">
+              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
                 <div className="flex justify-center gap-2">
                   <div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" />
                 </div>
@@ -449,8 +1068,8 @@ export default function App() {
 
           {/* ── Onboard 2 ── */}
           {screen === "onboard2" && (
-            <div className="h-full flex flex-col" style={{ background: "linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 pt-16 gap-6">
+            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
                 <div className="w-48 h-48 rounded-full bg-blue-100 border-4 border-blue-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(14,165,233,0.15)" }}>
                   <div className="text-8xl">🏆</div>
                 </div>
@@ -459,7 +1078,7 @@ export default function App() {
                   <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Compete with neighbors and earn special recognition. Top recyclers win bonus rewards each week.</p>
                 </div>
               </div>
-              <div className="px-8 pb-12 space-y-4">
+              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
                 <div className="flex justify-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" />
                 </div>
@@ -471,8 +1090,8 @@ export default function App() {
 
           {/* ── Onboard 3 ── */}
           {screen === "onboard3" && (
-            <div className="h-full flex flex-col" style={{ background: "linear-gradient(180deg, #fdf4ff 0%, #f3e8ff 100%)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 pt-16 gap-6">
+            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #fdf4ff 0%, #f3e8ff 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
                 <div className="w-48 h-48 rounded-full bg-purple-100 border-4 border-purple-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.15)" }}>
                   <div className="text-8xl">🎁</div>
                 </div>
@@ -481,7 +1100,7 @@ export default function App() {
                   <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Exchange your points for school supplies, groceries, seedlings, and seasonal community prizes.</p>
                 </div>
               </div>
-              <div className="px-8 pb-12 space-y-4">
+              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
                 <div className="flex justify-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" />
                 </div>
@@ -493,8 +1112,9 @@ export default function App() {
 
           {/* ── Register ── */}
           {screen === "register" && (
-            <div className="h-full flex flex-col overflow-y-auto pt-14">
-              <div className="px-6 py-4 flex items-center gap-3 border-b border-border bg-white sticky top-0">
+            <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
+                 style={{ paddingTop: "calc(0.5rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+              <div className="px-5 py-3 flex items-center gap-3 border-b border-border bg-white sticky top-0 z-20" style={{ top: "var(--sat)" }}>
                 <button onClick={() => go("onboard3")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
                 <div>
                   <h2 className="text-base font-black text-foreground">Create Account</h2>
@@ -503,7 +1123,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <div className="p-6 flex-1">
+              <div className="p-5 md:p-8 flex-1 max-w-xl w-full mx-auto">
                 {regStep === 0 && (
                   <div className="space-y-4">
                     <div>
@@ -663,7 +1283,7 @@ export default function App() {
                         const lastName = names.slice(1).join(" ") || "Lastname";
                         try {
                           setRegLoading(true);
-                          await Waste2GoodsAPI.register({
+                          const regAuth = await Waste2GoodsAPI.register({
                             firstName,
                             lastName,
                             email: regEmail,
@@ -674,6 +1294,7 @@ export default function App() {
                             barangayName: regBarangay,
                             streetAddress: regStreetAddress,
                           });
+                          if (regAuth?.user) setProfileUser({ ...regAuth.user });
                           setRegLoading(false);
                           setRegStep(0);
                           go("mfa");
@@ -711,7 +1332,7 @@ export default function App() {
                         const lastName = names.slice(1).join(" ") || "Lastname";
                         try {
                           setRegLoading(true);
-                          await Waste2GoodsAPI.register({
+                          const regAuth = await Waste2GoodsAPI.register({
                             firstName,
                             lastName,
                             email: regEmail,
@@ -722,6 +1343,7 @@ export default function App() {
                             barangayName: regBarangay,
                             streetAddress: regStreetAddress,
                           });
+                          if (regAuth?.user) setProfileUser({ ...regAuth.user });
                           setRegLoading(false);
                           setRegStep(0);
                           go("profile-setup");
@@ -743,7 +1365,7 @@ export default function App() {
 
           {/* ── MFA ── */}
           {screen === "mfa" && (
-            <div className="h-full flex flex-col items-center justify-center px-8 gap-7 pt-14">
+            <div className="min-h-[100dvh] flex flex-col items-center justify-center px-8 gap-7 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
               <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center">
                 <Shield className="w-8 h-8 text-blue-600" />
               </div>
@@ -773,12 +1395,12 @@ export default function App() {
 
           {/* ── Profile Setup ── */}
           {screen === "profile-setup" && (
-            <div className="h-full flex flex-col overflow-y-auto pt-14">
-              <div className="px-6 py-4 border-b border-border bg-white sticky top-0">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-6 py-4 border-b border-border bg-white" style={{ paddingTop: "calc(1rem + var(--sat))" }}>
                 <h2 className="text-base font-black text-foreground">Set Up Your Profile</h2>
                 <p className="text-xs text-muted-foreground">Almost there!</p>
               </div>
-              <div className="p-6 flex-1 space-y-5">
+              <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-24">
                 <div className="flex flex-col items-center gap-3">
                   <div className="relative">
                     <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
@@ -806,15 +1428,16 @@ export default function App() {
 
           {/* ── Login ── */}
           {screen === "login" && (
-            <div className="h-full flex flex-col pt-14 overflow-y-auto">
-              <div className="flex flex-col items-center gap-2 px-8 pt-6 pb-4">
+            <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
+                 style={{ paddingTop: "calc(0.75rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+              <div className="flex flex-col items-center gap-2 px-8 pt-4 pb-3 shrink-0">
                 <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
                   <Recycle className="w-7 h-7 text-primary" />
                 </div>
                 <h2 className="text-2xl font-black text-foreground">Welcome back!</h2>
-                <p className="text-muted-foreground text-sm">Sign in to your Waste2Goods account</p>
+                <p className="text-muted-foreground text-sm text-center">Sign in to your Waste2Goods account</p>
               </div>
-              <div className="px-6 flex-1 space-y-4">
+              <div className="px-6 flex flex-1 flex-col w-full max-w-xl mx-auto space-y-3">
                 <Field
                   label="Email Address"
                   placeholder="maria@email.com"
@@ -830,109 +1453,153 @@ export default function App() {
                   value={password}
                   onChange={setPassword}
                 />
-                <p className="text-right text-xs text-primary font-bold cursor-pointer">Forgot Password?</p>
+                <p className="text-right text-xs text-primary font-bold cursor-pointer shrink-0">Forgot Password?</p>
+                {loginError && (
+                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-xl text-xs font-semibold shrink-0">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600" />
+                    <span>{loginError}</span>
+                  </div>
+                )}
                 <button
-                  onClick={async () => {
-                    try {
-                      await Waste2GoodsAPI.login(email, password);
-                      go("home");
-                    } catch (e) {
-                      alert("Invalid credentials. Try email: resident@cabantian.ph or admin@waste2goods.ph");
-                    }
-                  }}
-                  className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors"
+                  type="button"
+                  onClick={() => { setShowLoginServer(v => !v); setLoginServerBanner(null); setApiHostState(getApiHost()); }}
+                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0"
                 >
-                  Sign In
+                  <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
+                  <ChevronRight className={`w-4 h-4 transition-transform ${showLoginServer ? "rotate-90" : ""}`} />
                 </button>
-                <div className="flex items-center gap-3"><div className="flex-1 h-px bg-border" /><span className="text-xs text-muted-foreground">or</span><div className="flex-1 h-px bg-border" /></div>
-                <button className="w-full py-3 rounded-2xl border border-border text-sm font-semibold text-foreground flex items-center justify-center gap-2 hover:bg-secondary transition-colors">
-                  🇵🇭 Continue with Barangay ID
-                </button>
+                {showLoginServer && (
+                  <div className="space-y-2 shrink-0">
+                    {loginServerBanner && (
+                      <div className={`rounded-xl px-3 py-2 text-xs font-bold ${loginServerBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{loginServerBanner.text}</div>
+                    )}
+                    <ServerIpPanel
+                      apiHost={apiHost}
+                      setApiHostState={setApiHostState}
+                      onSaved={setLoginServerBanner}
+                      compact
+                    />
+                  </div>
+                )}
+                <div className="mt-auto space-y-3 pt-3 shrink-0">
+                  <button
+                    disabled={loginLoading}
+                    onClick={async () => {
+                      setLoginError("");
+                      setLoginLoading(true);
+                      try {
+                        const authResult = await Waste2GoodsAPI.login(email, password);
+                        if (authResult?.user) setProfileUser({ ...authResult.user });
+                        go("home");
+                      } catch (e) {
+                        setLoginError(e instanceof Error ? e.message : "Invalid credentials. Please check your email and password.");
+                      } finally {
+                        setLoginLoading(false);
+                      }
+                    }}
+                    className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+                  >
+                    {loginLoading ? "Signing in..." : "Sign In"}
+                  </button>
+                  <div className="flex items-center gap-3"><div className="flex-1 h-px bg-border" /><span className="text-xs text-muted-foreground">or</span><div className="flex-1 h-px bg-border" /></div>
+                  <button className="w-full py-3 rounded-2xl border border-border text-sm font-semibold text-foreground flex items-center justify-center gap-2 hover:bg-secondary transition-colors">
+                    🇵🇭 Continue with Barangay ID
+                  </button>
+                </div>
               </div>
-              <p className="text-center text-xs text-muted-foreground py-6">New resident? <button onClick={() => go("register")} className="text-primary font-bold">Create account</button></p>
+              <p className="text-center text-xs text-muted-foreground pt-5 shrink-0">New resident? <button onClick={() => go("register")} className="text-primary font-bold">Create account</button></p>
             </div>
           )}
 
           {/* ── HOME ── */}
           {screen === "home" && (
-            <div className="h-full flex flex-col overflow-hidden">
-              <div className="px-5 pt-14 pb-3 flex items-center justify-between">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <div>
                   <p className="text-xs text-muted-foreground font-semibold">Good morning,</p>
-                  <h2 className="text-xl font-black text-foreground">{currentUser.name} 👋</h2>
+                  <h2 className="text-xl font-black text-foreground">{(currentUser.name && currentUser.name.trim() !== "") ? `${currentUser.name.split(" ")[0]} 👋` : "👋"}</h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button className="relative p-2 rounded-xl border border-border bg-white">
+                  <button onClick={() => go("notifications")} className="relative p-2 rounded-xl border border-border bg-white hover:bg-secondary transition-colors">
                     <Bell className="w-4 h-4 text-muted-foreground" />
-                    <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-red-500" />
+                    {notifUnread > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">{notifUnread <= 9 ? notifUnread : "9+"}</span>
+                    )}
                   </button>
                   <button onClick={() => go("profile")} className="w-9 h-9 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{currentUser.initials}</button>
                 </div>
               </div>
 
-              {/* Points hero */}
-              <div className="mx-5 rounded-3xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(135deg, #15803d, #0ea5e9)" }}>
-                <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-20" style={{ background: "radial-gradient(circle, #16a34a, transparent)" }} />
-                <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold opacity-75 uppercase tracking-wide">Your Balance</span>
-                    <Leaf className="w-4 h-4 opacity-60" />
+              {/* Scrollable content — everything scrolls together so user never misses content on short screens */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-5 pt-4 pb-24 space-y-4">
+                  {/* Points hero */}
+                  <div className="rounded-3xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(135deg, #15803d, #0ea5e9)" }}>
+                    <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-20" style={{ background: "radial-gradient(circle, #16a34a, transparent)" }} />
+                    <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-bold opacity-75 uppercase tracking-wide">Your Balance</span>
+                        <Leaf className="w-4 h-4 opacity-60" />
+                      </div>
+                      <div className="flex items-end gap-2 mb-2">
+                        <span className="text-5xl font-black tracking-tight">{currentUser.points.toLocaleString()}</span>
+                        <span className="text-base font-bold opacity-75 mb-1">pts</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-bold">#3 Weekly</span>
+                        <span className="text-xs opacity-70">·</span>
+                        <span className="text-xs opacity-70">+320 pts today</span>
+                        <span className="text-xs opacity-70">·</span>
+                        <Flame className="w-3 h-3 text-orange-300" />
+                        <span className="text-xs font-bold text-orange-200">7-day streak</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex items-end gap-2 mb-2">
-                    <span className="text-5xl font-black tracking-tight">{currentUser.points.toLocaleString()}</span>
-                    <span className="text-base font-bold opacity-75 mb-1">pts</span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-bold">#3 Weekly</span>
-                    <span className="text-xs opacity-70">·</span>
-                    <span className="text-xs opacity-70">+320 pts today</span>
-                    <span className="text-xs opacity-70">·</span>
-                    <Flame className="w-3 h-3 text-orange-300" />
-                    <span className="text-xs font-bold text-orange-200">7-day streak</span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Quick actions */}
-              <div className="px-5 mt-4 grid grid-cols-3 gap-2.5">
-                {[
-                  { icon: "♻️", label: "Submit", screen: "submit" as MobileScreen, bg: "bg-green-50", border: "border-green-200", text: "text-green-700" },
-                  { icon: "🎁", label: "Rewards", screen: "rewards" as MobileScreen, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-                  { icon: "⚡", label: "Tasks", screen: "tasks" as MobileScreen, bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
-                ].map(a => (
-                  <button key={a.label} onClick={() => go(a.screen)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl ${a.bg} border ${a.border} hover:shadow-md transition-all`}>
-                    <span className="text-2xl">{a.icon}</span>
-                    <span className={`text-xs font-black ${a.text}`}>{a.label}</span>
-                  </button>
-                ))}
-              </div>
+                  <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
 
-              {/* Leaderboard */}
-              <div className="px-5 mt-4 flex-1 overflow-y-auto">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-black text-foreground">Community Leaderboard</h3>
-                  <div className="flex rounded-xl overflow-hidden border border-border text-xs">
-                    {(["weekly","monthly"] as const).map(t => (
-                      <button key={t} onClick={() => setLeaderTab(t)} className={`px-3 py-1.5 font-bold capitalize transition-colors ${leaderTab === t ? "bg-primary text-white" : "bg-white text-muted-foreground"}`}>{t}</button>
+                  {/* Quick actions */}
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {[
+                      { icon: "♻️", label: "Submit", screen: "submit" as MobileScreen, bg: "bg-green-50", border: "border-green-200", text: "text-green-700" },
+                      { icon: "🎁", label: "Rewards", screen: "rewards" as MobileScreen, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
+                      { icon: "⚡", label: "Tasks", screen: "tasks" as MobileScreen, bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
+                    ].map(a => (
+                      <button key={a.label} onClick={() => go(a.screen)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl ${a.bg} border ${a.border} hover:shadow-md transition-all`}>
+                        <span className="text-2xl">{a.icon}</span>
+                        <span className={`text-xs font-black ${a.text}`}>{a.label}</span>
+                      </button>
                     ))}
                   </div>
-                </div>
-                <div className="space-y-2 pb-24">
-                  {leaderboard.map(u => (
-                    <div key={u.rank} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${u.isMe ? "border-primary/30 bg-green-50" : "border-border bg-white"}`}>
-                      <div className="w-7 flex items-center justify-center flex-shrink-0"><RankIcon rank={u.rank} /></div>
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0 ${u.isMe ? "bg-primary" : "bg-slate-400"}`}>{u.avatar}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-black text-foreground truncate">{u.name}{u.isMe ? " (You)" : ""}</p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <Flame className="w-2.5 h-2.5 text-orange-400" />
-                          <span className="text-xs text-muted-foreground">{u.streak}d streak</span>
-                        </div>
+
+                  {/* Leaderboard */}
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-black text-foreground">Community Leaderboard</h3>
+                      <div className="flex rounded-xl overflow-hidden border border-border text-xs">
+                        {(["weekly","monthly"] as const).map(t => (
+                          <button key={t} onClick={() => setLeaderTab(t)} className={`px-3 py-1.5 font-bold capitalize transition-colors ${leaderTab === t ? "bg-primary text-white" : "bg-white text-muted-foreground"}`}>{t}</button>
+                        ))}
                       </div>
-                      <span className="text-xs font-black text-primary">{u.points.toLocaleString()} pts</span>
                     </div>
-                  ))}
+                    <div className="space-y-2">
+                      {mergedLeaderboard.map(u => (
+                        <div key={`${u.rank}-${u.userId || u.name}`} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${u.isMe ? "border-primary/30 bg-green-50" : "border-border bg-white"}`}>
+                          <div className="w-7 flex items-center justify-center flex-shrink-0"><RankIcon rank={u.rank} /></div>
+                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0 ${u.isMe ? "bg-primary" : "bg-slate-400"}`}>{u.avatar}</div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-black text-foreground truncate">{u.name}{u.isMe ? " (You)" : ""}</p>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <Flame className="w-2.5 h-2.5 text-orange-400" />
+                              <span className="text-xs text-muted-foreground">{u.streak}d streak</span>
+                            </div>
+                          </div>
+                          <span className="text-xs font-black text-primary">{u.points.toLocaleString()} pts</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               </div>
               <MobileBottomNav screen={screen} go={go} />
@@ -941,12 +1608,13 @@ export default function App() {
 
           {/* ── SUBMIT: Entry ── */}
           {screen === "submit" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
                 <h2 className="text-base font-black">Submit Recyclables</h2>
               </div>
               <div className="flex-1 overflow-y-auto p-5 space-y-5 pb-24">
+                <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
                 <div className="rounded-2xl border-2 border-dashed border-primary/30 bg-green-50 p-8 flex flex-col items-center gap-4">
                   <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
                     <QrCode className="w-8 h-8 text-primary" />
@@ -971,12 +1639,21 @@ export default function App() {
                   </div>
                 </div>
                 <div className="rounded-2xl bg-white border border-border p-4">
-                  <h3 className="text-sm font-black mb-3">Nearby Kiosks</h3>
+                  <h3 className="text-sm font-black mb-1">Nearby Kiosks</h3>
+                  <p className="text-[11px] text-muted-foreground mb-3 leading-snug">
+                    Each kiosk shows its <strong>total submissions TODAY</strong> (how many residents already dropped off PET plastic at that location today).
+                  </p>
                   {kiosks.filter(k => k.status === "online").slice(0,3).map(k => (
                     <div key={k.id} className="flex items-center gap-2 py-1.5 border-b border-border last:border-0">
                       <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                      <div className="flex-1"><p className="text-xs font-bold text-foreground">{k.id}</p><p className="text-xs text-muted-foreground">{k.location}</p></div>
-                      <span className="text-xs text-primary font-bold">{k.submissions} today</span>
+                      <div className="flex-1">
+                        <p className="text-xs font-bold text-foreground">{k.id}</p>
+                        <p className="text-xs text-muted-foreground">{k.location}</p>
+                      </div>
+                      <div className="text-right flex flex-col items-end">
+                        <span className="text-xs text-primary font-black">{k.submissions} today</span>
+                        <span className="text-[10px] text-muted-foreground">submissions</span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -987,15 +1664,14 @@ export default function App() {
 
           {/* ── SUBMIT: Scanning ── */}
           {screen === "submit-scan" && (
-            <div className="h-full flex flex-col" style={{ background: "#000" }}>
-              <div className="px-5 pt-14 pb-4 flex items-center justify-between">
+            <div className="min-h-[100dvh] flex flex-col" style={{ background: "#000" }}>
+              <div className="px-5 pb-4 flex items-center justify-between shrink-0" style={{ paddingTop: "calc(1rem + var(--sat))" }}>
                 <button onClick={() => go("submit")}><ArrowLeft className="w-5 h-5 text-white" /></button>
                 <p className="text-white font-black text-sm">Scanning...</p>
                 <div />
               </div>
-              <div className="flex-1 flex flex-col items-center justify-center gap-8 relative">
-                {/* QR Scanner */}
-                <div id="qr-reader" className="w-80 h-80 rounded-xl overflow-hidden" />
+              <div className="flex-1 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
+                <div id="qr-reader" className="w-80 max-w-[85vw] aspect-square rounded-xl overflow-hidden" />
                 <p className="text-white/70 text-sm text-center px-8">Point your camera at the QR code on the Waste2Goods kiosk</p>
               </div>
             </div>
@@ -1003,15 +1679,15 @@ export default function App() {
 
           {/* ── SUBMIT: Confirm/Weighing ── */}
           {screen === "submit-confirm" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <button onClick={() => go("submit")}><ArrowLeft className="w-5 h-5" /></button>
                 <div>
                   <h2 className="text-base font-black">Confirm Submission</h2>
                   <p className="text-xs text-muted-foreground">K-01 · Bagong Pag-asa Hall</p>
                 </div>
               </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-8">
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-24">
                 <div className="rounded-2xl bg-green-50 border border-primary/20 p-3 flex items-center gap-3">
                   <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />
                   <p className="text-sm font-bold text-foreground">Kiosk connected successfully!</p>
@@ -1065,7 +1741,7 @@ export default function App() {
 
           {/* ── SUBMIT: Done ── */}
           {screen === "submit-done" && (
-            <div className="h-full flex flex-col items-center justify-center p-8 gap-6">
+            <div className="min-h-[100dvh] flex flex-col items-center justify-center p-8 gap-6 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
               <div className="relative">
                 <div className="w-32 h-32 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center">
                   <Check className="w-16 h-16 text-primary" />
@@ -1073,14 +1749,14 @@ export default function App() {
                 <div className="absolute -top-2 -right-2 text-3xl animate-bounce">🎉</div>
               </div>
               <div className="text-center">
-                <h2 className="text-3xl font-black text-foreground">Awesome!</h2>
+                <h2 className="text-3xl font-black text-foreground">Awesome{ (currentUser.name && currentUser.name.trim() !== "") ? `, ${currentUser.name.split(" ")[0]}` : "" }!</h2>
                 <p className="text-muted-foreground text-sm mt-1">Submission recorded successfully</p>
               </div>
               <div className="w-full rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Previous balance</span><span className="font-bold">2,725 pts</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Points earned</span><span className="font-bold text-primary">+115 pts</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Previous balance</span><span className="font-bold">{Math.max(0, currentUser.points).toLocaleString()} pts</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Points earned</span><span className="font-bold text-primary">+{Math.round(weight * 50)} pts</span></div>
                 <div className="h-px bg-border" />
-                <div className="flex justify-between"><span className="font-black text-base">New balance</span><span className="font-black text-primary text-base">2,840 pts</span></div>
+                <div className="flex justify-between"><span className="font-black text-base">New balance</span><span className="font-black text-primary text-base">{(Math.max(0, currentUser.points) + Math.round(weight * 50)).toLocaleString()} pts</span></div>
               </div>
               <div className="w-full rounded-2xl bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
                 <Trophy className="w-5 h-5 text-blue-600 flex-shrink-0" />
@@ -1096,13 +1772,13 @@ export default function App() {
 
           {/* ── REWARDS ── */}
           {screen === "rewards" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <div className="flex items-center justify-between">
                   <h2 className="text-base font-black">Rewards Catalog</h2>
                   <button onClick={() => go("redeem-history")} className="text-xs text-primary font-bold flex items-center gap-1"><Clock className="w-3 h-3" />History</button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Balance: <span className="font-black text-primary">2,840 pts</span></p>
+                <p className="text-xs text-muted-foreground mt-0.5">Balance: <span className="font-black text-primary">{currentUser.points.toLocaleString()} pts</span></p>
                 <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
                   {rewardCategories.map(c => (
                     <button key={c} onClick={() => setRewardFilter(c)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
@@ -1122,8 +1798,8 @@ export default function App() {
                       {r.stock < 10 && <p className="text-xs text-red-600 font-bold">Only {r.stock} left!</p>}
                       <div className="flex items-center justify-between mt-auto pt-1">
                         <span className="text-sm font-black text-primary">{r.points} pts</span>
-                        <button onClick={() => { setSelectedReward(r); go("redeem-confirm"); }} className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition-colors ${r.points <= 2840 ? "bg-primary text-white hover:bg-green-700" : "bg-muted text-muted-foreground cursor-not-allowed"}`}>
-                          {r.points <= 2840 ? "Redeem" : "Need more"}
+                        <button onClick={() => { setSelectedReward(r); go("redeem-confirm"); }} className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition-colors ${r.points <= currentUser.points ? "bg-primary text-white hover:bg-green-700" : "bg-muted text-muted-foreground cursor-not-allowed"}`}>
+                          {r.points <= currentUser.points ? "Redeem" : "Need more"}
                         </button>
                       </div>
                     </div>
@@ -1136,43 +1812,22 @@ export default function App() {
 
           {/* ── REDEEM CONFIRM ── */}
           {screen === "redeem-confirm" && selectedReward && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
-                <button onClick={() => go("rewards")}><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-base font-black">Confirm Redemption</h2>
-              </div>
-              <div className="flex-1 p-6 flex flex-col gap-5">
-                <div className="flex flex-col items-center gap-3 py-4">
-                  <div className="text-6xl">{selectedReward.icon}</div>
-                  <h3 className="text-xl font-black text-foreground text-center">{selectedReward.name}</h3>
-                  <span className="text-sm font-semibold px-3 py-1 rounded-full bg-secondary text-secondary-foreground">{selectedReward.category}</span>
-                </div>
-                <div className="rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Current balance</span><span className="font-bold">2,840 pts</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Cost</span><span className="font-bold text-red-600">−{selectedReward.points} pts</span></div>
-                  <div className="h-px bg-border" />
-                  <div className="flex justify-between"><span className="font-black">Remaining balance</span><span className="font-black text-primary">{(2840 - selectedReward.points).toLocaleString()} pts</span></div>
-                </div>
-                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
-                  <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700 font-semibold">Pick up your reward at the Barangay Hall within 7 days. Bring a valid ID.</p>
-                </div>
-                <div className="mt-auto space-y-3">
-                  <button onClick={() => { setSelectedReward(null); go("rewards"); }} className="w-full py-4 rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors">Confirm Redemption</button>
-                  <button onClick={() => go("rewards")} className="w-full py-3 rounded-2xl border border-border text-sm font-bold text-foreground hover:bg-secondary transition-colors">Cancel</button>
-                </div>
-              </div>
-            </div>
+            <RedeemConfirmScreen
+              reward={selectedReward}
+              currentUser={currentUser}
+              onCancel={() => { setSelectedReward(null); go("rewards"); }}
+              onBack={() => go("rewards")}
+            />
           )}
 
           {/* ── REDEEM HISTORY ── */}
           {screen === "redeem-history" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <button onClick={() => go("rewards")}><ArrowLeft className="w-5 h-5" /></button>
                 <h2 className="text-base font-black">Redemption History</h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="flex-1 overflow-y-auto p-5 space-y-3 pb-24">
                 {[
                   { date: "Jun 15, 2026", item: "Eco Water Bottle", pts: 350, status: "ready" },
                   { date: "May 28, 2026", item: "School Supplies Kit", pts: 500, status: "claimed" },
@@ -1193,8 +1848,8 @@ export default function App() {
 
           {/* ── TASKS ── */}
           {screen === "tasks" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <h2 className="text-base font-black">Tasks & Challenges</h2>
                 <p className="text-xs text-muted-foreground">Complete tasks to earn bonus points</p>
               </div>
@@ -1239,41 +1894,59 @@ export default function App() {
 
           {/* ── PROFILE ── */}
           {screen === "profile" && (
-            <div className="h-full flex flex-col">
-              <div className="pt-14 pb-6 px-5 flex flex-col items-center gap-3" style={{ background: "linear-gradient(160deg, #052e16, #15803d)" }}>
-                <div className="relative">
-                  <div className="w-16 h-16 rounded-full border-3 border-white/30 bg-white/10 flex items-center justify-center text-2xl font-black text-white">{currentUser.initials}</div>
-                  <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-400 border-2 border-green-900 flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white" /></div>
-                </div>
-                <div className="text-center">
-                  <h2 className="text-lg font-black text-white">{currentUser.name}</h2>
-                  <p className="text-xs text-green-300 flex items-center gap-1 justify-center"><MapPin className="w-3 h-3" />{currentUser.barangay} · Since Mar 2025</p>
-                </div>
-                <div className="flex gap-6 mt-1 bg-white/10 rounded-2xl px-6 py-3 border border-white/10">
-                  {[[currentUser.points.toLocaleString(),"Points"],[String(currentUser.submissions),"Submissions"],["#3","Weekly Rank"]].map(([v,l]) => (
-                    <div key={l} className="text-center">
-                      <p className="text-base font-black text-white">{v}</p>
-                      <p className="text-xs text-green-300">{l}</p>
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="flex-1 overflow-y-auto">
+                <div className="pb-24">
+                  <div className="px-5 pt-5 pb-6 flex flex-col items-center gap-3" style={{ paddingTop: "calc(1.5rem + var(--sat))", background: "linear-gradient(160deg, #052e16, #15803d)" }}>
+                    <div className="relative">
+                      <div className="w-16 h-16 rounded-full border-3 border-white/30 bg-white/10 flex items-center justify-center text-2xl font-black text-white">{currentUser.initials}</div>
+                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-400 border-2 border-green-900 flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white" /></div>
                     </div>
-                  ))}
+                    <div className="text-center">
+                      <h2 className="text-lg font-black text-white">{currentUser.name}</h2>
+                      <p className="text-xs text-green-300 flex items-center gap-1 justify-center"><MapPin className="w-3 h-3" />{currentUser.barangay} · {profileSinceLabel}</p>
+                      {currentUser.id && (
+                        <p className="text-[10px] text-green-400/80 mt-0.5 font-mono">{currentUser.id}{currentUser.email ? ` · ${currentUser.email}` : ""}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-6 mt-1 bg-white/10 rounded-2xl px-6 py-3 border border-white/10">
+                      {[
+                        [currentUser.points.toLocaleString(), "Points"],
+                        [String(currentUser.submissions), "Submissions"],
+                        [profileRank, "Weekly Rank"],
+                      ].map(([v, l]) => (
+                        <div key={l as string} className="text-center">
+                          <p className="text-base font-black text-white">{v}</p>
+                          <p className="text-xs text-green-300">{l}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="w-full mt-1">
+                      <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
+                    </div>
+                  </div>
+                  <div className="p-5 space-y-2">
+                    {[
+                      { icon: <Activity className="w-4 h-4" />, label: "Transaction History", action: () => go("history"), color: "bg-blue-100 text-blue-600", sub: `${currentUser.submissions + Number(currentUser.redeemed || 0)} activities` },
+                      { icon: <ShoppingCart className="w-4 h-4" />, label: "Rewards Redeemed", action: () => go("redeem-history"), color: "bg-indigo-100 text-indigo-600", sub: `${currentUser.redeemed || 0} items` },
+                      { icon: <Settings className="w-4 h-4" />, label: "Account Settings", action: () => go("settings"), color: "bg-purple-100 text-purple-600", sub: "Name, email, barangay, phone" },
+                      { icon: <Shield className="w-4 h-4" />, label: "Security & MFA", action: () => {}, color: "bg-green-100 text-green-700" },
+                      { icon: <Bell className="w-4 h-4" />, label: "Notifications", action: () => go("notifications"), color: "bg-amber-100 text-amber-600", sub: `${notifItems.length} total${notifUnread > 0 ? ` · ${notifUnread} unread` : ""}` },
+                      { icon: <Globe className="w-4 h-4" />, label: "Language & Region", action: () => {}, color: "bg-cyan-100 text-cyan-600" },
+                      { icon: <HelpCircle className="w-4 h-4" />, label: "Help & FAQ", action: () => {}, color: "bg-slate-100 text-slate-600" },
+                      { icon: <LogOut className="w-4 h-4 text-red-600" />, label: "Sign Out", action: () => { Waste2GoodsAPI.logout(); go("login"); }, color: "bg-red-100 text-red-600" },
+                    ].map(item => (
+                      <button key={item.label} onClick={item.action} className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border hover:bg-secondary transition-colors">
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${item.color}`}>{item.icon}</div>
+                        <div className="flex-1 min-w-0 text-left">
+                          <span className="text-sm font-bold text-foreground block">{item.label}</span>
+                          {item.sub && <span className="text-[10px] text-muted-foreground">{item.sub}</span>}
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-2">
-                {[
-                  { icon: <Activity className="w-4 h-4" />, label: "Transaction History", action: () => go("history"), color: "bg-blue-100 text-blue-600" },
-                  { icon: <Settings className="w-4 h-4" />, label: "Account Settings", action: () => go("settings"), color: "bg-purple-100 text-purple-600" },
-                  { icon: <Shield className="w-4 h-4" />, label: "Security & MFA", action: () => {}, color: "bg-green-100 text-green-700" },
-                  { icon: <Bell className="w-4 h-4" />, label: "Notifications", action: () => {}, color: "bg-amber-100 text-amber-600" },
-                  { icon: <Globe className="w-4 h-4" />, label: "Language & Region", action: () => {}, color: "bg-cyan-100 text-cyan-600" },
-                  { icon: <HelpCircle className="w-4 h-4" />, label: "Help & FAQ", action: () => {}, color: "bg-slate-100 text-slate-600" },
-                  { icon: <LogOut className="w-4 h-4 text-red-600" />, label: "Sign Out", action: () => { Waste2GoodsAPI.logout(); go("login"); }, color: "bg-red-100 text-red-600" },
-                ].map(item => (
-                  <button key={item.label} onClick={item.action} className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border hover:bg-secondary transition-colors">
-                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${item.color}`}>{item.icon}</div>
-                    <span className="text-sm font-bold text-foreground flex-1 text-left">{item.label}</span>
-                    <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                ))}
               </div>
               <MobileBottomNav screen={screen} go={go} />
             </div>
@@ -1281,12 +1954,12 @@ export default function App() {
 
           {/* ── HISTORY ── */}
           {screen === "history" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <button onClick={() => go("profile")}><ArrowLeft className="w-5 h-5" /></button>
                 <h2 className="text-base font-black">Transaction History</h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <div className="flex-1 overflow-y-auto p-5 space-y-3 pb-24">
                 {transactions.map(t => (
                   <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border">
                     <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${t.type==="earn"?"bg-green-100":t.type==="redeem"?"bg-blue-100":"bg-amber-100"}`}>
@@ -1305,33 +1978,131 @@ export default function App() {
 
           {/* ── SETTINGS ── */}
           {screen === "settings" && (
-            <div className="h-full flex flex-col pt-14">
-              <div className="px-5 pb-3 flex items-center gap-3 border-b border-border">
+            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
                 <button onClick={() => go("profile")}><ArrowLeft className="w-5 h-5" /></button>
                 <h2 className="text-base font-black">Account Settings</h2>
               </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-24">
+                {profileBanner && (
+                  <div className={`rounded-xl px-3 py-2 text-xs font-bold ${profileBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{profileBanner.text}</div>
+                )}
+                <ServerIpPanel
+                  apiHost={apiHost}
+                  setApiHostState={setApiHostState}
+                  onSaved={setProfileBanner}
+                />
                 {[
-                  ["Full Name", currentUser.name],
-                  ["Email", currentUser.email || "guest@waste2goods.ph"],
-                  ["Phone", currentUser.phone || "+63 9xx xxx xxxx"],
-                  ["Barangay", currentUser.barangay],
-                  ["City", currentUser.city],
-                  ["Province", currentUser.province],
-                ].map(([l,v]) => (
-                  <div key={l}>
-                    <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{l}</label>
-                    <div className="flex items-center gap-2">
-                      <input defaultValue={v} className="flex-1 px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40" />
-                      <button className="p-2 rounded-xl border border-border hover:bg-secondary"><Edit className="w-4 h-4 text-muted-foreground" /></button>
-                    </div>
+                  { l: "First Name", val: setFName, setter: setSetFName, placeholder: "Juan" },
+                  { l: "Last Name", val: setLName, setter: setSetLName, placeholder: "Reyes" },
+                  { l: "Email", val: setFormEmail, setter: setSetFormEmail, placeholder: "juan@email.com", inputType: "email" },
+                  { l: "Phone", val: setPhone, setter: setSetPhone, placeholder: "+63 9xx xxx xxxx", inputType: "tel" },
+                  { l: "Barangay", val: setBrgy, setter: setSetBrgy, placeholder: "Cabantian" },
+                  { l: "City", val: setCity, setter: setSetCity, placeholder: "Davao City" },
+                  { l: "Province", val: setProvince, setter: setSetProvince, placeholder: "Davao del Sur" },
+                ].map(f => (
+                  <div key={f.l}>
+                    <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{f.l}</label>
+                    <input
+                      type={(f as any).inputType || "text"}
+                      value={f.val}
+                      onChange={e => f.setter(e.target.value)}
+                      placeholder={f.placeholder}
+                      className="w-full px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
                   </div>
                 ))}
-                <button className="w-full py-4 rounded-2xl bg-primary text-white font-black mt-4">Save Changes</button>
+                <button
+                  onClick={handleSaveProfile}
+                  disabled={profileSaving}
+                  className="w-full py-4 rounded-2xl bg-primary text-white font-black mt-4 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
+                >{profileSaving ? "Saving…" : "Save Changes"}</button>
+                {currentUser.id && (
+                  <p className="text-[10px] text-center text-muted-foreground font-mono pt-2">User ID: {currentUser.id}</p>
+                )}
               </div>
             </div>
           )}
-        </div>
+
+          {/* ── NOTIFICATIONS (mobile bell 🔔) ── */}
+          {screen === "notifications" && (() => {
+            // Time formatter helper (relative: "5m ago", "3h ago", "Mar 12")
+            const timeAgo = (t: string) => {
+              try {
+                const ms = new Date(t).getTime();
+                if (!ms) return "";
+                const diff = Date.now() - ms;
+                const mins = Math.floor(diff / 60000);
+                if (mins < 1) return "Just now";
+                if (mins < 60) return `${mins}m ago`;
+                const hrs = Math.floor(mins / 60);
+                if (hrs < 24) return `${hrs}h ago`;
+                const days = Math.floor(hrs / 24);
+                if (days < 7) return `${days}d ago`;
+                return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+              } catch { return ""; }
+            };
+            // Icon by notification type
+            const notifIcon = (type: string, severity: string) => {
+              if (type === "redemption") return <Gift className={`w-4 h-4 ${severity === "danger" ? "text-red-600" : "text-indigo-600"}`} />;
+              if (type === "milestone") return <Trophy className="w-4 h-4 text-amber-600" />;
+              if (type === "task") return <Target className="w-4 h-4 text-primary" />;
+              if (type === "welcome") return <Leaf className="w-4 h-4 text-green-600" />;
+              if (type === "submission") return <Recycle className="w-4 h-4 text-green-700" />;
+              return <Bell className="w-4 h-4 text-muted-foreground" />;
+            };
+            const notifIconBg = (type: string) => {
+              if (type === "redemption") return "bg-indigo-100";
+              if (type === "milestone") return "bg-amber-100";
+              if (type === "task") return "bg-green-100";
+              if (type === "welcome") return "bg-emerald-100";
+              if (type === "submission") return "bg-lime-100";
+              return "bg-slate-100";
+            };
+            return (
+              <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+                <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+                  <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
+                  <div className="flex-1 min-w-0">
+                    <h2 className="text-base font-black leading-tight">Notifications</h2>
+                    <p className="text-[10px] text-muted-foreground">{notifItems.length} total{notifUnread > 0 ? ` · ${notifUnread} unread` : " · All read ✓"}</p>
+                  </div>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                    LIVE · {currentUser.id || "U-000"}
+                  </span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-5 space-y-2 pb-24">
+                  {notifItems.length === 0 && (
+                    <div className="py-16 flex flex-col items-center gap-3 text-center px-5">
+                      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
+                        <Bell className="w-7 h-7 text-slate-400" />
+                      </div>
+                      <h3 className="font-black text-foreground">No notifications yet</h3>
+                      <p className="text-xs text-muted-foreground">When you submit waste, redeem rewards, or unlock badges — you'll see them here.</p>
+                      <button onClick={() => go("home")} className="mt-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-black">Return to Home</button>
+                    </div>
+                  )}
+                  {notifItems.map(n => (
+                    <div key={n.id} className={`flex gap-3 p-3.5 rounded-2xl border ${n.read === false ? "bg-primary/5 border-primary/20" : "bg-white border-border"}`}>
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${notifIconBg(n.type)}`}>
+                        {notifIcon(n.type, n.severity || "info")}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className={`text-sm font-bold text-foreground leading-snug ${n.read === false ? "" : "opacity-90"}`}>{n.title}</p>
+                          <span className="flex-shrink-0 text-[10px] text-muted-foreground font-semibold whitespace-nowrap">{timeAgo(n.time)}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
+                        {n.read === false && <span className="inline-block mt-1.5 w-1.5 h-1.5 rounded-full bg-primary" title="Unread" />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <MobileBottomNav screen={screen} go={go} />
+              </div>
+            );
+          })()}
       </div>
     </div>
   );
