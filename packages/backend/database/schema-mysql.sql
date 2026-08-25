@@ -10,7 +10,7 @@
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
 SET time_zone = "+00:00";
-
+SET default_storage_engine = 'InnoDB';
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
@@ -37,7 +37,7 @@ CREATE TABLE `administrators` (
   `barangayId` int(11) NOT NULL,
   `roleId` int(11) DEFAULT NULL,
   `createdAt` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `administrators`
@@ -63,7 +63,7 @@ CREATE TABLE `barangays` (
   `contactInfo` varchar(100) DEFAULT NULL,
   `barangayCaptain` varchar(100) DEFAULT NULL,
   `userId` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- SQL Constants to prevent duplicate string literal warnings (SonarQube plsql:S1192)
@@ -96,7 +96,7 @@ CREATE TABLE `kiosks` (
   `barcode` varchar(100) DEFAULT NULL,
   `lastMaintenance` date DEFAULT NULL,
   `barangayId` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `kiosks`
@@ -123,7 +123,7 @@ CREATE TABLE `recyclable_materials` (
   `kgPerUnit` decimal(10,2) DEFAULT NULL,
   `description` text DEFAULT NULL,
   `status` varchar(50) DEFAULT 'active'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `recyclable_materials`
@@ -157,7 +157,7 @@ CREATE TABLE `recycling_tasks` (
   `barangayId` int(11) DEFAULT NULL,
   `materialId` int(11) DEFAULT NULL,
   `status` varchar(50) DEFAULT 'active'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `recycling_tasks`
@@ -184,7 +184,7 @@ CREATE TABLE `recycling_transactions` (
   `pointsEarned` int(11) NOT NULL,
   `kioskId` varchar(50) NOT NULL,
   `timestamp` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 -- --------------------------------------------------------
 
@@ -207,7 +207,7 @@ CREATE TABLE `rewards` (
   `status` varchar(50) DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `createdAt` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `rewards`
@@ -256,7 +256,7 @@ CREATE TABLE `reward_redemptions` (
   `status` varchar(50) DEFAULT 'pending',
   `approvedBy` varchar(50) DEFAULT NULL,
   `redemptionDate` timestamp NOT NULL DEFAULT current_timestamp()
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 -- --------------------------------------------------------
 
@@ -268,7 +268,7 @@ CREATE TABLE `roles` (
   `roleId` int(11) NOT NULL,
   `roleName` varchar(100) NOT NULL,
   `description` text DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `roles`
@@ -305,7 +305,7 @@ CREATE TABLE `users` (
   `city` varchar(100) DEFAULT NULL,
   `barangayName` varchar(100) DEFAULT NULL,
   `streetAddress` varchar(255) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Dumping data for table `users`
@@ -331,7 +331,7 @@ CREATE TABLE `user_task_progress` (
   `completed` tinyint(1) DEFAULT 0,
   `completedAt` timestamp NULL DEFAULT NULL,
   `claimed` tinyint(1) DEFAULT 0
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+) ENGINE=InnoDB;
 
 --
 -- Indexes for dumped tables
