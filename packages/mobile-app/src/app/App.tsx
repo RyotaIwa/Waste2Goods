@@ -79,6 +79,18 @@ const kiosks = [
   { id: "K-05", location: "Cabantian Gym", status: "maintenance", weight: "—", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
 ];
 
+const STYLE_WEEKLY_DATA = [
+  { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
+  { day: "Thu", kg: 89 }, { day: "Fri", kg: 74 }, { day: "Sat", kg: 112 }, { day: "Sun", kg: 95 }
+];
+const BADGE_SUCCESS_CLS = "bg-green-100 text-green-700";
+const BADGE_WARN_CLS = "bg-amber-100 text-amber-700";
+const BADGE_DANGER_BG = "bg-red-50 border border-red-200 text-red-700";
+const BADGE_OK_BG = "bg-green-50 border border-green-200 text-green-700";
+const INPUT_BASE_CLS = "w-full px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40";
+const BTN_PRIMARY_CLS = "rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors";
+const BTN_SECONDARY_CLS = "rounded-2xl border border-border font-bold text-foreground hover:bg-secondary transition-colors";
+
 function RankIcon({ rank }: { rank: number }) {
   if (rank === 1) return <Trophy className="w-4 h-4 text-yellow-400" />;
   if (rank === 2) return <Medal className="w-4 h-4 text-slate-400" />;
@@ -177,6 +189,25 @@ function SelectField({
 }
 
 // ── Functional Redemption (REAL DB writes via POST /api/rewards/redeem) ──
+
+function patchAuthBalance(newBalance: number) {
+  const AUTH_STORAGE_KEY = "w2g_auth_state";
+  try {
+    const auth = Waste2GoodsAPI.getAuthState();
+    if (auth?.user) {
+      const patchedUser = { ...auth.user, points: Number(newBalance), pointsBalance: Number(newBalance) };
+      const patchedAuth = { ...auth, user: patchedUser, isAuthenticated: true };
+      try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(patchedAuth)); } catch {}
+    }
+  } catch {}
+}
+
+function getRedeemButtonLabel(loading: boolean, success: any): string {
+  if (loading) return "Processing...";
+  if (success) return "✅ Done — back to Rewards Catalog";
+  return "Confirm Redemption";
+}
+
 function RedeemConfirmScreen({
   reward,
   currentUser,
@@ -217,17 +248,7 @@ function RedeemConfirmScreen({
         rewardName: (res as any).rewardName || reward.name,
         message: (res as any).message || "Ready for pick-up.",
       });
-      // Reflect updated balance in auth state (so UI reads correct number on next screen visit)
-      try {
-        const AUTH_STORAGE_KEY = "w2g_auth_state";
-        const auth = Waste2GoodsAPI.getAuthState();
-        if (auth?.user) {
-          const patchedUser = { ...auth.user, points: Number((res as any).newBalance ?? 0), pointsBalance: Number((res as any).newBalance ?? 0) };
-          const patchedAuth = { ...auth, user: patchedUser, isAuthenticated: true };
-          // Write directly to localStorage with the EXACT same key the core API reads from:
-          try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(patchedAuth)); } catch {}
-        }
-      } catch {}
+      patchAuthBalance(Number((res as any).newBalance ?? 0));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Redemption failed. Please try again.");
     } finally {
@@ -238,7 +259,7 @@ function RedeemConfirmScreen({
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
       <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-        <button onClick={onCancel}><ArrowLeft className="w-5 h-5" /></button>
+        <button type="button" onClick={onCancel}><ArrowLeft className="w-5 h-5" /></button>
         <h2 className="text-base font-black">Confirm Redemption</h2>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-8">
@@ -290,22 +311,16 @@ function RedeemConfirmScreen({
 
         <div className="mt-auto space-y-3">
           <button
+            type="button"
             onClick={confirm}
             disabled={disabled}
             className="w-full py-4 rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                Processing...
-              </>
-            ) : success ? (
-              <>✅ Done — back to Rewards Catalog</>
-            ) : (
-              "Confirm Redemption"
-            )}
+            {loading && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            {getRedeemButtonLabel(loading, success)}
           </button>
           <button
+            type="button"
             onClick={success ? onCancel : onBack}
             className="w-full py-3 rounded-2xl border border-border text-sm font-bold text-foreground hover:bg-secondary transition-colors"
           >
@@ -315,6 +330,36 @@ function RedeemConfirmScreen({
       </div>
     </div>
   );
+}
+
+function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): string | null {
+  const trimmed = apiHost.trim();
+  if (!trimmed) {
+    onSaved?.({ type: "err", text: "Please enter an IP address or hostname" });
+    return null;
+  }
+  setApiHost(trimmed);
+  onSaved?.({ type: "ok", text: `✅ Server saved: http://${trimmed}:3001 — no APK rebuild needed. This setting is saved on your device.` });
+  return trimmed;
+}
+
+async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): Promise<void> {
+  const trimmed = apiHost.trim();
+  if (!trimmed) {
+    onSaved?.({ type: "err", text: "Please enter an IP address first" });
+    return;
+  }
+  setTesting(true);
+  setApiHost(trimmed);
+  const result = await testApiConnection();
+  onSaved?.({ type: result.ok ? "ok" : "err", text: result.message });
+  setTesting(false);
+}
+
+function resetServerIp(setApiHostState: (v: string) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): void {
+  setApiHostState("localhost");
+  setApiHost("localhost");
+  onSaved?.({ type: "ok", text: "Reset to localhost — use this when the backend runs on the same PC." });
 }
 
 function ServerIpPanel({
@@ -330,30 +375,13 @@ function ServerIpPanel({
 }) {
   const [testing, setTesting] = useState(false);
   const save = () => {
-    const trimmed = apiHost.trim();
-    if (!trimmed) {
-      onSaved?.({ type: "err", text: "Please enter an IP address or hostname" });
-      return;
-    }
-    setApiHost(trimmed);
-    onSaved?.({ type: "ok", text: `✅ Server saved: http://${trimmed}:3001 — no APK rebuild needed. This setting is saved on your device.` });
+    saveServerIp(apiHost, onSaved);
   };
   const test = async () => {
-    const trimmed = apiHost.trim();
-    if (!trimmed) {
-      onSaved?.({ type: "err", text: "Please enter an IP address first" });
-      return;
-    }
-    setTesting(true);
-    setApiHost(trimmed);
-    const result = await testApiConnection();
-    onSaved?.({ type: result.ok ? "ok" : "err", text: result.message });
-    setTesting(false);
+    await testServerIp(apiHost, setTesting, onSaved);
   };
   const resetToDefault = () => {
-    setApiHostState("localhost");
-    setApiHost("localhost");
-    onSaved?.({ type: "ok", text: "Reset to localhost — use this when the backend runs on the same PC." });
+    resetServerIp(setApiHostState, onSaved);
   };
   return (
     <div className={`rounded-2xl bg-blue-50 border border-blue-200 space-y-2.5 ${compact ? "p-2.5" : "p-4"}`}>
@@ -490,6 +518,97 @@ function KioskLinkBadge({
   );
 }
 
+type MobileUserShape = {
+  id: string; userId: string; name: string; initials: string; email: string; phone: string;
+  barangay: string; barangayName: string; province: string; city: string; streetAddress: string;
+  points: number; submissions: number; redeemed: number; joined: string; createdAt: any;
+  firstName: string; lastName: string;
+};
+
+function initialsFromName(name: string, fallback: string) {
+  return (name || fallback)
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p: string) => p[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function buildCurrentUser(profileUser: any): MobileUserShape {
+  const userObj = profileUser || Waste2GoodsAPI.getAuthState()?.user || null;
+  if (userObj) {
+    const rawName = (userObj.name || `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim()) as string;
+    const fallbackFromFlds = `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim();
+    const id = (userObj as any).id || (userObj as any).userId || "";
+    const name = rawName || fallbackFromFlds || (id ? "" : "Guest User");
+    const init = initialsFromName(name || `${userObj.firstName || ""} ${userObj.lastName || ""}`, id ? "U" : "GU");
+    const points = (userObj as any).points ?? (userObj as any).pointsBalance ?? 0;
+    return {
+      id,
+      userId: id,
+      name,
+      initials: init || (id ? "U" : "GU"),
+      email: (userObj as any).email || "",
+      phone: (userObj as any).phone || "",
+      barangay: (userObj as any).barangay || (userObj as any).barangayName || "Cabantian",
+      barangayName: (userObj as any).barangayName || (userObj as any).barangay || "",
+      province: (userObj as any).province || "",
+      city: (userObj as any).city || "",
+      streetAddress: (userObj as any).streetAddress || "",
+      points: Number(points) || 0,
+      submissions: Number((userObj as any).submissions ?? (userObj as any).totalSubmissions ?? 0) || 0,
+      redeemed: Number((userObj as any).redeemed || 0),
+      joined: (userObj as any).joined || "",
+      createdAt: (userObj as any).createdAt || null,
+      firstName: (userObj as any).firstName || "",
+      lastName: (userObj as any).lastName || "",
+    };
+  }
+  return {
+    id: "", userId: "", name: "", initials: "", email: "", phone: "",
+    barangay: "Cabantian", barangayName: "Cabantian", province: "Davao del Sur", city: "Davao City",
+    streetAddress: "", points: 0, submissions: 0, redeemed: 0, joined: "", createdAt: null,
+    firstName: "", lastName: "",
+  };
+}
+
+function currentUserIdForLeaderboard() {
+  try {
+    const auth = Waste2GoodsAPI.getAuthState()?.user || null;
+    const u = buildCurrentUser(auth);
+    return String(auth?.id || auth?.userId || u.id || u.userId || "").toUpperCase();
+  } catch {
+    return "";
+  }
+}
+
+function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: MobileUserShape) {
+  const myId = currentUserIdForLeaderboard() || String(currentUser.id || currentUser.userId || "").toUpperCase();
+  if (liveLeaderboard && liveLeaderboard.length > 0) {
+    return liveLeaderboard.slice(0, 10).map((u: any, i: number) => {
+      const rank = Number(u.rank) || i + 1;
+      const firstName = u.firstName || "";
+      const lastName = u.lastName || "";
+      const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
+      const pts = Number(u.points ?? u.pointsBalance ?? 0);
+      const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
+      const uid = String(u.userId ?? u.id ?? "").toUpperCase();
+      const isMe = !!myId && !!uid && uid === myId;
+      const avatarChars = initialsFromName(name, "RU");
+      return {
+        rank, name,
+        barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
+        points: pts, submissions: subs,
+        avatar: avatarChars || "RU",
+        streak: Number(u.streak) || subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
+        isMe, userId: uid,
+      };
+    });
+  }
+  return DEMO_LEADERBOARD_FALLBACK.map((u, i) => ({ ...u, rank: i + 1, isMe: false }));
+}
+
 function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileScreen) => void }) {
   const items = [
     { icon: <Home className="w-5 h-5" />, label: "Home", s: "home" as MobileScreen },
@@ -617,11 +736,11 @@ export default function App() {
       "Tagum City": ["Poblacion", "Madaum", "San Agustin", "Apokon", "Liboganon"],
     },
   };
-  const PROVINCES = Object.keys(PH_LOCATIONS).sort();
+  const PROVINCES = Object.keys(PH_LOCATIONS).sort((a, b) => a.localeCompare(b, "en"));
 
-  const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort() : [];
+  const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort((a, b) => a.localeCompare(b, "en")) : [];
   const availableBarangays =
-    regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort() : [];
+    regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort((a, b) => a.localeCompare(b, "en")) : [];
 
   const go = (s: MobileScreen) => setScreen(s);
 
@@ -661,109 +780,15 @@ export default function App() {
   }, [screen]);
 
   // Helper to get current user's display data — reactive (reads from profileUser state when set)
-  const currentUser = useMemo(() => {
-    const userObj = profileUser || Waste2GoodsAPI.getAuthState()?.user || null;
-    if (userObj) {
-      const rawName = (userObj.name || `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim()) as string;
-      const fallbackFromFlds = `${userObj.firstName || ""} ${userObj.lastName || ""}`.trim();
-      const id = (userObj as any).id || (userObj as any).userId || "";
-      // If user has a real id (authenticated), NEVER show "Guest User" — prefer empty/initials over confusing Guest fallback
-      const name = rawName || fallbackFromFlds || (id ? "" : "Guest User");
-      const initials = (name || `${userObj.firstName || ""} ${userObj.lastName || ""}` || (id ? "U" : ""))
-        .split(/\s+/)
-        .filter(Boolean)
-        .map((p: string) => p[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2);
-      const points = (userObj as any).points ?? (userObj as any).pointsBalance ?? 0;
-      return {
-        id,
-        userId: id,
-        name,
-        initials: initials || (id ? "U" : "GU"),
-        email: (userObj as any).email || "",
-        phone: (userObj as any).phone || "",
-        barangay: (userObj as any).barangay || (userObj as any).barangayName || "Cabantian",
-        barangayName: (userObj as any).barangayName || (userObj as any).barangay || "",
-        province: (userObj as any).province || "",
-        city: (userObj as any).city || "",
-        streetAddress: (userObj as any).streetAddress || "",
-        points: Number(points) || 0,
-        submissions: Number((userObj as any).submissions ?? (userObj as any).totalSubmissions ?? 0) || 0,
-        redeemed: Number((userObj as any).redeemed || 0),
-        joined: (userObj as any).joined || "",
-        createdAt: (userObj as any).createdAt || null,
-        firstName: (userObj as any).firstName || "",
-        lastName: (userObj as any).lastName || "",
-      };
-    }
-    return {
-      id: "",
-      userId: "",
-      name: "",
-      initials: "",
-      email: "",
-      phone: "",
-      barangay: "Cabantian",
-      barangayName: "Cabantian",
-      province: "Davao del Sur",
-      city: "Davao City",
-      streetAddress: "",
-      points: 0,
-      submissions: 0,
-      redeemed: 0,
-      joined: "",
-      createdAt: null,
-      firstName: "",
-      lastName: "",
-    };
-  }, [profileUser]);
+  const currentUser = useMemo(() => buildCurrentUser(profileUser), [profileUser]);
 
   // Merged leaderboard: prefer live DB rows (with correct user names from MySQL),
   // otherwise fall back to the demo placeholder list. Always returns a non-empty array
   // so the Community Leaderboard panel never appears empty.
-  const mergedLeaderboard = useMemo(() => {
-    const auth = (() => {
-      try { return Waste2GoodsAPI.getAuthState()?.user || null; } catch { return null; }
-    })();
-    const myId = String(auth?.id || auth?.userId || currentUser.id || currentUser.userId || "").toUpperCase();
-    if (liveLeaderboard && liveLeaderboard.length > 0) {
-      return liveLeaderboard.slice(0, 10).map((u: any, i: number) => {
-        const rank = Number(u.rank) || i + 1;
-        const firstName = u.firstName || "";
-        const lastName = u.lastName || "";
-        const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
-        const pts = Number(u.points ?? u.pointsBalance ?? 0);
-        const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
-        const uid = String(u.userId ?? u.id ?? "").toUpperCase();
-        const isMe = !!myId && !!uid && uid === myId;
-        const avatarChars = (name || "RU")
-          .split(/\s+/)
-          .filter(Boolean)
-          .map(p => p[0])
-          .join("")
-          .slice(0, 2)
-          .toUpperCase();
-        return {
-          rank,
-          name,
-          barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
-          points: pts,
-          submissions: subs,
-          avatar: avatarChars || "RU",
-          streak: Number(u.streak) || subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
-          isMe,
-          userId: uid,
-        };
-      });
-    }
-    return DEMO_LEADERBOARD_FALLBACK.map((u, i) => ({
-      ...u,
-      rank: i + 1,
-      isMe: false,
-    }));
-  }, [liveLeaderboard, currentUser.id, currentUser.userId, currentUser.barangay]);
+  const mergedLeaderboard = useMemo(
+    () => buildMergedLeaderboard(liveLeaderboard || null, currentUser),
+    [liveLeaderboard, currentUser.id, currentUser.userId, currentUser.barangay],
+  );
 
   // When user opens Profile, Settings, or History — re-pull their latest DB row
   // (points, submissions, name) and their current leaderboard rank.

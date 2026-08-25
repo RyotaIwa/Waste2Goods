@@ -71,8 +71,191 @@ const kiosks = [
   { id: "K-05", location: "Cabantian Gym", status: "maintenance", weight: "—", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
 ];
 
+const STYLE_MIN_HEIGHT = 740;
+const STYLE_GRADIENT_DARK = "linear-gradient(180deg, #052e16 0%, #0c3547 100%)";
+const STYLE_FONT_INTER = "'Inter', sans-serif";
+const BADGE_SUCCESS_CLS = "bg-green-100 text-green-700";
+const BADGE_DANGER_CLS = "bg-red-50 border border-red-200 text-red-700";
+const BADGE_OK_CLS = "bg-green-50 border border-green-200 text-green-700";
+const BADGE_WARN_CLS = "bg-amber-100 text-amber-700";
+const BTN_PRIMARY_CLS = "rounded-xl bg-primary text-white font-bold hover:bg-green-700 transition-colors";
+const BTN_SECONDARY_CLS = "rounded-xl border border-border font-bold hover:bg-muted transition-colors";
+
+async function handleNotificationToggle(
+  currentlyOpen: boolean,
+  setOpen: (v: boolean) => void,
+  setItems: (v: any[] | null) => void,
+  setUnread: (n: number) => void,
+) {
+  setOpen(!currentlyOpen);
+  if (!currentlyOpen) {
+    try {
+      const n = await Waste2GoodsAPI.fetchNotifications();
+      if (n && Array.isArray((n as any).items)) {
+        setItems((n as any).items);
+        setUnread(Number((n as any).unread || 0));
+      }
+    } catch {}
+  }
+}
+
+async function handlePointAdjustSubmit(
+  type: "Add" | "Deduct" | "Set",
+  amountStr: string,
+  reason: string,
+  selectedUser: any,
+  setSubmitting: (v: boolean) => void,
+  setMsg: (v: { type: "ok" | "err"; text: string } | null) => void,
+  setSelectedUserFn: (u: any) => void,
+  setShowModal: (v: boolean) => void,
+  refreshFn: () => Promise<void>,
+) {
+  setMsg(null);
+  const amt = Math.max(0, Number(amountStr) || 0);
+  const curBal = Number(selectedUser.points ?? selectedUser.pointsBalance ?? 0);
+  const uid = String(selectedUser.userId || selectedUser.id || '');
+  let delta = 0;
+  if (type === 'Add') delta = amt;
+  else if (type === 'Deduct') delta = -amt;
+  else delta = amt - curBal;
+  try {
+    setSubmitting(true);
+    const res = await Waste2GoodsAPI.adjustUserPoints(uid, delta, reason || 'Admin adjustment');
+    if (!res || !(res as any).ok) throw new Error('API failed');
+    const newBal = Number((res as any).newBalance ?? curBal + delta);
+    setMsg({ type: 'ok', text: `Points updated! New balance: ${newBal.toLocaleString()} pts (${(res as any).delta >= 0 ? '+' : ''}${(res as any).delta}).` });
+    setSelectedUserFn({ ...selectedUser, points: newBal, pointsBalance: newBal });
+    await refreshFn();
+    setTimeout(() => { setShowModal(false); setMsg(null); }, 1500);
+  } catch (e) {
+    setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to adjust points. Is backend running on :3001 with MySQL?' });
+  } finally { setSubmitting(false); }
+}
+
+function computeAdminDisplay(
+  adminProfile: any | null,
+  roleMap: Record<number, string>,
+): { name: string; email: string; roleLabel: string; initials: string } {
+  const prof = adminProfile || Waste2GoodsAPI.getAuthState()?.user || null;
+  const name = prof?.name || "Juan Reyes";
+  const email = prof?.email || prof?.adminIdentifier || "";
+  const roleIdNum = Number(prof?.roleId ?? (prof?.role === "admin" ? 1 : 2));
+  const roleLabel = roleMap[roleIdNum] || "Barangay Admin";
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(n => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  return { name, email, roleLabel, initials };
+}
+
 type AdminSection = "dashboard" | "users" | "users-detail" | "rewards" | "analytics" | "monitoring" | "admins";
 type AppScreen = "login" | "admin";
+
+type SettledResult<T> = { status: "fulfilled"; value: T } | { status: "rejected"; reason?: any };
+
+const SETTLED_FULFILLED = "fulfilled";
+
+type DashboardSummaryShape = {
+  totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number;
+  kgDelta: number; newUsers: number; redeemedDelta: number;
+};
+
+type AdminDataSetters = {
+  setLiveUsers: (v: any[] | null) => void;
+  setLiveRewards: (v: any[] | null) => void;
+  setLiveKiosks: (v: any[] | null) => void;
+  setLiveTx: (v: any[] | null) => void;
+  setLiveWeekly: (v: any[] | null) => void;
+  setLiveMonthly: (v: any[] | null) => void;
+  setLiveLeaderboard: (v: any[] | null) => void;
+  setLiveRedemptions: (v: any[] | null) => void;
+  setDashboardSummary: (v: DashboardSummaryShape | null) => void;
+  setNotifications: (v: any[] | null) => void;
+  setNotifUnread: (n: number) => void;
+  setAdminProfile: (v: any | null) => void;
+  setProfileRefreshKey: (updater: (k: number) => number) => void;
+};
+
+function applySettledArray<T>(result: SettledResult<T>, setter: (v: T[] | null) => void) {
+  if (result.status !== SETTLED_FULFILLED) return;
+  setter(Array.isArray(result.value) ? result.value : null);
+}
+
+function buildDashboardSummary(raw: any): DashboardSummaryShape | null {
+  if (!raw || typeof raw !== "object") return null;
+  return {
+    totalKg: Number(raw.totalKgCollected || raw.totalKg || raw.totalCollected || 0),
+    activeResidents: Number(raw.activeResidents || raw.totalUsers || 0),
+    pointsAwarded: Number(raw.totalPointsAwarded || raw.pointsAwarded || raw.totalPoints || 0),
+    redeemed: Number(raw.rewardsRedeemed || raw.redeemed || 0),
+    kgDelta: Number(raw.totalTransactions || raw.kgDelta || 0),
+    newUsers: Number(raw.totalUsers || raw.newUsers || 0),
+    redeemedDelta: Number(raw.rewardsRedeemed || raw.redeemedDelta || 0),
+  };
+}
+
+function applyNotifications(notifs: SettledResult<any>, setters: Pick<AdminDataSetters, "setNotifications" | "setNotifUnread">) {
+  if (notifs.status !== SETTLED_FULFILLED) return;
+  const val = notifs.value as any;
+  if (!val || !Array.isArray(val.items)) return;
+  setters.setNotifications(val.items);
+  setters.setNotifUnread(Number(val.unread || 0));
+}
+
+function applyAdminProfile(
+  adminProf: SettledResult<any>,
+  setters: Pick<AdminDataSetters, "setAdminProfile" | "setProfileRefreshKey">,
+) {
+  if (adminProf.status === SETTLED_FULFILLED && adminProf.value) {
+    setters.setAdminProfile(adminProf.value);
+    setters.setProfileRefreshKey(k => k + 1);
+    return;
+  }
+  setters.setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
+}
+
+async function fetchAllAdminSettled(includeProfile: boolean) {
+  const calls: Promise<any>[] = [
+    Waste2GoodsAPI.fetchUsers(),
+    Waste2GoodsAPI.fetchRewards(),
+    Waste2GoodsAPI.fetchKiosks(),
+    Waste2GoodsAPI.fetchTransactions(),
+    Waste2GoodsAPI.fetchAnalyticsWeekly(),
+    Waste2GoodsAPI.fetchAnalyticsMonthly(),
+    Waste2GoodsAPI.fetchLeaderboard(),
+    Waste2GoodsAPI.fetchRedemptions(),
+    Waste2GoodsAPI.fetchAnalyticsSummary(),
+    Waste2GoodsAPI.fetchNotifications(),
+  ];
+  if (includeProfile) {
+    calls.push(Waste2GoodsAPI.refreshCurrentUser ? Waste2GoodsAPI.refreshCurrentUser() : Promise.resolve(null));
+  }
+  return Promise.allSettled(calls);
+}
+
+function applyAdminDataSet(
+  results: SettledResult<any>[],
+  setters: AdminDataSetters,
+  hasProfile: boolean,
+) {
+  const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs, adminProf] = results;
+  applySettledArray(users, setters.setLiveUsers);
+  applySettledArray(rewards, setters.setLiveRewards);
+  applySettledArray(kiosks, setters.setLiveKiosks);
+  applySettledArray(tx, setters.setLiveTx);
+  applySettledArray(weekly, setters.setLiveWeekly);
+  applySettledArray(monthly, setters.setLiveMonthly);
+  applySettledArray(leaderboard, setters.setLiveLeaderboard);
+  applySettledArray(redemptions, setters.setLiveRedemptions);
+  if (summary.status === SETTLED_FULFILLED) {
+    setters.setDashboardSummary(buildDashboardSummary(summary.value));
+  }
+  applyNotifications(notifs, setters);
+  if (hasProfile && adminProf) applyAdminProfile(adminProf, setters);
+}
 
 // Login Screen Component
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
@@ -96,7 +279,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
   };
 
   return (
-    <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl flex items-center justify-center" style={{ minHeight: 740, background: "linear-gradient(180deg, #052e16 0%, #0c3547 100%)", fontFamily: "'Inter', sans-serif" }}>
+    <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl flex items-center justify-center" style={{ minHeight: STYLE_MIN_HEIGHT, background: STYLE_GRADIENT_DARK, fontFamily: STYLE_FONT_INTER }}>
       <div className="w-full max-w-md bg-white rounded-2xl p-8 shadow-2xl">
         <div className="text-center mb-8">
           <div className="w-16 h-16 rounded-2xl bg-green-100 border border-green-200 flex items-center justify-center mx-auto mb-4">
@@ -200,59 +383,19 @@ export default function App() {
     4: "Treasurer",
   };
 
+  const dataSetters: AdminDataSetters = {
+    setLiveUsers, setLiveRewards, setLiveKiosks, setLiveTx,
+    setLiveWeekly, setLiveMonthly, setLiveLeaderboard, setLiveRedemptions,
+    setDashboardSummary, setNotifications, setNotifUnread,
+    setAdminProfile, setProfileRefreshKey,
+  };
+
   // ── Refresh all modules from live DB (call after writes) ──
   const refreshData = async () => {
-    let cancelled = false;
     try {
-      const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs, adminProf] = await Promise.allSettled([
-        Waste2GoodsAPI.fetchUsers(),
-        Waste2GoodsAPI.fetchRewards(),
-        Waste2GoodsAPI.fetchKiosks(),
-        Waste2GoodsAPI.fetchTransactions(),
-        Waste2GoodsAPI.fetchAnalyticsWeekly(),
-        Waste2GoodsAPI.fetchAnalyticsMonthly(),
-        Waste2GoodsAPI.fetchLeaderboard(),
-        Waste2GoodsAPI.fetchRedemptions(),
-        Waste2GoodsAPI.fetchAnalyticsSummary(),
-        Waste2GoodsAPI.fetchNotifications(),
-        // Call new profile helper (refreshes session storage with latest DB row + returns user)
-        Waste2GoodsAPI.refreshCurrentUser ? Waste2GoodsAPI.refreshCurrentUser() : Promise.resolve(null),
-      ]);
-      if (cancelled) return;
-      if (users.status === "fulfilled") setLiveUsers(Array.isArray(users.value) ? users.value : null);
-      if (rewards.status === "fulfilled") setLiveRewards(Array.isArray(rewards.value) ? rewards.value : null);
-      if (kiosks.status === "fulfilled") setLiveKiosks(Array.isArray(kiosks.value) ? kiosks.value : null);
-      if (tx.status === "fulfilled") setLiveTx(Array.isArray(tx.value) ? tx.value : null);
-      if (weekly.status === "fulfilled") setLiveWeekly(Array.isArray(weekly.value) ? weekly.value : null);
-      if (monthly.status === "fulfilled") setLiveMonthly(Array.isArray(monthly.value) ? monthly.value : null);
-      if (leaderboard.status === "fulfilled") setLiveLeaderboard(Array.isArray(leaderboard.value) ? leaderboard.value : null);
-      if (redemptions.status === "fulfilled") setLiveRedemptions(Array.isArray(redemptions.value) ? redemptions.value : null);
-      if (summary.status === "fulfilled" && summary.value && typeof summary.value === "object") {
-        const s: any = summary.value;
-        setDashboardSummary({
-          totalKg: Number(s.totalKgCollected || s.totalKg || s.totalCollected || 0),
-          activeResidents: Number(s.activeResidents || s.totalUsers || 0),
-          pointsAwarded: Number(s.totalPointsAwarded || s.pointsAwarded || s.totalPoints || 0),
-          redeemed: Number(s.rewardsRedeemed || s.redeemed || 0),
-          kgDelta: Number(s.totalTransactions || s.kgDelta || 0),
-          newUsers: Number(s.totalUsers || s.newUsers || 0),
-          redeemedDelta: Number(s.rewardsRedeemed || s.redeemedDelta || 0),
-        });
-      }
-      if (notifs.status === "fulfilled" && notifs.value && Array.isArray((notifs.value as any).items)) {
-        setNotifications((notifs.value as any).items);
-        setNotifUnread(Number((notifs.value as any).unread || 0));
-      }
-      if (adminProf.status === "fulfilled" && adminProf.value) {
-        setAdminProfile(adminProf.value);
-        // Bump key so profile sections re-read from localStorage if needed
-        setProfileRefreshKey(k => k + 1);
-      } else {
-        // fallback: read what's in storage so name is at least login-time accurate
-        setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
-      }
+      const results = await fetchAllAdminSettled(true);
+      applyAdminDataSet(results, dataSetters, true);
     } catch {
-      // Swallow network errors; demo fallback will render
       setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
     }
   };
@@ -262,45 +405,10 @@ export default function App() {
     if (screen !== "admin") return;
     let cancelled = false;
     (async () => {
-      // Try to call all real endpoints; on error fall back to demo (don't crash UI)
       try {
-        const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs] = await Promise.allSettled([
-          Waste2GoodsAPI.fetchUsers(),
-          Waste2GoodsAPI.fetchRewards(),
-          Waste2GoodsAPI.fetchKiosks(),
-          Waste2GoodsAPI.fetchTransactions(),
-          Waste2GoodsAPI.fetchAnalyticsWeekly(),
-          Waste2GoodsAPI.fetchAnalyticsMonthly(),
-          Waste2GoodsAPI.fetchLeaderboard(),
-          Waste2GoodsAPI.fetchRedemptions(),
-          Waste2GoodsAPI.fetchAnalyticsSummary(),
-          Waste2GoodsAPI.fetchNotifications(),
-        ]);
+        const results = await fetchAllAdminSettled(false);
         if (cancelled) return;
-        if (users.status === "fulfilled") setLiveUsers(Array.isArray(users.value) ? users.value : null);
-        if (rewards.status === "fulfilled") setLiveRewards(Array.isArray(rewards.value) ? rewards.value : null);
-        if (kiosks.status === "fulfilled") setLiveKiosks(Array.isArray(kiosks.value) ? kiosks.value : null);
-        if (tx.status === "fulfilled") setLiveTx(Array.isArray(tx.value) ? tx.value : null);
-        if (weekly.status === "fulfilled") setLiveWeekly(Array.isArray(weekly.value) ? weekly.value : null);
-        if (monthly.status === "fulfilled") setLiveMonthly(Array.isArray(monthly.value) ? monthly.value : null);
-        if (leaderboard.status === "fulfilled") setLiveLeaderboard(Array.isArray(leaderboard.value) ? leaderboard.value : null);
-        if (redemptions.status === "fulfilled") setLiveRedemptions(Array.isArray(redemptions.value) ? redemptions.value : null);
-        if (summary.status === "fulfilled" && summary.value && typeof summary.value === "object") {
-          const s: any = summary.value;
-          setDashboardSummary({
-            totalKg: Number(s.totalKgCollected || s.totalKg || s.totalCollected || 0),
-            activeResidents: Number(s.activeResidents || s.totalUsers || 0),
-            pointsAwarded: Number(s.totalPointsAwarded || s.pointsAwarded || s.totalPoints || 0),
-            redeemed: Number(s.rewardsRedeemed || s.redeemed || 0),
-            kgDelta: Number(s.totalTransactions || s.kgDelta || 0),
-            newUsers: Number(s.totalUsers || s.newUsers || 0),
-            redeemedDelta: Number(s.rewardsRedeemed || s.redeemedDelta || 0),
-          });
-        }
-        if (notifs.status === "fulfilled" && notifs.value && Array.isArray((notifs.value as any).items)) {
-          setNotifications((notifs.value as any).items);
-          setNotifUnread(Number((notifs.value as any).unread || 0));
-        }
+        applyAdminDataSet(results, dataSetters, false);
       } catch {
         // If everything fails, still render (null falls cause demo used)
       }
@@ -346,26 +454,15 @@ export default function App() {
   }
 
   // Admin profile data (reactive via adminProfile state; falls back to localStorage then defaults)
-  // profileRefreshKey added as dep-reader so React re-reads on refresh.
-  void profileRefreshKey;
-  const prof = adminProfile || Waste2GoodsAPI.getAuthState()?.user || null;
-  const adminName = prof?.name || "Juan Reyes";
-  const adminEmail = prof?.email || prof?.adminIdentifier || "";
-  const roleIdNum = Number(prof?.roleId ?? (prof?.role === "admin" ? 1 : 2));
-  const roleLabel = ROLE_NAME[roleIdNum] || "Barangay Admin";
-  const initials = adminName
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(n => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  // profileRefreshKey triggers re-read
+  profileRefreshKey;
+  const { name: adminName, email: adminEmail, roleLabel, initials } = computeAdminDisplay(adminProfile, ROLE_NAME);
 
   return (
-    <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl" style={{ minHeight: 740, fontFamily: "'Inter', sans-serif" }}>
-      <div className="flex h-full" style={{ minHeight: 740 }}>
+    <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl" style={{ minHeight: STYLE_MIN_HEIGHT, fontFamily: STYLE_FONT_INTER }}>
+      <div className="flex h-full" style={{ minHeight: STYLE_MIN_HEIGHT }}>
         {/* Sidebar */}
-        <div className="w-60 flex-shrink-0 flex flex-col" style={{ background: "linear-gradient(180deg, #052e16 0%, #0c3547 100%)" }}>
+        <div className="w-60 flex-shrink-0 flex flex-col" style={{ background: STYLE_GRADIENT_DARK }}>
           <div className="p-5 border-b border-white/10">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center flex-shrink-0">
@@ -379,7 +476,7 @@ export default function App() {
           </div>
           <nav className="flex-1 p-3 space-y-0.5">
             {navItems.map(item => (
-              <button key={item.id} onClick={() => setSection(item.id)}
+              <button key={item.id} type="button" onClick={() => setSection(item.id)}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all text-left ${section === item.id ? "bg-white/15 text-white shadow-sm" : "text-green-300 hover:bg-white/8 hover:text-white"}`}>
                 {item.icon}{item.label}
               </button>
@@ -418,7 +515,7 @@ export default function App() {
                   placeholder={section === "users" ? "Search residents by name, email, or ID..." : section === "rewards" ? "Search rewards by name or category..." : "Search users, rewards, redemptions..."}
                 />
               </div>
-              <button onClick={async () => { setNotificationsOpen(v => !v); if (!notificationsOpen) { try { const n = await Waste2GoodsAPI.fetchNotifications(); if (n && Array.isArray((n as any).items)) { setNotifications((n as any).items); setNotifUnread(Number((n as any).unread || 0)); } } catch {} } }} className="relative p-2 rounded-xl border border-border hover:bg-muted transition-colors">
+              <button type="button" onClick={() => handleNotificationToggle(notificationsOpen, setNotificationsOpen, setNotifications, setNotifUnread)} className="relative p-2 rounded-xl border border-border hover:bg-muted transition-colors">
                 <Bell className="w-4 h-4 text-muted-foreground" />
                 {notifUnread > 0 && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center">{Math.min(notifUnread, 9)}</span>}
               </button>
@@ -435,7 +532,7 @@ export default function App() {
                     <h3 className="font-black text-sm text-foreground">Notifications</h3>
                     <p className="text-[10px] text-muted-foreground mt-0.5">{notifUnread} unread · from MySQL redemptions, users, transactions</p>
                   </div>
-                  <button onClick={() => setNotificationsOpen(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
+                  <button type="button" onClick={() => setNotificationsOpen(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
                 </div>
                 <div className="max-h-96 overflow-auto divide-y divide-border">
                   {(!notifications || notifications.length === 0) && (
@@ -460,7 +557,7 @@ export default function App() {
                   ))}
                 </div>
                 <div className="px-4 py-3 border-t border-border bg-muted/20">
-                  <button onClick={() => refreshData()} className="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors flex items-center justify-center gap-1">
+                  <button type="button" onClick={() => refreshData()} className="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors flex items-center justify-center gap-1">
                     <RefreshCw className="w-3 h-3" />Refresh from DB
                   </button>
                 </div>
@@ -500,7 +597,7 @@ export default function App() {
           <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-foreground">Adjust Points</h3>
-              <button onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button type="button" onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <p className="text-sm text-muted-foreground mb-4">Manually adjust points for <strong>{selectedUser.name}</strong> (current: <span className="font-black text-primary">{(selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()} pts</span>)</p>
             <div className="space-y-3">
@@ -526,31 +623,11 @@ export default function App() {
               </div>
             )}
             <div className="flex gap-2 mt-5">
-              <button onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
+              <button type="button" onClick={() => { setShowAdjustModal(false); setAdjustMsg(null); }} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
               <button
+                type="button"
                 disabled={adjustSubmitting}
-                onClick={async () => {
-                  setAdjustMsg(null);
-                  const amt = Math.max(0, Number(adjustAmount) || 0);
-                  const curBal = Number(selectedUser.points ?? selectedUser.pointsBalance ?? 0);
-                  const uid = String(selectedUser.userId || selectedUser.id || '');
-                  let delta = 0;
-                  if (adjustType === 'Add') delta = amt;
-                  else if (adjustType === 'Deduct') delta = -amt;
-                  else delta = amt - curBal;
-                  try {
-                    setAdjustSubmitting(true);
-                    const res = await Waste2GoodsAPI.adjustUserPoints(uid, delta, adjustReason || 'Admin adjustment');
-                    if (!res || !(res as any).ok) throw new Error('API failed');
-                    const newBal = Number((res as any).newBalance ?? curBal + delta);
-                    setAdjustMsg({ type: 'ok', text: `Points updated! New balance: ${newBal.toLocaleString()} pts (${(res as any).delta >= 0 ? '+' : ''}${(res as any).delta}).` });
-                    setSelectedUser({ ...selectedUser, points: newBal, pointsBalance: newBal });
-                    await refreshData();
-                    setTimeout(() => { setShowAdjustModal(false); setAdjustMsg(null); }, 1500);
-                  } catch (e) {
-                    setAdjustMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to adjust points. Is backend running on :3001 with MySQL?' });
-                  } finally { setAdjustSubmitting(false); }
-                }}
+                onClick={() => handlePointAdjustSubmit(adjustType, adjustAmount, adjustReason, selectedUser, setAdjustSubmitting, setAdjustMsg, setSelectedUser, setShowAdjustModal, refreshData)}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
               >{adjustSubmitting ? 'Saving...' : 'Apply'}</button>
             </div>
@@ -623,7 +700,7 @@ function AdminDashboard({
         <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
-            {liveWeekly && liveWeekly.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE from DB</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+            {liveWeekly && liveWeekly.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
           </div>
           <ResponsiveContainer width="100%" height={180}>
             <AreaChart data={mergedWeekly}>
@@ -666,7 +743,7 @@ function AdminDashboard({
         <div className="bg-white rounded-2xl p-4 border border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-black text-sm text-foreground">Top Residents</h3>
-            {liveLeaderboard && liveLeaderboard.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+            {liveLeaderboard && liveLeaderboard.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
           </div>
           <div className="space-y-2">
             {mergedLeaderboard.map(u => (
@@ -683,7 +760,7 @@ function AdminDashboard({
         <div className="bg-white rounded-2xl p-4 border border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-black text-sm text-foreground">Recent Activity</h3>
-            {liveTx && liveTx.length > 0 ? <span className="text-[10px] px-2 py-1 rounded-full bg-green-100 text-green-700 font-bold">● LIVE</span> : <span className="text-[10px] px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-bold">DEMO</span>}
+            {liveTx && liveTx.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
           </div>
           <div className="space-y-2">
             {mergedTx.map(t => (
@@ -820,7 +897,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     return (
       <div className="space-y-5">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
+          <button type="button" onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
           <h2 className="font-black text-foreground">User Profile</h2>
           {banner && (
             <div className={`ml-auto text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
@@ -838,7 +915,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
               <p className="text-xs text-muted-foreground">{selectedUser.barangay}</p>
               <p className="text-xs text-muted-foreground mt-0.5">Joined {selectedUser.joined}</p>
             </div>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active"?"bg-green-100 text-green-700":"bg-gray-100 text-gray-500"}`}>
+            <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
               <StatusPip status={selectedUser.status} />{selectedUser.status}
             </span>
             <div className="w-full space-y-1.5 text-xs">
@@ -846,13 +923,13 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
               {selectedUser.phone && <p className="flex items-center gap-1 justify-center text-muted-foreground">📞 {selectedUser.phone}</p>}
               <p className="flex items-center gap-1 justify-center text-muted-foreground">ID: {selectedUser.userId || selectedUser.id}</p>
             </div>
-            <button onClick={onAdjust} className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5">
+            <button type="button" onClick={onAdjust} className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5">
               <Zap className="w-3.5 h-3.5" /> Adjust Points
             </button>
-            <button onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
+            <button type="button" onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
               <Edit className="w-3.5 h-3.5" /> Edit Profile
             </button>
-            <button onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? "bg-red-50 text-red-700 border border-red-200 hover:bg-red-100" : "bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"}`}>
+            <button type="button" onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? BADGE_DANGER_CLS + " hover:bg-red-100" : BADGE_OK_CLS + " hover:bg-green-100"}`}>
               {selectedUser.status==="active" ? "🚫 Suspend User" : "✅ Reactivate User"}
             </button>
           </div>
@@ -887,12 +964,12 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
+          <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
           <p className="text-xs text-muted-foreground">Cabantian Barangay — real MySQL users table (users sign up via Mobile App){searchQuery ? ` · filtered for "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
-          {onRefresh && <button onClick={onRefresh} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
-          <button onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Download className="w-3.5 h-3.5" />Export</button>
+          {onRefresh && <button type="button" onClick={onRefresh} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
+          <button type="button" onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Download className="w-3.5 h-3.5" />Export</button>
         </div>
       </div>
 
@@ -953,8 +1030,8 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowEditForm(false); setEditUser(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-            <button disabled={saving} onClick={submitEdit} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+            <button type="button" onClick={() => { setShowEditForm(false); setEditUser(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button type="button" disabled={saving} onClick={submitEdit} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
               {saving ? "Saving..." : "Save Changes"}
             </button>
           </div>
@@ -987,15 +1064,15 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
                 <td className="px-4 py-3 font-semibold">{u.submissions}</td>
                 <td className="px-4 py-3 text-muted-foreground">{u.joined}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold ${u.status==="active"?"bg-green-100 text-green-700":"bg-gray-100 text-gray-500"}`}>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold ${u.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
                     <StatusPip status={u.status} />{u.status}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="View"><Eye className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => openEdit(u)} className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status==="active" ? "Suspend" : "Reactivate"}>{u.status==="active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
+                    <button type="button" onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="View"><Eye className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => openEdit(u)} className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
+                    <button type="button" onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status==="active" ? "Suspend" : "Reactivate"}>{u.status==="active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
                   </div>
                 </td>
               </tr>
@@ -1151,12 +1228,12 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
+          <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
           <p className="text-xs text-muted-foreground">{mergedRewards.filter((r: any) => !!r.seasonal).length} seasonal · {mergedRewards.filter((r: any) => Number(r.stock) < 10).length} low stock · {totalLiveRedemptions} redemptions{searchQuery ? ` · filter "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
-          {onRefresh && <button onClick={() => onRefresh()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
-          <button onClick={openCreate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add Reward</button>
+          {onRefresh && <button type="button" onClick={() => onRefresh()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
+          <button type="button" onClick={openCreate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add Reward</button>
         </div>
       </div>
 
@@ -1176,7 +1253,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                 <p className="text-xs text-muted-foreground">Saved to MySQL `rewards` table immediately</p>
               </div>
             </div>
-            <button onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="text-xs font-bold text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="text-xs font-bold text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
@@ -1217,8 +1294,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-            <button disabled={saving} onClick={submitForm} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button type="button" disabled={saving} onClick={submitForm} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
               {saving ? "Saving..." : (editing ? "Save Changes" : "Create Reward")}
             </button>
           </div>
@@ -1231,11 +1308,11 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             <div className="flex items-start justify-between">
               <span className="text-3xl">{r.icon}</span>
               <div className="flex gap-1">
-                <button onClick={() => openEdit(r)} className="p-1 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
-                <button onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                <button type="button" onClick={() => openEdit(r)} className="p-1 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
+                <button type="button" onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
-            {r.seasonal && <span className="absolute top-3 left-3 text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">Seasonal</span>}
+            {r.seasonal && <span className={`absolute top-3 left-3 text-xs font-bold px-1.5 py-0.5 rounded-full ${BADGE_WARN_CLS}`}>Seasonal</span>}
             <div className="mt-1">
               <p className="text-xs font-black text-foreground leading-tight">{r.name}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{r.category}{r.description && <span> · {r.description.slice(0, 30)}{r.description.length > 30 ? "…" : ""}</span>}</p>
@@ -1246,8 +1323,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             </div>
             {Number(r.stock) < 10 && <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 p-1.5 rounded-lg"><AlertCircle className="w-3 h-3" />Low stock</div>}
             <div className="flex gap-1.5 pt-1">
-              <button onClick={() => openEdit(r)} className="flex-1 py-1.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1"><Edit className="w-3 h-3" />Edit</button>
-              <button onClick={() => { setRestock(r); setRRestockQty("50"); }} className="flex-1 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Restock</button>
+              <button type="button" onClick={() => openEdit(r)} className="flex-1 py-1.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1"><Edit className="w-3 h-3" />Edit</button>
+              <button type="button" onClick={() => { setRestock(r); setRRestockQty("50"); }} className="flex-1 py-1.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Restock</button>
             </div>
           </div>
         ))}
@@ -1265,7 +1342,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
           <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-black text-foreground">Restock Reward</h3>
-              <button onClick={() => setRestock(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button type="button" onClick={() => setRestock(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <div className="flex items-center gap-3 mb-4 bg-muted/30 p-3 rounded-xl">
               <span className="text-3xl">{restock.icon}</span>
@@ -1277,8 +1354,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Quantity to add</label>
             <input type="number" value={rRestockQty} onChange={e => setRRestockQty(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm mb-4" />
             <div className="flex gap-2">
-              <button onClick={() => setRestock(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-              <button disabled={saving} onClick={submitRestock} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60">{saving ? "Saving..." : "Restock"}</button>
+              <button type="button" onClick={() => setRestock(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+              <button type="button" disabled={saving} onClick={submitRestock} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60">{saving ? "Saving..." : "Restock"}</button>
             </div>
           </div>
         </div>
@@ -1297,8 +1374,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             </div>
             <p className="text-xs text-muted-foreground mb-4">Existing redemptions are preserved (FK constraint). Will try hard delete, or mark inactive if needed.</p>
             <div className="flex gap-2">
-              <button onClick={() => setConfirmDel(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-              <button onClick={doDelete} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Delete</button>
+              <button type="button" onClick={() => setConfirmDel(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+              <button type="button" onClick={doDelete} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Delete</button>
             </div>
           </div>
         </div>
@@ -1338,8 +1415,8 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: { liveWeek
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-black text-sm text-foreground">Monthly Collection & Redemption</h3>
               <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${liveMonthly && liveMonthly.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveMonthly && liveMonthly.length > 0 ? "● LIVE" : "DEMO"}</span>
-                <button onClick={exportAnalyticsCSV} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
+                <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${liveMonthly && liveMonthly.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveMonthly && liveMonthly.length > 0 ? "● LIVE" : "DEMO"}</span>
+                <button type="button" onClick={exportAnalyticsCSV} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
               </div>
             </div>
             <ResponsiveContainer width="100%" height={200}>
@@ -1465,12 +1542,12 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
       </div>
       <div className="flex items-center justify-between mb-1 px-1">
         <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
+          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
           {calibrateMsg && (
-            <p className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${calibrateMsg.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
+            <p className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${calibrateMsg.ok ? BADGE_SUCCESS_CLS : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
           )}
         </div>
-        {onRefresh && <button onClick={() => onRefresh()} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"><RefreshCw className="w-3 h-3" />Refresh all</button>}
+        {onRefresh && <button type="button" onClick={() => onRefresh()} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"><RefreshCw className="w-3 h-3" />Refresh all</button>}
       </div>
       <div className="space-y-3">
         {mergedKiosks.map(k => (
@@ -1481,7 +1558,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-black text-sm text-foreground">{k.id}</p>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize flex items-center gap-1 ${k.status==="online"?"bg-green-100 text-green-700":k.status==="maintenance"?"bg-amber-100 text-amber-700":"bg-red-100 text-red-600"}`}>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize flex items-center gap-1 ${k.status==="online" ? BADGE_SUCCESS_CLS : k.status==="maintenance" ? BADGE_WARN_CLS : "bg-red-100 text-red-600"}`}>
                   <StatusPip status={k.status} />{k.status}
                 </span>
               </div>
@@ -1499,9 +1576,9 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
                 <span className="text-xs font-bold text-muted-foreground">{k.battery}%</span>
               </div>
               <div className="flex gap-1.5">
-                <button onClick={() => openLogs(k)} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"><Eye className="w-3 h-3" />Logs</button>
+                <button type="button" onClick={() => openLogs(k)} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"><Eye className="w-3 h-3" />Logs</button>
                 <span className="text-muted-foreground">·</span>
-                <button disabled={calibratingId === k.id} onClick={() => doCalibrate(k)} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 disabled:opacity-50">
+                <button type="button" disabled={calibratingId === k.id} onClick={() => doCalibrate(k)} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 disabled:opacity-50">
                   <RefreshCw className={`w-3 h-3 ${calibratingId === k.id ? "animate-spin" : ""}`} />{calibratingId === k.id ? "Calibrating..." : "Calibrate"}
                 </button>
               </div>
@@ -1519,7 +1596,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
                 <h3 className="font-black text-foreground flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" />{openLogsKiosk} · Activity Logs</h3>
                 <p className="text-[10px] text-muted-foreground mt-0.5">{logsLoading ? "Loading from MySQL /api/kiosks/:id/logs..." : `${logs.length} entries loaded`}</p>
               </div>
-              <button onClick={() => setOpenLogsKiosk(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+              <button type="button" onClick={() => setOpenLogsKiosk(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             {logsMsg && <div className="mb-2 text-xs px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-semibold">{logsMsg}</div>}
             <div className="max-h-80 overflow-auto border border-border rounded-xl divide-y divide-border bg-background">
@@ -1531,14 +1608,14 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
               )}
               {!logsLoading && logs.map((l: any, i: number) => (
                 <div key={i} className="px-4 py-2 flex items-start gap-2">
-                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${l.level === 'error' ? 'bg-red-100 text-red-700' : l.level === 'warn' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'}`}>{l.level || 'info'}</span>
+                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${l.level === 'error' ? 'bg-red-100 text-red-700' : l.level === 'warn' ? BADGE_WARN_CLS : 'bg-blue-100 text-blue-700'}`}>{l.level || 'info'}</span>
                   <span className="text-[10px] text-muted-foreground w-32 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleString()}</span>
                   <span className="text-xs font-semibold text-foreground flex-1 min-w-0 break-words">{l.message || l.msg || String(l)}</span>
                 </div>
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <button onClick={() => setOpenLogsKiosk(null)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Close</button>
+              <button type="button" onClick={() => setOpenLogsKiosk(null)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Close</button>
             </div>
           </div>
         </div>
@@ -1630,6 +1707,7 @@ function AdminAdmins() {
           <p className="text-xs text-muted-foreground mt-1">Manage administrators with access to this panel</p>
         </div>
         <button
+          type="button"
           onClick={() => { setShowForm(v => !v); resetForm(); }}
           className="px-4 py-2.5 rounded-xl bg-primary text-white text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors"
         >
@@ -1712,10 +1790,11 @@ function AdminAdmins() {
             </div>
           </div>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => { setShowForm(false); resetForm(); }} className="px-5 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">
+            <button type="button" onClick={() => { setShowForm(false); resetForm(); }} className="px-5 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">
               Cancel
             </button>
             <button
+              type="button"
               disabled={creating}
               onClick={submitForm}
               className="px-6 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-2"
@@ -1732,7 +1811,7 @@ function AdminAdmins() {
             <h3 className="font-black text-foreground">Registered Admins ({admins.length})</h3>
             <p className="text-xs text-muted-foreground mt-0.5">Barangay-level admins with full dashboard access</p>
           </div>
-          <button onClick={load} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
+          <button type="button" onClick={load} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
             <RefreshCw className="w-3 h-3" />Refresh
           </button>
         </div>
@@ -1762,7 +1841,7 @@ function AdminAdmins() {
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase tracking-wide">
                       {a.roleId === 1 ? "Full" : "Admin"}
                     </span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_SUCCESS_CLS}`}>Active</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
                     <span><Mail className="w-3 h-3 inline -mt-0.5 mr-1" />{a.email}</span>
@@ -1774,6 +1853,7 @@ function AdminAdmins() {
                 </div>
                 {a.adminId !== "A-001" && a.email !== "admin@waste2goods.ph" ? (
                   <button
+                    type="button"
                     disabled={deletingId === (a.adminId || a.email)}
                     onClick={() => handleDeleteAdmin(a)}
                     className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors text-xs font-bold flex items-center gap-1 disabled:opacity-50"

@@ -40,6 +40,109 @@ function useAnimatedWeight(target: number, running: boolean) {
 
 const QR_BRIDGE_KEY = "w2g_kiosk_qr_bridge";
 
+const MATERIAL_PTS_PER_KG: Record<string, number> = {
+  "Metal Cans": 80,
+  "PET Plastic": 50,
+  "Cardboard": 30,
+};
+const DEFAULT_MATERIAL_PTS = 25;
+const BADGE_SUCCESS_CLS = "bg-green-100 text-green-700";
+const BADGE_WARN_CLS = "bg-amber-100 text-amber-700";
+const BTN_PRIMARY_CLS = "rounded-2xl bg-green-500 text-white font-black hover:bg-green-400 transition-all";
+const BTN_SECONDARY_CLS = "rounded-2xl border border-white/20 text-white/70 font-semibold hover:bg-white/5 transition-colors";
+
+function pickDemoUserFromList(list: any[]): ConnectedUser | null {
+  if (!Array.isArray(list) || list.length === 0) return null;
+  const match = list.find(u => (u as any).email === "dmcb@gmail.com")
+    || list.find(u => (u as any).userId === "U-002")
+    || list[0];
+  return {
+    name: match.name || `${match.firstName || ""} ${match.lastName || ""}`.trim() || "dm cb",
+    balance: Number(match.points ?? match.pointsBalance ?? 50),
+    id: match.id || match.userId || "U-002",
+  };
+}
+
+function buildLinkedUserFromAuth(authUser: any): ConnectedUser {
+  return {
+    name: authUser?.name || `${authUser?.firstName || ""} ${authUser?.lastName || ""}`.trim() || "User",
+    balance: Number(authUser?.points || authUser?.pointsBalance || 0),
+    id: authUser?.id || authUser?.userId || "U-000",
+  };
+}
+
+function buildConnectedUserFromParsed(parsed: any): ConnectedUser {
+  return buildLinkedUserFromAuth(parsed?.user);
+}
+
+function getMaterialIdByType(type: string): number {
+  if (type === "Metal Cans") return 2;
+  if (type === "Cardboard") return 3;
+  return 1;
+}
+
+function processBridgeData(raw: any): { linked: ConnectedUser; kioskId: string } | null {
+  if (!raw || !raw.user || !raw.timestamp) return null;
+  if (Date.now() - raw.timestamp >= 60000) return null;
+  const linked = buildConnectedUserFromParsed(raw);
+  const kioskId = raw.kioskPayload?.includes?.("K-") ? raw.kioskPayload : "K-01";
+  return { linked, kioskId };
+}
+
+async function handleSimulateScanInternal(connect: (u: ConnectedUser) => void, go: (s: KioskScreen) => void) {
+  let userToConnect: ConnectedUser;
+  try {
+    const list = await Waste2GoodsAPI.getUsers();
+    const userFromList = pickDemoUserFromList(list);
+    userToConnect = userFromList || { name: "dm cb", balance: 50, id: "U-002" };
+  } catch {
+    userToConnect = { name: "dm cb", balance: 50, id: "U-002" };
+  }
+  connect(userToConnect);
+  go("deposit");
+}
+
+async function handleManualLoginInternal(
+  email: string,
+  password: string,
+  setError: (s: string) => void,
+  setLoading: (b: boolean) => void,
+): Promise<{ linked: ConnectedUser } | null> {
+  if (!email || !password) {
+    setError("Please enter email and password");
+    return null;
+  }
+  try {
+    setLoading(true);
+    const auth = await Waste2GoodsAPI.login(email, password);
+    setLoading(false);
+    if (!auth?.user) {
+      setError("Invalid credentials");
+      return null;
+    }
+    const linked = buildLinkedUserFromAuth(auth.user);
+    return { linked };
+  } catch (e) {
+    setLoading(false);
+    setError(e instanceof Error ? e.message : "Login failed");
+    return null;
+  }
+}
+
+function startFlowInternal(
+  connectedUser: ConnectedUser | null,
+  go: (s: KioskScreen) => void,
+) {
+  if (!connectedUser) {
+    go("idle");
+    return;
+  }
+  go("scanning");
+  setTimeout(() => {
+    if (connectedUser) go("deposit");
+  }, 2500);
+}
+
 export default function App() {
   const [ks, setKs] = useState<KioskScreen>("idle");
   const [selectedType, setSelectedType] = useState("PET Plastic");
@@ -55,38 +158,16 @@ export default function App() {
 
   const go = (s: KioskScreen) => setKs(s);
 
+  const connectKioskUser = (u: ConnectedUser, kioskId = "K-01") => {
+    setConnectedUser(u);
+    setBalanceAfterEarn(u.balance);
+    Waste2GoodsAPI.connectKioskSession?.({ userId: u.id, userName: u.name, kioskId });
+  };
+
   // Demo: Simulate Scan — actually fetches a real user from the DB via backend
   // (acts as if user scanned with their phone, so kiosk "shows user dashboard" based on actual DB user
-  const handleSimulateScan = async () => {
-    try {
-      const list = await Waste2GoodsAPI.getUsers();
-      let userToConnect: ConnectedUser | null = null;
-      if (Array.isArray(list) && list.length > 0) {
-        const match = list.find(u => (u as any).email === "dmcb@gmail.com") || list.find(u => (u as any).userId === "U-002") || list[0];
-        userToConnect = {
-          name: match.name || `${match.firstName || ""} ${match.lastName || ""}`.trim() || "dm cb",
-          balance: Number(match.points ?? match.pointsBalance ?? 50),
-          id: match.id || match.userId || "U-002",
-        };
-      }
-      if (!userToConnect) {
-        userToConnect = { name: "dm cb", balance: 50, id: "U-002" };
-      }
-      setConnectedUser(userToConnect);
-      setBalanceAfterEarn(userToConnect.balance);
-      Waste2GoodsAPI.connectKioskSession?.({
-        userId: userToConnect.id,
-        userName: userToConnect.name,
-        kioskId: "K-01",
-      });
-      setKs("deposit");
-    } catch {
-      const fallback = { name: "dm cb", balance: 50, id: "U-002" };
-      setConnectedUser(fallback);
-      setBalanceAfterEarn(fallback.balance);
-      setKs("deposit");
-    }
-  };
+  const handleSimulateScan = async () =>
+    handleSimulateScanInternal(u => connectKioskUser(u), go);
 
   const startWeigh = () => {
     setKs("weighing");
@@ -95,16 +176,7 @@ export default function App() {
     setTimeout(() => setKs("confirm"), 4500);
   };
 
-  const pts = Math.round(
-    weight *
-      (selectedType === "Metal Cans"
-        ? 80
-        : selectedType === "PET Plastic"
-        ? 50
-        : selectedType === "Cardboard"
-        ? 30
-        : 25)
-  );
+  const pts = Math.round(weight * (MATERIAL_PTS_PER_KG[selectedType] ?? DEFAULT_MATERIAL_PTS));
 
   const handleConfirmDone = async () => {
     const w = weight > 0 ? weight : 2.3;
@@ -112,7 +184,7 @@ export default function App() {
       try {
         await Waste2GoodsAPI.createTransaction({
           userId: connectedUser.id,
-          materialId: selectedType === "Metal Cans" ? 2 : selectedType === "Cardboard" ? 3 : 1,
+          materialId: getMaterialIdByType(selectedType),
           weightKg: w,
           kioskId: "K-01"
         });
@@ -131,22 +203,18 @@ export default function App() {
         const data = localStorage.getItem(QR_BRIDGE_KEY);
         if (!data) return;
         const parsed = JSON.parse(data);
-        if (parsed && parsed.user && parsed.timestamp && Date.now() - parsed.timestamp < 60000) {
-          const linked = {
-            name: parsed.user.name || "User",
-            balance: Number(parsed.user.points || parsed.user.pointsBalance || 0),
-            id: parsed.user.id || parsed.user.userId || "U-000",
-          };
-          setConnectedUser(linked);
-          setBalanceAfterEarn(linked.balance);
-          localStorage.removeItem(QR_BRIDGE_KEY);
-          Waste2GoodsAPI.connectKioskSession?.({
-            userId: linked.id,
-            userName: linked.name,
-            kioskId: parsed.kioskPayload?.includes?.("K-") ? parsed.kioskPayload : "K-01",
-          });
-          setKs("deposit");
-        }
+        if (!parsed || !parsed.user || !parsed.timestamp) return;
+        if (Date.now() - parsed.timestamp >= 60000) return;
+        const linked = buildConnectedUserFromParsed(parsed);
+        setConnectedUser(linked);
+        setBalanceAfterEarn(linked.balance);
+        localStorage.removeItem(QR_BRIDGE_KEY);
+        Waste2GoodsAPI.connectKioskSession?.({
+          userId: linked.id,
+          userName: linked.name,
+          kioskId: parsed.kioskPayload?.includes?.("K-") ? parsed.kioskPayload : "K-01",
+        });
+        setKs("deposit");
       } catch {}
     };
     checkBridge();
@@ -198,25 +266,21 @@ export default function App() {
       setManualLoading(true);
       const auth = await Waste2GoodsAPI.login(manualEmail, manualPassword);
       setManualLoading(false);
-      if (auth?.user) {
-        const linked = {
-          name: auth.user.name || `${auth.user.firstName || ""} ${auth.user.lastName || ""}`.trim() || "User",
-          balance: Number(auth.user.points || auth.user.pointsBalance || 0),
-          id: auth.user.id || auth.user.userId || "U-000",
-        };
-        setConnectedUser(linked);
-        setBalanceAfterEarn(linked.balance);
-        Waste2GoodsAPI.connectKioskSession?.({
-          userId: linked.id,
-          userName: linked.name,
-          kioskId: "K-01",
-        });
-        setManualEmail("");
-        setManualPassword("");
-        go("deposit");
-      } else {
+      if (!auth?.user) {
         setManualError("Invalid credentials");
+        return;
       }
+      const linked = buildLinkedUserFromAuth(auth.user);
+      setConnectedUser(linked);
+      setBalanceAfterEarn(linked.balance);
+      Waste2GoodsAPI.connectKioskSession?.({
+        userId: linked.id,
+        userName: linked.name,
+        kioskId: "K-01",
+      });
+      setManualEmail("");
+      setManualPassword("");
+      go("deposit");
     } catch (e) {
       setManualLoading(false);
       setManualError(e instanceof Error ? e.message : "Login failed");
@@ -250,6 +314,7 @@ export default function App() {
       </div>
       <div className="grid grid-cols-2 gap-4 w-full max-w-xl pt-2 flex-shrink-0">
         <button
+          type="button"
           onClick={() => go("idle")}
           className="flex flex-col items-center gap-2 p-5 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-green-400/40 transition-all group"
         >
@@ -267,6 +332,7 @@ export default function App() {
         </button>
 
         <button
+          type="button"
           onClick={() => go("manual-login")}
           className="flex flex-col items-center gap-2 p-5 rounded-3xl bg-white/8 border border-white/15 hover:bg-white/15 hover:border-blue-400/40 transition-all group"
         >
@@ -337,6 +403,7 @@ export default function App() {
       </div>
       <div className="flex gap-3 pt-1 flex-wrap justify-center flex-shrink-0">
         <button
+          type="button"
           onClick={() => go("welcome")}
           className="px-5 py-2.5 rounded-2xl border border-white/20 text-white/70 text-sm font-semibold hover:bg-white/5 transition-colors flex items-center gap-2"
         >
@@ -344,6 +411,7 @@ export default function App() {
           Back
         </button>
         <button
+          type="button"
           onClick={handleSimulateScan}
           className="px-8 py-3 rounded-2xl bg-green-500 text-white font-black text-base hover:bg-green-400 transition-all flex-shrink-0"
           style={{ boxShadow: "0 0 40px rgba(74,222,128,0.3)" }}
@@ -631,16 +699,7 @@ export default function App() {
               {[
                 ["Resident", user.name],
                 ["Type", selectedType],
-                [
-                  "Rate",
-                  (selectedType === "Metal Cans"
-                    ? "80"
-                    : selectedType === "PET Plastic"
-                    ? "50"
-                    : selectedType === "Cardboard"
-                    ? "30"
-                    : "25") + " pts/kg",
-                ],
+                ["Rate", (MATERIAL_PTS_PER_KG[selectedType] ?? DEFAULT_MATERIAL_PTS) + " pts/kg"],
                 ["Kiosk", "K-01"],
               ].map(([l, v]) => (
                 <div key={String(l)} className="rounded-xl bg-white/5 p-3">

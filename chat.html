@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Chat Collector & Visualizer - 对话记录收集与可视化工具</title>
+    <meta name="description" content="AI Chat Collector & Visualizer - 收集、预览、搜索与导出 AI 助手对话记录的轻量级可视化工具">
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <style>
+        :root[data-theme="dark"] {
+            --bg-page: #0f1117;
+            --bg-surface: #161922;
+            --bg-surface-elevated: #1e2230;
+            --bg-input: #12141d;
+            --border-color: #2a2f42;
+            --border-color-light: #363c54;
+            --text-primary: #f0f3f9;
+            --text-secondary: #9da6be;
+            --text-muted: #626b82;
+            --accent-color: #6366f1;
+            --accent-hover: #4f46e5;
+            --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            --accent-light: rgba(99, 102, 241, 0.15);
+            --user-bubble-bg: #1c2333;
+            --thinking-bg: #131722;
+            --thinking-border: #23283b;
+            --code-bg: #0d0e14;
+            --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+            --badge-bg: #1f293d;
+        }
+
+        :root[data-theme="light"] {
+            --bg-page: #f8fafc;
+            --bg-surface: #ffffff;
+            --bg-surface-elevated: #f1f5f9;
+            --bg-input: #ffffff;
+            --border-color: #e2e8f0;
+            --border-color-light: #cbd5e1;
+            --text-primary: #0f172a;
+            --text-secondary: #475569;
+            --text-muted: #94a3b8;
+            --accent-color: #4f46e5;
+            --accent-hover: #4338ca;
+            --accent-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            --accent-light: rgba(79, 70, 229, 0.1);
+            --user-bubble-bg: #f1f5f9;
+            --thinking-bg: #f8fafc;
+            --thinking-border: #e2e8f0;
+            --code-bg: #1e293b;
+            --card-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            --success-color: #059669;
+            --warning-color: #d97706;
+            --danger-color: #dc2626;
+            --badge-bg: #e2e8f0;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        /* Top Navigation Header */
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: var(--bg-surface);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header-logo {
+            width: 36px;
+            height: 36px;
+            background: var(--accent-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-weight: 700;
+            font-size: 18px;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.4);
+        }
+
+        .header-title h1 {
+            font-size: 18px;
+            font-weight: 700;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            line-height: 1.2;
+        }
+
+        .header-title p {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .nav-tabs {
+            display: flex;
+            background: var(--bg-surface-elevated);
+            padding: 4px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .tab-btn {
+            padding: 6px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border: none;
+            background: transparent;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .tab-btn.active {
+            background: var(--bg-surface);
+            color: var(--text-primary);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab-btn:hover:not(.active) {
+            color: var(--text-primary);
+        }
+
+        .theme-toggle-btn {
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .theme-toggle-btn:hover {
+            border-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+
+        /* Main Container */
+        main {
+            flex: 1;
+            max-width: 1280px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Stats & Toolbar Area */
+        .toolbar-panel {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 16px 20px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            box-shadow: var(--card-shadow);
+        }
+
+        .search-box {
+            position: relative;
+            flex: 1;
+            min-width: 260px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 10px 14px 10px 38px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .search-box input:focus {
+            border-color: var(--accent-color);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+
+        .search-box svg {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: var(--text-muted);
+        }
+
+        .action-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        .btn-primary {
+            background: var(--accent-gradient);
+            color: #fff;
+            box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-primary:hover {
+            opacity: 0.92;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-surface-elevated);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            border-color: var(--border-color-light);
+            background: var(--border-color);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover {
+            color: var(--text-primary);
+            border-color: var(--accent-color);
+        }
+
+        /* Stats Cards Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .stat-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            padding: 12px 16px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .stat-icon {
+            width: 38px;
+            height: 38px;
+            border-radius: 8px;
+            background: var(--accent-light);
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stat-info .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1.1;
+        }
+
+        .stat-info .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* Content Views */
+        .view-content {
+            display: none;
+        }
+
+        .view-content.active {
+            display: block;
+        }
+
+        /* Chat Turn Styles */
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+
+        .chat-turn {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: var(--card-shadow);
+            transition: border-color 0.2s ease;
+        }
+
+        .chat-turn:hover {
+            border-color: var(--border-color-light);
+        }
+
+        .chat-turn-heading {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .role-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .role-avatar.user {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success-color);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .role-avatar.assistant {
+            background: var(--accent-light);
+            color: var(--accent-color);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+        }
+
+        .role-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+
+        .turn-meta {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .turn-badge {
+            background: var(--badge-bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .user-chat-bubble {
+            background: var(--user-bubble-bg);
+            padding: 14px 18px;
+            border-radius: 10px;
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Reasoning / Deep Thinking Card */
+        .icb-plan-reasoning-content {
+            margin-bottom: 16px;
+            border: 1px solid var(--thinking-border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: var(--thinking-bg);
+        }
+
+        .icb-plan-reasoning-content__title {
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+            background: rgba(255, 255, 255, 0.02);
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            transition: background 0.2s ease;
+        }
+
+        .icb-plan-reasoning-content__title:hover {
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text-primary);
+        }
+
+        .title-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icb-plan-reasoning-content__content {
+            padding: 14px 16px;
+            border-top: 1px solid var(--thinking-border);
+            font-size: 13px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        .icb-plan-reasoning-content.collapsed .icb-plan-reasoning-content__content {
+            display: none;
+        }
+
+        /* Markdown & Code Formatting */
+        .chat-markdown {
+            font-size: 14px;
+            line-height: 1.7;
+            color: var(--text-primary);
+        }
+
+        .chat-markdown p {
+            margin-bottom: 12px;
+        }
+
+        .chat-markdown p:last-child {
+            margin-bottom: 0;
+        }
+
+        .chat-markdown ul, .chat-markdown ol {
+            margin: 10px 0 14px 20px;
+        }
+
+        .chat-markdown li {
+            margin-bottom: 4px;
+        }
+
+        .chat-markdown pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 14px;
+            margin: 14px 0;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            position: relative;
+        }
+
+        .chat-markdown code {
+            font-family: 'JetBrains Mono', monospace;
+            background: var(--accent-light);
+            color: var(--accent-color);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 12.5px;
+        }
+
+        .chat-markdown pre code {
+            background: transparent;
+            color: var(--text-primary);
+            padding: 0;
+        }
+
+        /* Terminal Command & Diffs Cards */
+        .icd-run-command-card-v2 {
+            background: #090a0f;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin: 14px 0;
+            overflow: hidden;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .icd-run-command-card-v2-cwd {
+            background: #121520;
+            padding: 8px 14px;
+            font-size: 12px;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .icd-run-command-card-v2-command-text {
+            padding: 10px 14px;
+            color: #38bdf8;
+            font-size: 13px;
+        }
+
+        .icd-run-command-card-v2-command-output {
+            padding: 10px 14px;
+            background: #06070a;
+            color: #a7f3d0;
+            font-size: 12px;
+            max-height: 220px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Tasks List Card */
+        .icd-tasks-list-card-container {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-surface-elevated);
+            margin: 14px 0;
+            padding: 12px 16px;
+        }
+
+        .icd-tasks-list-card-header {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icd-tasks-list-item-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            padding: 4px 0;
+            color: var(--text-secondary);
+        }
+
+        /* Script Generator Tab */
+        .script-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 20px;
+        }
+
+        .script-card h2 {
+            font-size: 18px;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .script-card p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+        }
+
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group input, .form-group select {
+            padding: 9px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+
+        .code-snippet-box {
+            position: relative;
+            background: var(--code-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            color: #e2e8f0;
+            max-height: 350px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .copy-btn-overlay {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: var(--bg-surface);
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            margin: 20px 0;
+        }
+
+        .empty-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 16px;
+            background: var(--accent-light);
+            color: var(--accent-color);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+        }
+
+        .empty-state h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            max-width: 480px;
+            margin: 0 auto 20px;
+        }
+
+        /* Toast notification */
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--bg-surface-elevated);
+            border: 1px solid var(--accent-color);
+            color: var(--text-primary);
+            padding: 12px 20px;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13.5px;
+            font-weight: 500;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            z-index: 999;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 12px;
+            }
+            .header-controls {
+                width: 100%;
+                justify-content: space-between;
+            }
+            main {
+                padding: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header>
+        <div class="header-brand">
+            <div class="header-logo">💬</div>
+            <div class="header-title">
+                <h1>Chat Collector & Visualizer</h1>
+                <p>AI 对话记录收集、可视化与导出分析工具</p>
+            </div>
+        </div>
+
+        <div class="header-controls">
+            <nav class="nav-tabs">
+                <button class="tab-btn active" onclick="switchTab('visualizerTab')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    对话视图
+                </button>
+                <button class="tab-btn" onclick="switchTab('scriptTab')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                    收集脚本生成
+                </button>
+                <button class="tab-btn" onclick="switchTab('importTab')">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    导入数据
+                </button>
+            </nav>
+
+            <button class="theme-toggle-btn" onclick="toggleTheme()" title="切换明暗主题">
+                <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main>
+        <!-- STATS & TOOLBAR -->
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-icon">💬</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="statTotal">0</div>
+                    <div class="stat-label">总对话轮数</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">👤</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="statUser">0</div>
+                    <div class="stat-label">用户提问</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">🤖</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="statAssistant">0</div>
+                    <div class="stat-label">AI 回复</div>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⚡</div>
+                <div class="stat-info">
+                    <div class="stat-value" id="statThinking">0</div>
+                    <div class="stat-label">深度思考块</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- VISUALIZER TAB CONTENT -->
+        <div id="visualizerTab" class="view-content active">
+            <div class="toolbar-panel" style="margin-bottom: 20px;">
+                <div class="search-box">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <input type="text" id="searchInput" placeholder="搜索关键词、代码片段、思考过程..." oninput="filterTurns()">
+                </div>
+
+                <div class="action-group">
+                    <button class="btn btn-outline" onclick="toggleAllReasoning(false)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"></polyline></svg>
+                        折叠思考过程
+                    </button>
+                    <button class="btn btn-outline" onclick="toggleAllReasoning(true)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                        展开思考过程
+                    </button>
+                    <button class="btn btn-secondary" onclick="exportData('html')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        导出 HTML
+                    </button>
+                    <button class="btn btn-primary" onclick="exportData('json')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                        导出 JSON
+                    </button>
+                </div>
+            </div>
+
+            <!-- CHAT TURN LIST CONTAINER -->
+            <div id="chatContainer" class="chat-container">
+                <!-- Dynamically populated or filled with empty state -->
+            </div>
+        </div>
+
+        <!-- SCRIPT GENERATOR TAB -->
+        <div id="scriptTab" class="view-content">
+            <div class="script-card">
+                <h2>🚀 1-Click AI 对话收集器</h2>
+                <p>在 Trae / Cursor / VS Code AI / ChatGPT 等 IDE 或网页控制台中运行以下脚本，即可自动滚动并抓取完整的对话历史。</p>
+
+                <div class="config-grid">
+                    <div class="form-group">
+                        <label>持续时间 (秒)</label>
+                        <input type="number" id="cfgDuration" value="60" min="5" max="600">
+                    </div>
+                    <div class="form-group">
+                        <label>自动滚动</label>
+                        <select id="cfgAutoScroll">
+                            <option value="true">开启 (推荐)</option>
+                            <option value="false">关闭 (手动滚动)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>检查间隔 (毫秒)</label>
+                        <input type="number" id="cfgInterval" value="400" step="100" min="100">
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 13px; font-weight: 600; color: var(--text-secondary);">生成的核心收集脚本 (JS/Console)</span>
+                    <button class="btn btn-primary" onclick="copyScriptCode()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                        复制完整脚本
+                    </button>
+                </div>
+
+                <div class="code-snippet-box" id="scriptDisplay">
+                    <!-- Script snippet rendered dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- IMPORT DATA TAB -->
+        <div id="importTab" class="view-content">
+            <div class="script-card">
+                <h2>📥 导入对话 DOM 或 JSON</h2>
+                <p>你可以直接粘贴之前收集的 Chat HTML 元素代码，或者导入导出好的 JSON 数据以重新渲染可视化页面。</p>
+
+                <div class="form-group" style="margin-bottom: 16px;">
+                    <label>粘贴 HTML / JSON 内容</label>
+                    <textarea id="importTextarea" rows="12" style="width: 100%; padding: 12px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); font-family: 'JetBrains Mono', monospace; font-size: 12px;" placeholder="在此粘贴 <section class=&quot;chat-turn&quot;>...</section> 或者 JSON 对话数据..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 12px;">
+                    <button class="btn btn-primary" onclick="handleImportText()">
+                        解析并渲染对话
+                    </button>
+                    <button class="btn btn-secondary" onclick="loadDemoData()">
+                        加载示例演示数据
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toastMessage">已成功复制脚本到剪贴板！</span>
+    </div>
+
+    <!-- Core Script Logic -->
+    <script>
+        // 持续监听并累积保存对话数据
+        class ChatCollector {
+            constructor() {
+                this.collectedTurns = new Map();
+                this.observer = null;
+                this.isRunning = false;
+                this.saveInterval = null;
+            }
+
+            start(duration = 60000, autoScroll = true) {
+                if (this.isRunning) {
+                    console.warn('⚠️ 收集器已在运行中');
+                    return;
+                }
+
+                this.isRunning = true;
+                console.log(`🚀 开始收集对话数据，将持续 ${duration / 1000} 秒...`);
+
+                const container = document.querySelector('#mc-agent-content-container');
+                if (!container) {
+                    console.error('❌ 未找到对话容器');
+                    return;
+                }
+
+                this.scrollContainer = container.closest('.scrollable') || container.parentElement;
+
+                if (autoScroll) {
+                    console.log('🔄 启用自动滚动模式...');
+                    this.autoScrollAndCollect();
+                } else {
+                    console.log('📜 手动模式：请滚动页面，我会自动保存所有出现的内容');
+                    this.collectVisibleTurns();
+                }
+
+                this.observer = new MutationObserver(() => {
+                    this.collectVisibleTurns();
+                });
+
+                this.observer.observe(container, {
+                    childList: true,
+                    subtree: true,
+                    attributes: false
+                });
+
+                this.saveInterval = setInterval(() => {
+                    console.log(`💾 已收集 ${this.collectedTurns.size} 条对话`);
+                }, 5000);
+
+                setTimeout(() => {
+                    this.stop();
+                }, duration);
+            }
+
+            async autoScrollAndCollect() {
+                const possibleContainers = [
+                    document.querySelector('#mc-agent-content-container'),
+                    document.querySelector('.chat-panel-content'),
+                    document.querySelector('.scrollable'),
+                    document.querySelector('[class*="scroll"]'),
+                    document.querySelector('.monaco-scrollable-element'),
+                    document.querySelector('#mc-agent-content-container')?.parentElement,
+                ].filter(Boolean);
+
+                let container = null;
+                for (const el of possibleContainers) {
+                    if (el.scrollHeight > el.clientHeight) {
+                        container = el;
+                        break;
+                    }
+                }
+
+                if (!container) {
+                    const content = document.querySelector('#mc-agent-content-container');
+                    let parent = content?.parentElement;
+                    while (parent && parent !== document.body) {
+                        if (parent.scrollHeight > parent.clientHeight) {
+                            container = parent;
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                }
+
+                if (!container) {
+                    console.error('❌ 未找到可滚动容器');
+                    return;
+                }
+
+                this.scrollContainer = container;
+
+                container.scrollTop = 0;
+                await this.sleep(800);
+                this.collectVisibleTurns();
+
+                const scrollStep = Math.max(container.clientHeight * 0.7, 300);
+                let lastScrollTop = -1;
+                let samePositionCount = 0;
+                let scrollCount = 0;
+
+                while (this.isRunning && samePositionCount < 3 && scrollCount < 200) {
+                    container.scrollTop += scrollStep;
+                    await this.sleep(400);
+                    this.collectVisibleTurns();
+                    scrollCount++;
+
+                    if (Math.abs(container.scrollTop - lastScrollTop) < 10) {
+                        samePositionCount++;
+                    } else {
+                        samePositionCount = 0;
+                    }
+                    lastScrollTop = container.scrollTop;
+                }
+
+                console.log(`✅ 自动滚动完成! 已收集 ${this.collectedTurns.size} 条对话`);
+
+                if (this.isRunning) {
+                    this.stop();
+                }
+            }
+
+            sleep(ms) {
+                return new Promise(resolve => setTimeout(resolve, ms));
+            }
+
+            collectVisibleTurns() {
+                const turns = document.querySelectorAll('section.chat-turn');
+                let newCount = 0;
+
+                turns.forEach(turn => {
+                    const messageId = turn.getAttribute('data-message-id') || `turn-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`;
+                    if (this.collectedTurns.has(messageId)) return;
+
+                    const clonedTurn = turn.cloneNode(true);
+
+                    clonedTurn.querySelectorAll('[data-processed]').forEach(el => {
+                        el.removeAttribute('data-processed');
+                    });
+
+                    this.collectedTurns.set(messageId, {
+                        id: messageId,
+                        role: turn.getAttribute('data-role') || (turn.querySelector('.user-chat-bubble') ? 'user' : 'assistant'),
+                        index: parseInt(turn.getAttribute('data-turn-index') || this.collectedTurns.size),
+                        element: clonedTurn,
+                        timestamp: new Date().toISOString()
+                    });
+
+                    newCount++;
+                });
+
+                if (newCount > 0) {
+                    console.log(`✅ 新收集 ${newCount} 条对话，总计 ${this.collectedTurns.size} 条`);
+                }
+            }
+
+            stop() {
+                if (!this.isRunning) return;
+                this.isRunning = false;
+
+                if (this.observer) this.observer.disconnect();
+                if (this.saveInterval) clearInterval(this.saveInterval);
+
+                console.log(`🎉 收集完成！共收集 ${this.collectedTurns.size} 条对话`);
+            }
+
+            exportToJSON() {
+                const data = Array.from(this.collectedTurns.values()).map(t => ({
+                    id: t.id,
+                    role: t.role,
+                    index: t.index,
+                    timestamp: t.timestamp,
+                    html: t.element.outerHTML
+                }));
+                return JSON.stringify(data, null, 2);
+            }
+        }
+
+        // Window Application State & Helpers
+        let activeCollector = new ChatCollector();
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
+            
+            const selectedTabBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => btn.getAttribute('onclick')?.includes(tabId));
+            if (selectedTabBtn) selectedTabBtn.classList.add('active');
+            
+            const targetView = document.getElementById(tabId);
+            if (targetView) targetView.classList.add('active');
+
+            if (tabId === 'scriptTab') {
+                updateScriptDisplay();
+            }
+        }
+
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            html.setAttribute('data-theme', nextTheme);
+            
+            const themeIcon = document.getElementById('themeIcon');
+            if (nextTheme === 'light') {
+                themeIcon.innerHTML = `<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>`;
+            } else {
+                themeIcon.innerHTML = `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>`;
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').innerText = msg;
+            toast.classList.add('show');
+            setTimeout(() => toast.classList.remove('show'), 3000);
+        }
+
+        function updateScriptDisplay() {
+            const duration = (document.getElementById('cfgDuration').value || 60) * 1000;
+            const autoScroll = document.getElementById('cfgAutoScroll').value;
+            const scriptCode = `// AI Chat Collector Script
+(function() {
+    ${ChatCollector.toString()}
+    const collector = new ChatCollector();
+    collector.start(${duration}, ${autoScroll});
+    window.__activeChatCollector = collector;
+    console.log("💡 提示: 输入 __activeChatCollector.stop() 可随时停止并导出行数据。");
+})();`;
+            document.getElementById('scriptDisplay').textContent = scriptCode;
+        }
+
+        function copyScriptCode() {
+            updateScriptDisplay();
+            const code = document.getElementById('scriptDisplay').textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                showToast('🚀 收集器脚本已成功复制到剪贴板！');
+            });
+        }
+
+        function toggleAllReasoning(expand) {
+            document.querySelectorAll('.icb-plan-reasoning-content').forEach(card => {
+                if (expand) {
+                    card.classList.remove('collapsed');
+                } else {
+                    card.classList.add('collapsed');
+                }
+            });
+        }
+
+        function filterTurns() {
+            const query = document.getElementById('searchInput').value.toLowerCase().trim();
+            const turns = document.querySelectorAll('#chatContainer .chat-turn');
+            
+            turns.forEach(turn => {
+                const text = turn.innerText.toLowerCase();
+                if (!query || text.includes(query)) {
+                    turn.style.display = 'block';
+                } else {
+                    turn.style.display = 'none';
+                }
+            });
+        }
+
+        function updateStats() {
+            const turns = Array.from(activeCollector.collectedTurns.values());
+            document.getElementById('statTotal').innerText = turns.length;
+            
+            let userCount = 0;
+            let assistantCount = 0;
+            
+            turns.forEach(t => {
+                if (t.role === 'user') userCount++;
+                else assistantCount++;
+            });
+            
+            document.getElementById('statUser').innerText = userCount;
+            document.getElementById('statAssistant').innerText = assistantCount;
+            
+            const reasoningCount = document.querySelectorAll('#chatContainer .icb-plan-reasoning-content').length;
+            document.getElementById('statThinking').innerText = reasoningCount;
+        }
+
+        function renderTurnsToContainer() {
+            const container = document.getElementById('chatContainer');
+            container.innerHTML = '';
+
+            if (activeCollector.collectedTurns.size === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📂</div>
+                        <h3>尚无对话记录</h3>
+                        <p>请在“收集脚本生成”页复制脚本去 IDE 采集，或者在“导入数据”页粘贴 HTML / 点击下方加载演示数据。</p>
+                        <button class="btn btn-primary" onclick="loadDemoData()">加载演示数据</button>
+                    </div>
+                `;
+                updateStats();
+                return;
+            }
+
+            const sorted = Array.from(activeCollector.collectedTurns.values()).sort((a,b) => a.index - b.index);
+
+            sorted.forEach(t => {
+                const turnEl = document.createElement('div');
+                turnEl.className = 'chat-turn';
+                turnEl.setAttribute('data-turn-id', t.id);
+
+                const isUser = t.role === 'user';
+                const avatarIcon = isUser ? '👤' : '🤖';
+                const roleName = isUser ? 'User' : 'Assistant';
+
+                turnEl.innerHTML = `
+                    <div class="chat-turn-heading">
+                        <div class="role-avatar ${t.role}">${avatarIcon}</div>
+                        <div class="role-name">${roleName}</div>
+                        <div class="turn-meta">
+                            <span class="turn-badge">Turn #${t.index + 1}</span>
+                            <span>${new Date(t.timestamp).toLocaleTimeString()}</span>
+                        </div>
+                    </div>
+                    <div class="turn-content">
+                        ${t.element.innerHTML}
+                    </div>
+                `;
+
+                // Add collapsible listener for reasoning blocks
+                turnEl.querySelectorAll('.icb-plan-reasoning-content').forEach(card => {
+                    const title = card.querySelector('.icb-plan-reasoning-content__title');
+                    if (title) {
+                        title.addEventListener('click', () => {
+                            card.classList.toggle('collapsed');
+                        });
+                    }
+                });
+
+                container.appendChild(turnEl);
+            });
+
+            updateStats();
+        }
+
+        function handleImportText() {
+            const text = document.getElementById('importTextarea').value.trim();
+            if (!text) {
+                alert('请先输入 HTML 或 JSON 内容');
+                return;
+            }
+
+            try {
+                if (text.startsWith('[') || text.startsWith('{')) {
+                    const data = JSON.parse(text);
+                    const items = Array.isArray(data) ? data : [data];
+                    activeCollector.collectedTurns.clear();
+                    
+                    items.forEach((item, i) => {
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = item.html || item.content || '';
+                        activeCollector.collectedTurns.set(item.id || `json-${i}`, {
+                            id: item.id || `json-${i}`,
+                            role: item.role || 'assistant',
+                            index: item.index !== undefined ? item.index : i,
+                            element: tempDiv,
+                            timestamp: item.timestamp || new Date().toISOString()
+                        });
+                    });
+                } else {
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = text;
+                    const turns = tempDiv.querySelectorAll('section.chat-turn, .chat-turn');
+                    activeCollector.collectedTurns.clear();
+
+                    if (turns.length > 0) {
+                        turns.forEach((turn, i) => {
+                            const id = turn.getAttribute('data-message-id') || `import-${i}`;
+                            activeCollector.collectedTurns.set(id, {
+                                id: id,
+                                role: turn.getAttribute('data-role') || (turn.querySelector('.user-chat-bubble') ? 'user' : 'assistant'),
+                                index: i,
+                                element: turn.cloneNode(true),
+                                timestamp: new Date().toISOString()
+                            });
+                        });
+                    } else {
+                        // Raw html block wrapper
+                        activeCollector.collectedTurns.set('import-0', {
+                            id: 'import-0',
+                            role: 'assistant',
+                            index: 0,
+                            element: tempDiv,
+                            timestamp: new Date().toISOString()
+                        });
+                    }
+                }
+
+                showToast('✅ 成功导入对话数据！');
+                switchTab('visualizerTab');
+                renderTurnsToContainer();
+            } catch (err) {
+                alert('解析数据失败，请检查格式: ' + err.message);
+            }
+        }
+
+        function loadDemoData() {
+            activeCollector.collectedTurns.clear();
+
+            const demoTurns = [
+                {
+                    id: 'demo-1',
+                    role: 'user',
+                    index: 0,
+                    timestamp: new Date().toISOString(),
+                    html: `<div class="user-chat-bubble">请为我们的废品回收平台 (Waste2Goods) 优化前端和后端 API 接口架构。需要涵盖 RBAC 角色防护、JWT 鉴权和实时数据采集功能。</div>`
+                },
+                {
+                    id: 'demo-2',
+                    role: 'assistant',
+                    index: 1,
+                    timestamp: new Date().toISOString(),
+                    html: `
+                        <div class="assistant-chat-turn-content">
+                            <div class="icb-plan-reasoning-content">
+                                <div class="icb-plan-reasoning-content__title">
+                                    <div class="title-left">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+                                        <span>思考过程 (Deep Thinking)</span>
+                                    </div>
+                                    <span>展开/折叠</span>
+                                </div>
+                                <div class="icb-plan-reasoning-content__content">
+                                    <p>1. 分析当前架构：Backend 采用 Express + MySQL，需要对关键 API 进行 JWT 鉴权校验。</p>
+                                    <p>2. 补充 Rate Limiting 防护与 Zod 入参合法性校验。</p>
+                                    <p>3. 实现废品回收点数累加与积分兑换防刷逻辑。</p>
+                                </div>
+                            </div>
+
+                            <div class="icd-tasks-list-card-container">
+                                <div class="icd-tasks-list-card-header">
+                                    <span>📋 实施任务清单</span>
+                                </div>
+                                <div class="icd-tasks-list-item-container">✅ 升级 Express Gateway 中间件并引入 RateLimit</div>
+                                <div class="icd-tasks-list-item-container">✅ 增加用户积分及废品品类回收动态 API</div>
+                                <div class="icd-tasks-list-item-container">⏳ 单元测试与端到端集成验证</div>
+                            </div>
+
+                            <div class="chat-markdown">
+                                <p>已为您完成废品回收平台 (Waste2Goods) 的核心架构优化。以下是示例代码：</p>
+                                <pre><code>// packages/backend/src/middleware/auth.js
+const jwt = require('jsonwebtoken');
+
+function authenticateToken(req, res, next) {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+    if (!token) return res.sendStatus(401);
+
+    jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+        if (err) return res.sendStatus(403);
+        req.user = user;
+        next();
+    });
+}</code></pre>
+                            </div>
+
+                            <div class="icd-run-command-card-v2">
+                                <div class="icd-run-command-card-v2-cwd">📁 c:/Users/USER/Downloads/Gamified Recycling Platform Prototype</div>
+                                <div class="icd-run-command-card-v2-command-text"><span style="color:#888;">$</span> npm run dev:backend</div>
+                                <div class="icd-run-command-card-v2-command-output">[Server] Listening on http://0.0.0.0:5000 (MySQL Connected)
+[Cache] Memory-cache TTL layers initialized.</div>
+                            </div>
+                        </div>
+                    `
+                }
+            ];
+
+            demoTurns.forEach(t => {
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = t.html;
+                activeCollector.collectedTurns.set(t.id, {
+                    id: t.id,
+                    role: t.role,
+                    index: t.index,
+                    element: tempDiv,
+                    timestamp: t.timestamp
+                });
+            });
+
+            renderTurnsToContainer();
+            showToast('已载入演示对话数据！');
+        }
+
+        function exportData(format) {
+            if (activeCollector.collectedTurns.size === 0) {
+                alert('当前没有可导出的对话数据！');
+                return;
+            }
+
+            if (format === 'json') {
+                const jsonStr = activeCollector.exportToJSON();
+                downloadBlob(jsonStr, `chat-export-${Date.now()}.json`, 'application/json');
+            } else if (format === 'html') {
+                const htmlStr = document.documentElement.outerHTML;
+                downloadBlob(htmlStr, `chat-export-${Date.now()}.html`, 'text/html');
+            }
+        }
+
+        function downloadBlob(content, filename, type) {
+            const blob = new Blob([content], { type: `${type};charset=utf-8` });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            showToast(`✅ 已下载文件: ${filename}`);
+        }
+
+        // Initialize on DOM load
+        document.addEventListener('DOMContentLoaded', () => {
+            updateScriptDisplay();
+            renderTurnsToContainer();
+            
+            // Auto setup config listeners
+            ['cfgDuration', 'cfgAutoScroll', 'cfgInterval'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.addEventListener('change', updateScriptDisplay);
+            });
+        });
+    </script>
+</body>
+</html>
