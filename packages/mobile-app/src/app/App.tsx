@@ -3,25 +3,22 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { Waste2GoodsAPI, getApiHost, setApiHost, getApiBaseUrl, testApiConnection } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
-  Smartphone, Monitor, Cpu, Recycle, Home, QrCode, Gift,
+  Monitor, Recycle, Home, QrCode, Gift,
   Target, User, ArrowLeft, Check, AlertCircle, Scale, CheckCircle,
-  RefreshCw, MapPin, Activity, ShoppingCart, Filter, MoreHorizontal,
-  Plus, Edit, Trash2, Eye, Wifi, Clock, Trophy, Medal, Zap, Award,
-  BarChart3, Users, TrendingUp, Bell, Search, LogOut, HelpCircle,
-  ChevronRight, Shield, Mail, Phone, BookOpen, Leaf, Star,
-  Download, X, Settings, Lock, Info, Flame, Camera, Globe
+  RefreshCw, MapPin, Activity, ShoppingCart,
+  Clock, Trophy, Medal, Zap,
+  Bell, LogOut, HelpCircle,
+  ChevronRight, Shield, Mail, Phone, Leaf, Star,
+  Settings, Lock, Info, Flame, Camera, Globe
 } from "lucide-react";
-import {
-  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend
-} from "recharts";
 
 type MobileScreen =
   | "splash" | "onboard1" | "onboard2" | "onboard3"
   | "login" | "register" | "mfa" | "profile-setup"
   | "home" | "submit" | "submit-scan" | "submit-confirm" | "submit-done"
   | "rewards" | "redeem-confirm" | "redeem-history"
-  | "tasks" | "profile" | "history" | "settings" | "notifications";
+  | "tasks" | "profile" | "history" | "settings" | "notifications"
+  | "leaderboard";
 
 const weeklyData = [
   { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
@@ -672,6 +669,227 @@ const PH_LOCATIONS: Record<string, Record<string, string[]>> = {
 const alphabeticalCompare = (a: string, b: string) => a.localeCompare(b, "en");
 const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
 
+const UNPROTECTED_SCREENS: MobileScreen[] = [
+  "splash", "onboard1", "onboard2", "onboard3",
+  "login", "register", "mfa", "profile-setup",
+];
+
+function isAuthRequiredScreen(screen: MobileScreen) {
+  return !UNPROTECTED_SCREENS.includes(screen);
+}
+
+function isSessionValid() {
+  const auth = Waste2GoodsAPI.getAuthState();
+  return Boolean(auth?.isAuthenticated && auth?.token);
+}
+
+function formatNotifTimeAgo(t: string) {
+  try {
+    const ms = new Date(t).getTime();
+    if (!ms) return "";
+    const diff = Date.now() - ms;
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  } catch {
+    return "";
+  }
+}
+
+function notifIconForType(type: string, severity: string) {
+  if (type === "redemption") return <Gift className={`w-4 h-4 ${severity === "danger" ? "text-red-600" : "text-indigo-600"}`} />;
+  if (type === "milestone") return <Trophy className="w-4 h-4 text-amber-600" />;
+  if (type === "task") return <Target className="w-4 h-4 text-primary" />;
+  if (type === "welcome") return <Leaf className="w-4 h-4 text-green-600" />;
+  if (type === "submission") return <Recycle className="w-4 h-4 text-green-700" />;
+  return <Bell className="w-4 h-4 text-muted-foreground" />;
+}
+
+function notifIconBgClass(type: string) {
+  if (type === "redemption") return "bg-indigo-100";
+  if (type === "milestone") return "bg-amber-100";
+  if (type === "task") return "bg-green-100";
+  if (type === "welcome") return "bg-emerald-100";
+  if (type === "submission") return "bg-lime-100";
+  return "bg-slate-100";
+}
+
+function NotificationsScreen({
+  currentUserId,
+  notifItems,
+  notifUnread,
+  go,
+  screen,
+}: {
+  currentUserId: string;
+  notifItems: any[];
+  notifUnread: number;
+  go: (s: MobileScreen) => void;
+  screen: MobileScreen;
+}) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-black leading-tight">Notifications</h2>
+          <p className="text-[10px] text-muted-foreground">{notifItems.length} total{notifUnread > 0 ? ` · ${notifUnread} unread` : " · All read ✓"}</p>
+        </div>
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary">
+          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+          LIVE · {currentUserId || "U-000"}
+        </span>
+      </div>
+      <div className="flex-1 overflow-y-auto p-5 space-y-2 pb-24">
+        {notifItems.length === 0 && (
+          <div className="py-16 flex flex-col items-center gap-3 text-center px-5">
+            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
+              <Bell className="w-7 h-7 text-slate-400" />
+            </div>
+            <h3 className="font-black text-foreground">No notifications yet</h3>
+            <p className="text-xs text-muted-foreground">When you submit waste, redeem rewards, or unlock badges — you'll see them here.</p>
+            <button onClick={() => go("home")} className="mt-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-black">Return to Home</button>
+          </div>
+        )}
+        {notifItems.map(n => (
+          <div key={n.id} className={`flex gap-3 p-3.5 rounded-2xl border ${n.read === false ? "bg-primary/5 border-primary/20" : "bg-white border-border"}`}>
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${notifIconBgClass(n.type)}`}>
+              {notifIconForType(n.type, n.severity || "info")}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <p className={`text-sm font-bold text-foreground leading-snug ${n.read === false ? "" : "opacity-90"}`}>{n.title}</p>
+                <span className="flex-shrink-0 text-[10px] text-muted-foreground font-semibold whitespace-nowrap">{formatNotifTimeAgo(n.time)}</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
+              {n.read === false && <span className="inline-block mt-1.5 w-1.5 h-1.5 rounded-full bg-primary" title="Unread" />}
+            </div>
+          </div>
+        ))}
+      </div>
+      <MobileBottomNav screen={screen} go={go} />
+    </div>
+  );
+}
+
+type RegFormFields = {
+  regFullName: string;
+  regEmail: string;
+  regPassword: string;
+  regConfirmPassword: string;
+  regProvince: string;
+  regCity: string;
+  regBarangay: string;
+};
+
+function validateRegStep0(fields: RegFormFields): string | null {
+  if (!fields.regFullName || !fields.regEmail || !fields.regPassword || !fields.regConfirmPassword) {
+    return "Please fill in all fields: name, email, phone, password, confirm password";
+  }
+  if (fields.regPassword !== fields.regConfirmPassword) return "Passwords do not match";
+  if (fields.regPassword.length < 6) return "Password must be at least 6 characters";
+  return null;
+}
+
+function validateRegStep1(fields: Pick<RegFormFields, "regProvince" | "regCity" | "regBarangay">): string | null {
+  if (!fields.regProvince || !fields.regCity || !fields.regBarangay) {
+    return "Please select Province, City/Municipality, and Barangay";
+  }
+  return null;
+}
+
+function validateRegComplete(fields: RegFormFields): { error: string | null; step?: number } {
+  const step0 = validateRegStep0(fields);
+  if (step0) return { error: step0, step: 0 };
+  const step1 = validateRegStep1(fields);
+  if (step1) return { error: step1, step: 1 };
+  return { error: null };
+}
+
+function parseRegName(fullName: string) {
+  const names = fullName.trim().split(/\s+/);
+  return { firstName: names[0] || "User", lastName: names.slice(1).join(" ") || "Lastname" };
+}
+
+function buildProfilePatches(fields: {
+  setFName: string; setLName: string; setFormEmail: string; setPhone: string;
+  setProvince: string; setCity: string; setBrgy: string;
+}) {
+  const patches: Record<string, string> = {};
+  if (fields.setFName) patches.firstName = fields.setFName;
+  if (fields.setLName) patches.lastName = fields.setLName;
+  if (fields.setFormEmail) patches.email = fields.setFormEmail;
+  if (fields.setPhone) patches.phone = fields.setPhone;
+  if (fields.setProvince) patches.province = fields.setProvince;
+  if (fields.setCity) patches.city = fields.setCity;
+  if (fields.setBrgy) patches.barangayName = fields.setBrgy;
+  return patches;
+}
+
+async function persistProfile(
+  currentUser: MobileUserShape,
+  patches: Record<string, string>,
+): Promise<boolean> {
+  if (Waste2GoodsAPI.saveProfile) return Waste2GoodsAPI.saveProfile(patches);
+  const userId = currentUser.id || currentUser.userId;
+  const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${Waste2GoodsAPI.getAuthState()?.token || ""}`,
+    },
+    body: JSON.stringify(patches),
+  });
+  return res.ok;
+}
+
+function publishQrBridge(decodedText: string, currentUser: MobileUserShape) {
+  const auth = Waste2GoodsAPI.getAuthState();
+  const u = auth?.user || {};
+  const bridgePayload = {
+    user: {
+      id: (u as any).id || (u as any).userId || currentUser.id || "U-001",
+      userId: (u as any).id || (u as any).userId || currentUser.id || "U-001",
+      name: currentUser.name && currentUser.name !== "Guest User"
+        ? currentUser.name
+        : (u as any).name || `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || "Registered User",
+      firstName: (u as any).firstName,
+      lastName: (u as any).lastName,
+      email: currentUser.email || (u as any).email || "",
+      points: currentUser.points || (u as any).pointsBalance || 50,
+      pointsBalance: currentUser.points || (u as any).pointsBalance || 50,
+    },
+    kioskPayload: decodedText,
+    timestamp: Date.now(),
+  };
+  localStorage.setItem("w2g_kiosk_qr_bridge", JSON.stringify(bridgePayload));
+  try {
+    window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) }));
+  } catch { /* ignore */ }
+  Waste2GoodsAPI.connectKioskSession?.({
+    userId: bridgePayload.user.id || bridgePayload.user.userId,
+    userName: bridgePayload.user.name,
+    kioskId: decodedText.includes("K-") ? decodedText : "K-01",
+  });
+}
+
+function mapKioskSessionResponse(
+  res: { connected?: boolean; kioskId?: string; connectedAt?: number } | null,
+  prev: { connected: boolean; kioskId?: string; connectedAt?: number },
+) {
+  if (!res) return { connected: false } as const;
+  return {
+    connected: !!res.connected,
+    kioskId: res.kioskId,
+    connectedAt: res.connected ? (res.connectedAt ?? prev.connectedAt ?? Date.now()) : undefined,
+  };
+}
+
 export default function App() {
   const [screen, setScreen] = useState<MobileScreen>("splash");
   const [leaderTab, setLeaderTab] = useState<"weekly" | "monthly">("weekly");
@@ -699,7 +917,7 @@ export default function App() {
   // ── Profile state (refreshed from DB when profile screen opens) ──
   // Initialize immediately from localStorage so the greeting never shows
   // "Guest User" flash on a real logged-in session (persistent auth restore).
-  const [profileUser, setProfileUser] = useState<any | null>(() => {
+  const [profileUser, setProfileUser] = useState<any>(() => {
     try {
       const raw = localStorage.getItem("w2g_auth_state");
       if (!raw) return null;

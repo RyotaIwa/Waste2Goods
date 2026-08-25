@@ -149,7 +149,9 @@ function getNotifSeverityBg(severity: string): string {
 
 function getNotifIcon(type: string, severity: string) {
   if (type === "redemption") {
-    const color = severity === "success" ? "text-green-600" : severity === "danger" ? "text-red-500" : "text-blue-600";
+    let color = "text-blue-600";
+    if (severity === "success") color = "text-green-600";
+    else if (severity === "danger") color = "text-red-500";
     return <ShoppingCart className={`w-4 h-4 ${color}`} />;
   }
   if (type === "newUser") {
@@ -159,7 +161,7 @@ function getNotifIcon(type: string, severity: string) {
 }
 
 function computeAdminDisplay(
-  adminProfile: any | null,
+  adminProfile: any,
   roleMap: Record<number, string>,
 ): { name: string; email: string; roleLabel: string; initials: string } {
   const prof = adminProfile || Waste2GoodsAPI.getAuthState()?.user || null;
@@ -201,7 +203,7 @@ type AdminDataSetters = {
   setDashboardSummary: (v: DashboardSummaryShape | null) => void;
   setNotifications: (v: any[] | null) => void;
   setNotifUnread: (n: number) => void;
-  setAdminProfile: (v: any | null) => void;
+  setAdminProfile: (v: any) => void;
   setProfileRefreshKey: (updater: (k: number) => number) => void;
 };
 
@@ -284,13 +286,13 @@ function applyAdminDataSet(
 }
 
 // Login Screen Component
-function LoginScreen({ onLogin }: { onLogin: () => void }) {
+function LoginScreen({ onLogin }: Readonly<{ onLogin: () => void }>) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -372,7 +374,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>("login");
   const [section, setSection] = useState<AdminSection>("dashboard");
-  const [selectedUser, setSelectedUser] = useState<any | null>(null);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
 
   // ── UI state: search, notifications, forms ──
@@ -399,7 +401,7 @@ export default function App() {
     kgDelta: number; newUsers: number; redeemedDelta: number;
   } | null>(null);
   // ── Admin profile state (reactive; refreshed from DB on mount / section change) ──
-  const [adminProfile, setAdminProfile] = useState<any | null>(null);
+  const [adminProfile, setAdminProfile] = useState<any>(null);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
 
   // Human-readable role labels from the roles table schema:
@@ -442,7 +444,7 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [screen, section]);
+  }, [screen, section, profileRefreshKey]);
 
   // Clear any persisted auth on mount to force manual login
   useEffect(() => {
@@ -482,8 +484,6 @@ export default function App() {
   }
 
   // Admin profile data (reactive via adminProfile state; falls back to localStorage then defaults)
-  // profileRefreshKey triggers re-read
-  profileRefreshKey;
   const { name: adminName, email: adminEmail, roleLabel, initials } = computeAdminDisplay(adminProfile, ROLE_NAME);
 
   return (
@@ -708,7 +708,7 @@ function formatDashboardTransactions(liveTx: any[] | null) {
   });
 }
 
-function DashboardSummaryCards({ liveSummary }: { liveSummary: any }) {
+function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) {
   const totalCollectedStr = liveSummary ? formatDemoVal(liveSummary.totalKg, "12,450 kg", "kg") : "12,450 kg";
   const activeResidentsStr = liveSummary ? formatDemoVal(liveSummary.activeResidents, "847") : "847";
   const pointsAwardedStr = liveSummary ? formatDemoVal(liveSummary.pointsAwarded, "284.5K", "K") : "284.5K";
@@ -724,7 +724,7 @@ function DashboardSummaryCards({ liveSummary }: { liveSummary: any }) {
   );
 }
 
-function WeeklyCollectionCard({ liveWeekly }: { liveWeekly: any[] | null }) {
+function WeeklyCollectionCard({ liveWeekly }: Readonly<{ liveWeekly: any[] | null }>) {
   const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
   const isLive = Boolean(liveWeekly && liveWeekly.length > 0);
 
@@ -778,7 +778,7 @@ function WasteCompositionCard() {
   );
 }
 
-function TopResidentsCard({ liveLeaderboard }: { liveLeaderboard: any[] | null }) {
+function TopResidentsCard({ liveLeaderboard }: Readonly<{ liveLeaderboard: any[] | null }>) {
   const mergedLeaderboard = formatDashboardLeaderboard(liveLeaderboard);
   const isLive = Boolean(liveLeaderboard && liveLeaderboard.length > 0);
 
@@ -815,7 +815,7 @@ function getTxIcon(type: string) {
   return <Zap className="w-3 h-3 text-amber-600" />;
 }
 
-function RecentActivityCard({ liveTx }: { liveTx: any[] | null }) {
+function RecentActivityCard({ liveTx }: Readonly<{ liveTx: any[] | null }>) {
   const mergedTx = formatDashboardTransactions(liveTx);
   const isLive = Boolean(liveTx && liveTx.length > 0);
 
@@ -845,12 +845,12 @@ function AdminDashboard({
   liveWeekly,
   liveLeaderboard,
   liveTx,
-}: {
+}: Readonly<{
   liveSummary: null | { totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number; kgDelta: number; newUsers: number; redeemedDelta: number; };
   liveWeekly: any[] | null;
   liveLeaderboard: any[] | null;
   liveTx: any[] | null;
-}) {
+}>) {
   return (
     <div className="space-y-5">
       <DashboardSummaryCards liveSummary={liveSummary} />
@@ -866,9 +866,141 @@ function AdminDashboard({
   );
 }
 
-function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selectedUser, onBack, onAdjust }: { liveUsers: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void>; onSelect: (u: any) => void; selectedUser: any | null; onBack: () => void; onAdjust: () => void }) {
+function formatUserJoinedDate(rawJoined: any): string {
+  if (!rawJoined) return "May 14, 2025";
+  if (typeof rawJoined !== "string") {
+    return new Date(Number(rawJoined)).toLocaleDateString();
+  }
+  if (rawJoined.includes("T")) {
+    return new Date(rawJoined).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  return rawJoined;
+}
+
+function getMergedAndFilteredUsers(liveUsers: any[] | null, searchQuery: string) {
+  let mergedUsers: any[] = liveUsers && liveUsers.length > 0
+    ? liveUsers.map((u: any, i: number) => {
+        const name = u.name || `${u.firstName || "Resident"} ${u.lastName || String(i + 1)}`.trim();
+        const barangay = u.barangayName || u.barangay || "Cabantian";
+        const points = Number(u.pointsBalance || u.points || 0);
+        const submissions = Number(u.totalSubmissions || u.submissions || 0);
+        const redeemed = Number(u.redeemed || 0);
+        const rawJoined = u.createdAt || u.joined || u.registrationDate;
+        const joined = formatUserJoinedDate(rawJoined);
+        const statusBase = String(u.status || (points > 0 || submissions > 0 ? "active" : "inactive")).toLowerCase();
+        const status = statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
+        const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
+        const email = u.email || "";
+        const phone = u.contactInfo || u.phone || "";
+        return {
+          id, userId: id, email, phone,
+          firstName: u.firstName || name.split(" ")[0] || "",
+          lastName: u.lastName || name.split(" ").slice(1).join(" ") || "",
+          name, barangay, points, submissions, redeemed,
+          joined, status,
+        };
+      })
+    : adminUsers.slice();
+
+  if (searchQuery?.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    return mergedUsers.filter((u: any) =>
+      (u.name || "").toLowerCase().includes(q) ||
+      (u.email || "").toLowerCase().includes(q) ||
+      (u.id || "").toLowerCase().includes(q) ||
+      (u.userId || "").toLowerCase().includes(q) ||
+      (u.barangay || "").toLowerCase().includes(q) ||
+      (u.phone || "").toLowerCase().includes(q)
+    );
+  }
+
+  return mergedUsers;
+}
+
+function AdminUserProfileDetail({
+  selectedUser,
+  banner,
+  onBack,
+  onAdjust,
+  openEdit,
+  toggleStatus,
+}: Readonly<{
+  selectedUser: any;
+  banner: { type: "ok" | "err"; text: string } | null;
+  onBack: () => void;
+  onAdjust: () => void;
+  openEdit: (u: any) => void;
+  toggleStatus: (u: any) => void;
+}>) {
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
+        <h2 className="font-black text-foreground">User Profile</h2>
+        {banner && (
+          <div className={`ml-auto text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+            {banner.type === 'ok' ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}{banner.text}
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-3 gap-4">
+        <div className="col-span-1 bg-white rounded-2xl border border-border p-5 flex flex-col items-center gap-3 text-center">
+          <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-xl font-black text-white">
+            {selectedUser.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}
+          </div>
+          <div>
+            <p className="font-black text-foreground">{selectedUser.name}</p>
+            <p className="text-xs text-muted-foreground">{selectedUser.barangay}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Joined {selectedUser.joined}</p>
+          </div>
+          <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
+            <StatusPip status={selectedUser.status} />{selectedUser.status}
+          </span>
+          <div className="w-full space-y-1.5 text-xs">
+            {selectedUser.email && <p className="flex items-center gap-1 justify-center"><Mail className="w-3 h-3 text-muted-foreground" />{selectedUser.email}</p>}
+            {selectedUser.phone && <p className="flex items-center gap-1 justify-center text-muted-foreground">📞 {selectedUser.phone}</p>}
+            <p className="flex items-center gap-1 justify-center text-muted-foreground">ID: {selectedUser.userId || selectedUser.id}</p>
+          </div>
+          <button type="button" onClick={onAdjust} className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5">
+            <Zap className="w-3.5 h-3.5" /> Adjust Points
+          </button>
+          <button type="button" onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
+            <Edit className="w-3.5 h-3.5" /> Edit Profile
+          </button>
+          <button type="button" onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? BADGE_DANGER_CLS + " hover:bg-red-100" : BADGE_OK_CLS + " hover:bg-green-100"}`}>
+            {selectedUser.status==="active" ? "🚫 Suspend User" : "✅ Reactivate User"}
+          </button>
+        </div>
+        <div className="col-span-2 space-y-4">
+          <div className="grid grid-cols-3 gap-3">
+            {[["Points Balance", (selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()+" pts","text-primary"],["Submissions",(selectedUser.submissions??0)+" times","text-blue-600"],["Redeemed",(selectedUser.redeemed??0)+" items","text-purple-600"]].map(([l,v,c]) => (
+              <div key={String(l)} className="bg-white rounded-2xl border border-border p-3 text-center">
+                <p className={`text-xl font-black ${c}`}>{v}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{l}</p>
+              </div>
+            ))}
+          </div>
+          <div className="bg-white rounded-2xl border border-border p-4">
+            <h3 className="font-black text-sm mb-3">Recent Transactions</h3>
+            <div className="space-y-1.5">
+              {transactions.slice(0,4).map(t => (
+                <div key={t.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0 text-xs">
+                  <span className="text-muted-foreground">{t.date}</span>
+                  <span className="flex-1 truncate font-semibold">{t.desc}</span>
+                  <span className={`font-black ${t.pts>0?"text-primary":"text-red-500"}`}>{t.pts>0?"+":""}{t.pts}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selectedUser, onBack, onAdjust }: Readonly<{ liveUsers: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void>; onSelect: (u: any) => void; selectedUser: any; onBack: () => void; onAdjust: () => void }>) {
   const [showEditForm, setShowEditForm] = useState(false);
-  const [editUser, setEditUser] = useState<any | null>(null);
+  const [editUser, setEditUser] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [uFirst, setUFirst] = useState("");
@@ -929,6 +1061,8 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     }
   };
 
+  const mergedUsers = getMergedAndFilteredUsers(liveUsers, searchQuery);
+
   const exportCSV = () => {
     const rows = [["User ID","Name","Barangay","Email","Phone","Points","Submissions","Joined","Status"]];
     mergedUsers.forEach((u: any) => rows.push([u.userId || u.id, u.name || "", u.barangay || "", u.email || "", u.phone || "", String(u.points || 0), String(u.submissions || 0), u.joined || "", u.status || ""]));
@@ -941,122 +1075,16 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     URL.revokeObjectURL(url);
   };
 
-function formatUserJoinedDate(rawJoined: any): string {
-  if (!rawJoined) return "May 14, 2025";
-  if (typeof rawJoined !== "string") {
-    return new Date(Number(rawJoined)).toLocaleDateString();
-  }
-  if (rawJoined.includes("T")) {
-    return new Date(rawJoined).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  }
-  return rawJoined;
-}
-
-  // Merge: live DB users first (convert to UI shape), fall back to demo adminUsers array when not available.
-  let mergedUsers: any[] = liveUsers && liveUsers.length > 0
-    ? liveUsers.map((u: any, i: number) => {
-        const name = u.name || `${u.firstName || "Resident"} ${u.lastName || String(i + 1)}`.trim();
-        const barangay = u.barangayName || u.barangay || "Cabantian";
-        const points = Number(u.pointsBalance || u.points || 0);
-        const submissions = Number(u.totalSubmissions || u.submissions || 0);
-        const redeemed = Number(u.redeemed || 0);
-        const rawJoined = u.createdAt || u.joined || u.registrationDate;
-        const joined = formatUserJoinedDate(rawJoined);
-        const statusBase = String(u.status || (points > 0 || submissions > 0 ? "active" : "inactive")).toLowerCase();
-        const status = statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
-        const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
-        const email = u.email || "";
-        const phone = u.contactInfo || u.phone || "";
-        return {
-          id, userId: id, email, phone,
-          firstName: u.firstName || name.split(" ")[0] || "",
-          lastName: u.lastName || name.split(" ").slice(1).join(" ") || "",
-          name, barangay, points, submissions, redeemed,
-          joined, status,
-        };
-      })
-    : adminUsers.slice();
-
-  // Apply search filter (name, email, id, barangay)
-  if (searchQuery && searchQuery.trim()) {
-    const q = searchQuery.trim().toLowerCase();
-    mergedUsers = mergedUsers.filter((u: any) =>
-      (u.name || "").toLowerCase().includes(q) ||
-      (u.email || "").toLowerCase().includes(q) ||
-      (u.id || "").toLowerCase().includes(q) ||
-      (u.userId || "").toLowerCase().includes(q) ||
-      (u.barangay || "").toLowerCase().includes(q) ||
-      (u.phone || "").toLowerCase().includes(q)
-    );
-  }
-
-  // users array for export (fallback)
-  const users = mergedUsers;
-
   if (selectedUser) {
     return (
-      <div className="space-y-5">
-        <div className="flex items-center gap-3">
-          <button type="button" onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
-          <h2 className="font-black text-foreground">User Profile</h2>
-          {banner && (
-            <div className={`ml-auto text-xs px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
-              {banner.type === 'ok' ? <Check className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}{banner.text}
-            </div>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div className="col-span-1 bg-white rounded-2xl border border-border p-5 flex flex-col items-center gap-3 text-center">
-            <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-xl font-black text-white">
-              {selectedUser.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}
-            </div>
-            <div>
-              <p className="font-black text-foreground">{selectedUser.name}</p>
-              <p className="text-xs text-muted-foreground">{selectedUser.barangay}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Joined {selectedUser.joined}</p>
-            </div>
-            <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
-              <StatusPip status={selectedUser.status} />{selectedUser.status}
-            </span>
-            <div className="w-full space-y-1.5 text-xs">
-              {selectedUser.email && <p className="flex items-center gap-1 justify-center"><Mail className="w-3 h-3 text-muted-foreground" />{selectedUser.email}</p>}
-              {selectedUser.phone && <p className="flex items-center gap-1 justify-center text-muted-foreground">📞 {selectedUser.phone}</p>}
-              <p className="flex items-center gap-1 justify-center text-muted-foreground">ID: {selectedUser.userId || selectedUser.id}</p>
-            </div>
-            <button type="button" onClick={onAdjust} className="w-full py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-1.5">
-              <Zap className="w-3.5 h-3.5" /> Adjust Points
-            </button>
-            <button type="button" onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
-              <Edit className="w-3.5 h-3.5" /> Edit Profile
-            </button>
-            <button type="button" onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? BADGE_DANGER_CLS + " hover:bg-red-100" : BADGE_OK_CLS + " hover:bg-green-100"}`}>
-              {selectedUser.status==="active" ? "🚫 Suspend User" : "✅ Reactivate User"}
-            </button>
-          </div>
-          <div className="col-span-2 space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              {[["Points Balance", (selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()+" pts","text-primary"],["Submissions",(selectedUser.submissions??0)+" times","text-blue-600"],["Redeemed",(selectedUser.redeemed??0)+" items","text-purple-600"]].map(([l,v,c]) => (
-                <div key={String(l)} className="bg-white rounded-2xl border border-border p-3 text-center">
-                  <p className={`text-xl font-black ${c}`}>{v}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{l}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white rounded-2xl border border-border p-4">
-              <h3 className="font-black text-sm mb-3">Recent Transactions</h3>
-              <div className="space-y-1.5">
-                {transactions.slice(0,4).map(t => (
-                  <div key={t.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0 text-xs">
-                    <span className="text-muted-foreground">{t.date}</span>
-                    <span className="flex-1 truncate font-semibold">{t.desc}</span>
-                    <span className={`font-black ${t.pts>0?"text-primary":"text-red-500"}`}>{t.pts>0?"+":""}{t.pts}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AdminUserProfileDetail
+        selectedUser={selectedUser}
+        banner={banner}
+        onBack={onBack}
+        onAdjust={onAdjust}
+        openEdit={openEdit}
+        toggleStatus={toggleStatus}
+      />
     );
   }
 
@@ -1169,7 +1197,7 @@ function formatUserJoinedDate(rawJoined: any): string {
                   </span>
                 </td>
                 <td className="px-4 py-3">
-                  <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                  <div className="flex gap-1">
                     <button type="button" onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="View"><Eye className="w-3.5 h-3.5" /></button>
                     <button type="button" onClick={() => openEdit(u)} className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
                     <button type="button" onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status==="active" ? "Suspend" : "Reactivate"}>{u.status==="active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
@@ -1188,13 +1216,13 @@ function getRewardSubmitButtonText(saving: boolean, editing: boolean): string {
   return editing ? "Save Changes" : "Create Reward";
 }
 
-function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh }: { liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }) {
+function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh }: Readonly<{ liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }>) {
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<any | null>(null);
-  const [restock, setRestock] = useState<any | null>(null);
+  const [editing, setEditing] = useState<any>(null);
+  const [restock, setRestock] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const [confirmDel, setConfirmDel] = useState<any | null>(null);
+  const [confirmDel, setConfirmDel] = useState<any>(null);
   const [rName, setRName] = useState("");
   const [rPoints, setRPoints] = useState<string>("100");
   const [rStock, setRStock] = useState<string>("0");
@@ -1309,7 +1337,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
     : rewards.slice();
 
   // Apply search filter (name, desc, category, icon)
-  if (searchQuery && searchQuery.trim()) {
+  if (searchQuery?.trim()) {
     const q = searchQuery.trim().toLowerCase();
     mergedRewards = mergedRewards.filter((r: any) =>
       (r.name || "").toLowerCase().includes(q) ||
@@ -1455,8 +1483,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                 <p className="text-xs text-muted-foreground">Current stock: <span className="font-black text-foreground">{Number(restock.stockQuantity ?? restock.stock ?? 0)}</span></p>
               </div>
             </div>
-            <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Quantity to add</label>
-            <input type="number" value={rRestockQty} onChange={e => setRRestockQty(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm mb-4" />
+            <label htmlFor="rRestockQtyInput" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Quantity to add</label>
+            <input id="rRestockQtyInput" type="number" value={rRestockQty} onChange={e => setRRestockQty(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm mb-4" />
             <div className="flex gap-2">
               <button type="button" onClick={() => setRestock(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
               <button type="button" disabled={saving} onClick={submitRestock} className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60">{saving ? "Saving..." : "Restock"}</button>
@@ -1488,43 +1516,71 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
   );
 }
 
-function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: { liveWeekly: any[] | null; liveMonthly: any[] | null; liveRedemptions: any[] | null }) {
+function exportAnalyticsDataCSV(mergedMonthly: any[], mergedWeekly: any[], liveRedemptions: any[] | null) {
+  const rows = [["Dataset","Key","Collected (kg)","Redeemed","Active Users","Notes"]];
+  mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.kg || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
+  mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i+1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
+  (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `waste2goods-analytics-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function AnalyticsTopRedeemedCard() {
+  const counts = [72, 58, 41, 31, 24];
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-border">
+      <h3 className="font-black text-sm text-foreground mb-4">Top Redeemed Rewards</h3>
+      <div className="space-y-3">
+        {rewards.slice(0, 5).map((r, i) => (
+          <div key={r.id} className="flex items-center gap-3">
+            <span className="text-xl w-8">{r.icon}</span>
+            <span className="text-xs font-semibold text-foreground w-40 truncate">{r.name}</span>
+            <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${(counts[i] / counts[0]) * 100}%` }} />
+            </div>
+            <span className="text-xs font-black text-muted-foreground w-16 text-right">{counts[i]} redeemed</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: Readonly<{ liveWeekly: any[] | null; liveMonthly: any[] | null; liveRedemptions: any[] | null }>) {
   const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
   const mergedMonthly = liveMonthly && liveMonthly.length > 0 ? liveMonthly : monthlyData;
   const redeemed = (liveRedemptions || []).length;
+  const isLiveMonthly = Boolean(liveMonthly && liveMonthly.length > 0);
+  const isLiveWeekly = Boolean(liveWeekly && liveWeekly.length > 0);
+  const isLiveRedemptions = Boolean(liveRedemptions && liveRedemptions.length > 0);
 
-  const exportAnalyticsCSV = () => {
-    const rows = [["Dataset","Key","Collected (kg)","Redeemed","Active Users","Notes"]];
-    mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.kg || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
-    mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i+1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
-    (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `waste2goods-analytics-${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const avgKg = isLiveWeekly
+    ? (liveWeekly!.reduce((a: any, b: any) => a + Number(b.kg || 0), 0) / Math.max(1, liveWeekly!.length)).toFixed(1) + " kg"
+    : "14.7 kg";
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-4">
-        <SCard label="Avg. kg per user" value={liveWeekly && liveWeekly.length > 0 ? `${(liveWeekly.reduce((a: any, b: any) => a + Number(b.kg || 0), 0) / Math.max(1, liveWeekly.length)).toFixed(1)} kg` : "14.7 kg"} sub="Weekly avg." icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveWeekly && liveWeekly.length > 0 ? "LIVE" : "+2.1"} />
-        <SCard label="Redemptions Total" value={String(redeemed || 234)} sub={liveRedemptions && liveRedemptions.length > 0 ? "Actual from DB" : "Demo value"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveRedemptions && liveRedemptions.length > 0 ? "● LIVE" : "+12%"} />
-        <SCard label="Weeks with data" value={String(liveWeekly?.length || 7)} sub={liveWeekly && liveWeekly.length > 0 ? "Weekly points filled" : "Demo default 7"} icon={<BarChart3 className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveWeekly && liveWeekly.length > 0 ? "DB" : "DEMO"} />
+        <SCard label="Avg. kg per user" value={avgKg} sub="Weekly avg." icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={isLiveWeekly ? "LIVE" : "+2.1"} />
+        <SCard label="Redemptions Total" value={String(redeemed || 234)} sub={isLiveRedemptions ? "Actual from DB" : "Demo value"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={isLiveRedemptions ? "● LIVE" : "+12%"} />
+        <SCard label="Weeks with data" value={String(liveWeekly?.length || 7)} sub={isLiveWeekly ? "Weekly points filled" : "Demo default 7"} icon={<BarChart3 className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={isLiveWeekly ? "DB" : "DEMO"} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-white rounded-2xl p-4 border border-border">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-black text-sm text-foreground">Monthly Collection & Redemption</h3>
-              <div className="flex items-center gap-2">
-                <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${liveMonthly && liveMonthly.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveMonthly && liveMonthly.length > 0 ? "● LIVE" : "DEMO"}</span>
-                <button type="button" onClick={exportAnalyticsCSV} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
-              </div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-black text-sm text-foreground">Monthly Collection &amp; Redemption</h3>
+            <div className="flex items-center gap-2">
+              <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${isLiveMonthly ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{isLiveMonthly ? "● LIVE" : "DEMO"}</span>
+              <button type="button" onClick={() => exportAnalyticsDataCSV(mergedMonthly, mergedWeekly, liveRedemptions)} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
             </div>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={mergedMonthly}>
+          </div>
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={mergedMonthly}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
               <XAxis dataKey="month" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -1548,24 +1604,7 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: { liveWeek
           </ResponsiveContainer>
         </div>
       </div>
-      <div className="bg-white rounded-2xl p-4 border border-border">
-        <h3 className="font-black text-sm text-foreground mb-4">Top Redeemed Rewards</h3>
-        <div className="space-y-3">
-          {rewards.slice(0,5).map((r,i) => {
-            const counts = [72,58,41,31,24];
-            return (
-              <div key={r.id} className="flex items-center gap-3">
-                <span className="text-xl w-8">{r.icon}</span>
-                <span className="text-xs font-semibold text-foreground w-40 truncate">{r.name}</span>
-                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-                  <div className="h-full rounded-full bg-accent" style={{ width: `${(counts[i]/counts[0])*100}%` }} />
-                </div>
-                <span className="text-xs font-black text-muted-foreground w-16 text-right">{counts[i]} redeemed</span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <AnalyticsTopRedeemedCard />
     </div>
   );
 }
@@ -1600,7 +1639,7 @@ function getLogLevelBadgeClass(level: string): string {
   return "bg-blue-100 text-blue-700";
 }
 
-function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void> }) {
+function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void> }>) {
   const [openLogsKiosk, setOpenLogsKiosk] = useState<string | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -1629,14 +1668,15 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
     try {
       const res = await Waste2GoodsAPI.calibrateKiosk(id);
       if (res && (res as any).ok) {
-        setCalibrateMsg({ id, text: `✓ ${(res as any).message || `Calibration dispatched to ${id}. lastPing set to 'just now'.`}`, ok: true });
+        const msgText = (res as any).message || `Calibration dispatched to ${id}. lastPing set to 'just now'.`;
+        setCalibrateMsg({ id, text: `✓ ${msgText}`, ok: true });
         if (onRefresh) await onRefresh();
       } else throw new Error("API didn't return ok");
     } catch (e) {
       setCalibrateMsg({ id, text: e instanceof Error ? e.message : "Calibration failed. Run backend + MySQL.", ok: false });
     } finally {
       setCalibratingId(null);
-      setTimeout(() => setCalibrateMsg(cur => (cur && cur.id === id ? null : cur)), 3500);
+      setTimeout(() => setCalibrateMsg(cur => (cur?.id === id ? null : cur)), 3500);
     }
   };
 

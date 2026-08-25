@@ -4,7 +4,7 @@ import {
   Recycle, QrCode, Wifi, Clock, Battery, CheckCircle, Trophy, Scale,
   Check, Lock, Mail, ArrowLeft, LogIn, Smartphone, X, AlertCircle
 } from "lucide-react";
-import { Waste2GoodsAPI, KIOSK_PIN } from "@waste2goods/core";
+import { Waste2GoodsAPI } from "@waste2goods/core";
 
 type KioskScreen =
   | "idle"
@@ -30,7 +30,7 @@ function useAnimatedWeight(target: number, running: boolean) {
     let cur = 0;
     const iv = setInterval(() => {
       cur = Math.min(cur + step, target);
-      setVal(parseFloat(cur.toFixed(2)));
+      setVal(Number.parseFloat(cur.toFixed(2)));
       if (cur >= target) clearInterval(iv);
     }, 60);
     return () => clearInterval(iv);
@@ -50,6 +50,62 @@ const BADGE_SUCCESS_CLS = "bg-green-100 text-green-700";
 const BADGE_WARN_CLS = "bg-amber-100 text-amber-700";
 const BTN_PRIMARY_CLS = "rounded-2xl bg-green-500 text-white font-black hover:bg-green-400 transition-all";
 const BTN_SECONDARY_CLS = "rounded-2xl border border-white/20 text-white/70 font-semibold hover:bg-white/5 transition-colors";
+
+function KioskWeighingRing({ weight, selectedType }: Readonly<{ weight: number; selectedType: string }>) {
+  return (
+    <div className="flex flex-col items-center gap-4 flex-shrink-0">
+      <p className="text-green-300 text-sm font-bold uppercase tracking-widest">
+        Live Weight
+      </p>
+      <div className="relative w-56 h-56 flex items-center justify-center">
+        <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 200 200">
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="8"
+          />
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="#16a34a"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={`${2 * Math.PI * 88}`}
+            strokeDashoffset={`${2 * Math.PI * 88 * (1 - Math.min(1, weight / 5))}`}
+            style={{ transition: "stroke-dashoffset 0.3s ease" }}
+          />
+        </svg>
+        <div className="text-center z-10">
+          <Scale className="w-6 h-6 text-green-400 mx-auto mb-1" />
+          <span className="text-5xl font-black text-white">{weight.toFixed(1)}</span>
+          <p className="text-green-300 font-bold text-lg">kg</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/10">
+        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+        <span className="text-green-300 text-xs font-semibold">
+          Measuring {selectedType}...
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function KioskLeaderboardBadge() {
+  return (
+    <div className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/5 border border-white/10">
+      <Trophy className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+      <p className="text-white text-sm font-semibold">
+        You moved to <strong className="text-yellow-300">#3</strong> on this week's leaderboard! 🏆 Keep recycling!
+      </p>
+    </div>
+  );
+}
 
 function pickDemoUserFromList(list: any[]): ConnectedUser | null {
   if (!Array.isArray(list) || list.length === 0) return null;
@@ -82,7 +138,7 @@ function getMaterialIdByType(type: string): number {
 }
 
 function processBridgeData(raw: any): { linked: ConnectedUser; kioskId: string } | null {
-  if (!raw || !raw.user || !raw.timestamp) return null;
+  if (!raw?.user || !raw?.timestamp) return null;
   if (Date.now() - raw.timestamp >= 60000) return null;
   const linked = buildConnectedUserFromParsed(raw);
   const kioskId = raw.kioskPayload?.includes?.("K-") ? raw.kioskPayload : "K-01";
@@ -203,7 +259,7 @@ export default function App() {
         const data = localStorage.getItem(QR_BRIDGE_KEY);
         if (!data) return;
         const parsed = JSON.parse(data);
-        if (!parsed || !parsed.user || !parsed.timestamp) return;
+        if (!parsed?.user || !parsed?.timestamp) return;
         if (Date.now() - parsed.timestamp >= 60000) return;
         const linked = buildConnectedUserFromParsed(parsed);
         setConnectedUser(linked);
@@ -242,19 +298,6 @@ export default function App() {
     }, 30000);
     return () => clearInterval(pingIv);
   }, [connectedUser?.id, connectedUser?.name]);
-
-  const startFlow = () => {
-    if (!connectedUser) {
-      setKs("idle");
-      return;
-    }
-    setKs("scanning");
-    setTimeout(() => {
-      if (connectedUser) {
-        setKs("deposit");
-      }
-    }, 2500);
-  };
 
   const handleManualLogin = async () => {
     setManualError("");
@@ -431,6 +474,7 @@ export default function App() {
             <p className="text-green-300 text-sm">Enter your credentials to continue</p>
           </div>
           <button
+            type="button"
             onClick={() => { setManualError(""); go("welcome"); }}
             className="p-2 rounded-xl border border-white/15 text-white/70 hover:bg-white/10 transition-colors"
           >
@@ -440,12 +484,13 @@ export default function App() {
 
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-black text-green-300 uppercase tracking-wide mb-1.5 block">
+            <label htmlFor="kioskEmailInput" className="text-xs font-black text-green-300 uppercase tracking-wide mb-1.5 block">
               Email Address
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-green-400/70" />
               <input
+                id="kioskEmailInput"
                 type="email"
                 value={manualEmail}
                 onChange={(e) => setManualEmail(e.target.value)}
@@ -457,12 +502,13 @@ export default function App() {
           </div>
 
           <div>
-            <label className="text-xs font-black text-green-300 uppercase tracking-wide mb-1.5 block">
+            <label htmlFor="kioskPasswordInput" className="text-xs font-black text-green-300 uppercase tracking-wide mb-1.5 block">
               Password
             </label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-green-400/70" />
               <input
+                id="kioskPasswordInput"
                 type="password"
                 value={manualPassword}
                 onChange={(e) => setManualPassword(e.target.value)}
@@ -481,6 +527,7 @@ export default function App() {
           )}
 
           <button
+            type="button"
             onClick={handleManualLogin}
             disabled={manualLoading}
             className="w-full py-4 rounded-2xl bg-green-500 text-white font-black text-base hover:bg-green-400 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
@@ -516,6 +563,7 @@ export default function App() {
         </div>
 
         <button
+          type="button"
           onClick={() => { setManualError(""); go("idle"); }}
           className="w-full mt-6 py-3 rounded-xl text-green-300 text-xs font-bold hover:text-white transition-colors flex items-center justify-center gap-2"
         >
@@ -578,6 +626,7 @@ export default function App() {
                 </p>
               </div>
               <button
+                type="button"
                 onClick={handleResetKiosk}
                 className="text-xs text-white/50 hover:text-white/80 font-semibold underline underline-offset-2"
               >
@@ -591,6 +640,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2">
                 {[["♻️", "PET Plastic"]].map(([e, l]) => (
                   <button
+                    type="button"
                     key={String(l)}
                     onClick={() => setSelectedType(String(l))}
                     className={`flex items-center gap-2 p-3 rounded-xl border-2 text-sm font-bold transition-all ${
@@ -634,6 +684,7 @@ export default function App() {
             <p className="text-white/70 text-xs text-center">Place items in the bin then tap below</p>
           </div>
           <button
+            type="button"
             onClick={startWeigh}
             className="w-full py-4 rounded-2xl bg-green-500 text-white font-black text-lg hover:bg-green-400 transition-all"
             style={{ boxShadow: "0 0 30px rgba(74,222,128,0.25)" }}
@@ -652,61 +703,8 @@ export default function App() {
     }
     const user = connectedUser;
     return (
-function KioskWeighingRing({ weight, selectedType }: { weight: number; selectedType: string }) {
-  return (
-    <div className="flex flex-col items-center gap-4 flex-shrink-0">
-      <p className="text-green-300 text-sm font-bold uppercase tracking-widest">
-        Live Weight
-      </p>
-      <div className="relative w-56 h-56 flex items-center justify-center">
-        <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 200 200">
-          <circle
-            cx="100"
-            cy="100"
-            r="88"
-            fill="none"
-            stroke="rgba(255,255,255,0.08)"
-            strokeWidth="8"
-          />
-          <circle
-            cx="100"
-            cy="100"
-            r="88"
-            fill="none"
-            stroke="#16a34a"
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={`${2 * Math.PI * 88}`}
-            strokeDashoffset={`${2 * Math.PI * 88 * (1 - Math.min(1, weight / 5))}`}
-            style={{ transition: "stroke-dashoffset 0.3s ease" }}
-          />
-        </svg>
-        <div className="text-center z-10">
-          <Scale className="w-6 h-6 text-green-400 mx-auto mb-1" />
-          <span className="text-5xl font-black text-white">{weight.toFixed(1)}</span>
-          <p className="text-green-300 font-bold text-lg">kg</p>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/10">
-        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-        <span className="text-green-300 text-xs font-semibold">
-          Measuring {selectedType}...
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function KioskLeaderboardBadge() {
-  return (
-    <div className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/5 border border-white/10">
-      <Trophy className="w-5 h-5 text-yellow-400 flex-shrink-0" />
-      <p className="text-white text-sm font-semibold">
-        You moved to <strong className="text-yellow-300">#3</strong> on this week's leaderboard! 🏆 Keep recycling!
-      </p>
-    </div>
-  );
-}
+      <div className="w-full flex gap-8 items-center">
+        <KioskWeighingRing weight={weight} selectedType={selectedType} />
         <div className="flex-1 space-y-4">
           <div className="rounded-2xl bg-white/8 border border-white/15 p-5">
             <div className="grid grid-cols-2 gap-4">
@@ -776,6 +774,7 @@ function KioskLeaderboardBadge() {
             <p className="text-green-400 text-sm font-bold">pts</p>
           </div>
           <button
+            type="button"
             onClick={handleConfirmDone}
             className="w-full py-4 rounded-2xl bg-green-500 text-white font-black text-lg hover:bg-green-400 transition-all"
             style={{ boxShadow: "0 0 30px rgba(74,222,128,0.25)" }}
@@ -783,6 +782,7 @@ function KioskLeaderboardBadge() {
             Confirm ✓
           </button>
           <button
+            type="button"
             onClick={() => setKs("idle")}
             className="w-full py-2.5 rounded-2xl border border-white/20 text-white/60 text-sm font-semibold hover:bg-white/5 transition-colors"
           >
@@ -856,6 +856,7 @@ function KioskLeaderboardBadge() {
           </p>
         </div>
         <button
+          type="button"
           onClick={handleResetKiosk}
           className="text-sm text-green-400 font-semibold hover:text-green-300 transition-colors underline underline-offset-4 pt-2"
         >
