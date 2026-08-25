@@ -629,6 +629,49 @@ function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileS
   );
 }
 
+// Philippine Location Data: Province → Cities → Barangays (sample subset with Cabantian, Davao)
+const PH_LOCATIONS: Record<string, Record<string, string[]>> = {
+  "Davao del Sur": {
+    "Davao City": ["Cabantian", "Buhangin", "Poblacion", "Matina", "Toril", "Tugbok", "Calinan", "Marilog", "Baguio", "Paquibato"],
+    "Digos City": ["Barangay 1 Pob.", "Barangay 2 Pob.", "San Jose", "San Miguel", "Aplaya"],
+    "Sta. Cruz": ["Poblacion", "Sibulan", "Darong", "Inauayan", "Bato"],
+  },
+  "Metro Manila": {
+    "Quezon City": ["Diliman", "Loyola Heights", "Project 4", "Kamuning", "Commonwealth", "Batasan Hills"],
+    "Manila": ["Sampaloc", "Ermita", "Malate", "Quiapo", "Tondo", "Pasay"],
+    "Makati City": ["Poblacion", "Bel-Air", "San Lorenzo", "Urdaneta", "Forbes Park"],
+    "Taguig City": ["BGC", "Upper Bicutan", "Lower Bicutan", "Hagonoy", "Tuktukan"],
+  },
+  "Cebu": {
+    "Cebu City": ["Lahug", "Cebu Business Park", "Mabolo", "Talamban", "Poblacion Pardo", "San Nicolas"],
+    "Mandaue City": ["Centro", "Canduman", "Maguikay", "Opao", "Tabok"],
+    "Lapu-Lapu City": ["Punta Engaño", "Lapu-Lapu Pob.", "Marigondon", "Mactan"],
+  },
+  "Bukidnon": {
+    "Valencia City": ["Poblacion", "Bagontaas", "Lumbayao", "Batangan", "Guinoyuran"],
+    "Malaybalay City": ["Poblacion", "Sumpong", "Pal-ing", "Linabo", "Casisang"],
+  },
+  "Misamis Oriental": {
+    "Cagayan de Oro": ["Pueblo de Oro", "Liceo", "Divisoria", "Carmen", "Macasandig", "Bulua"],
+  },
+  "South Cotabato": {
+    "General Santos": ["Poblacion", "San Jose", "Calumpang", "Bula", "Conel", "Fatima"],
+  },
+  "Davao de Oro": {
+    "Compostela": ["Poblacion", "San Jose", "Moncado", "Maparat", "Ngan"],
+  },
+  "Davao Oriental": {
+    "Mati City": ["Dahican", "Poblacion", "Sainz", "Macambol", "Badas"],
+  },
+  "Davao del Norte": {
+    "Panabo City": ["Poblacion", "Kasilak", "San Francisco", "Quezon", "Cacao"],
+    "Tagum City": ["Poblacion", "Madaum", "San Agustin", "Apokon", "Liboganon"],
+  },
+};
+
+const alphabeticalCompare = (a: string, b: string) => a.localeCompare(b, "en");
+const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
+
 export default function App() {
   const [screen, setScreen] = useState<MobileScreen>("splash");
   const [leaderTab, setLeaderTab] = useState<"weekly" | "monthly">("weekly");
@@ -696,49 +739,6 @@ export default function App() {
   const [loginServerBanner, setLoginServerBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const weight = useAnimatedWeight(2.3, weighing);
   const mfaRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  // Philippine Location Data: Province → Cities → Barangays (sample subset with Cabantian, Davao)
-  const PH_LOCATIONS: Record<string, Record<string, string[]>> = {
-    "Davao del Sur": {
-      "Davao City": ["Cabantian", "Buhangin", "Poblacion", "Matina", "Toril", "Tugbok", "Calinan", "Marilog", "Baguio", "Paquibato"],
-      "Digos City": ["Barangay 1 Pob.", "Barangay 2 Pob.", "San Jose", "San Miguel", "Aplaya"],
-      "Sta. Cruz": ["Poblacion", "Sibulan", "Darong", "Inauayan", "Bato"],
-    },
-    "Metro Manila": {
-      "Quezon City": ["Diliman", "Loyola Heights", "Project 4", "Kamuning", "Commonwealth", "Batasan Hills"],
-      "Manila": ["Sampaloc", "Ermita", "Malate", "Quiapo", "Tondo", "Pasay"],
-      "Makati City": ["Poblacion", "Bel-Air", "San Lorenzo", "Urdaneta", "Forbes Park"],
-      "Taguig City": ["BGC", "Upper Bicutan", "Lower Bicutan", "Hagonoy", "Tuktukan"],
-    },
-    "Cebu": {
-      "Cebu City": ["Lahug", "Cebu Business Park", "Mabolo", "Talamban", "Poblacion Pardo", "San Nicolas"],
-      "Mandaue City": ["Centro", "Canduman", "Maguikay", "Opao", "Tabok"],
-      "Lapu-Lapu City": ["Punta Engaño", "Lapu-Lapu Pob.", "Marigondon", "Mactan"],
-    },
-    "Bukidnon": {
-      "Valencia City": ["Poblacion", "Bagontaas", "Lumbayao", "Batangan", "Guinoyuran"],
-      "Malaybalay City": ["Poblacion", "Sumpong", "Pal-ing", "Linabo", "Casisang"],
-    },
-    "Misamis Oriental": {
-      "Cagayan de Oro": ["Pueblo de Oro", "Liceo", "Divisoria", "Carmen", "Macasandig", "Bulua"],
-    },
-    "South Cotabato": {
-      "General Santos": ["Poblacion", "San Jose", "Calumpang", "Bula", "Conel", "Fatima"],
-    },
-    "Davao de Oro": {
-      "Compostela": ["Poblacion", "San Jose", "Moncado", "Maparat", "Ngan"],
-    },
-    "Davao Oriental": {
-      "Mati City": ["Dahican", "Poblacion", "Sainz", "Macambol", "Badas"],
-    },
-    "Davao del Norte": {
-      "Panabo City": ["Poblacion", "Kasilak", "San Francisco", "Quezon", "Cacao"],
-      "Tagum City": ["Poblacion", "Madaum", "San Agustin", "Apokon", "Liboganon"],
-    },
-  };
-  const alphabeticalCompare = (a: string, b: string) => a.localeCompare(b, "en");
-
-  const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
 
   const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort(alphabeticalCompare) : [];
   const availableBarangays =
