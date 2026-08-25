@@ -736,11 +736,13 @@ export default function App() {
       "Tagum City": ["Poblacion", "Madaum", "San Agustin", "Apokon", "Liboganon"],
     },
   };
-  const PROVINCES = Object.keys(PH_LOCATIONS).sort((a, b) => a.localeCompare(b, "en"));
+  const alphabeticalCompare = (a: string, b: string) => a.localeCompare(b, "en");
 
-  const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort((a, b) => a.localeCompare(b, "en")) : [];
+  const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
+
+  const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort(alphabeticalCompare) : [];
   const availableBarangays =
-    regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort((a, b) => a.localeCompare(b, "en")) : [];
+    regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort(alphabeticalCompare) : [];
 
   const go = (s: MobileScreen) => setScreen(s);
 
