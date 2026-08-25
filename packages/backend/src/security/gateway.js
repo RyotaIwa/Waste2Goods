@@ -1,4 +1,4 @@
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 
 export function gatewayLogger(req, res, next) {
   const requestId = crypto.randomBytes(8).toString('hex');

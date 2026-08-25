@@ -1,6 +1,6 @@
 import mysql from 'mysql2/promise';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
 import bcrypt from 'bcryptjs';
 import { ADMIN_CREDENTIALS, DEMO_RESIDENT_CREDENTIALS } from '@waste2goods/core';
 
@@ -50,77 +50,56 @@ async function init() {
   }
 }
 
-async function applySchemaMigrations() {
-  let totalApplied = 0;
+async function migrateTableColumns(tableName, migrations) {
+  let applied = 0;
   try {
-    // ── 1. users table migrations ──────────────────────────
-    const userMigrations = [
+    const [cols] = await db.query(`SHOW COLUMNS FROM ${tableName}`);
+    const existing = new Set(cols.map(c => c.Field));
+    for (const m of migrations) {
+      if (!existing.has(m.column)) {
+        if (m.renameFrom && existing.has(m.renameFrom)) {
+          await db.query(`ALTER TABLE ${tableName} CHANGE COLUMN ${m.renameFrom} ${m.column} ${m.definition}`);
+          console.log(`🔧 Migration applied: Renamed ${tableName}.${m.renameFrom} → ${m.column}`);
+        } else {
+          await db.query(`ALTER TABLE ${tableName} ADD COLUMN ${m.column} ${m.definition}`);
+          console.log(`🔧 Migration applied: Added column ${tableName}.${m.column}`);
+        }
+        applied++;
+      }
+    }
+  } catch (_) {
+    // Table might not exist yet
+  }
+  return applied;
+}
+
+async function applySchemaMigrations() {
+  try {
+    let totalApplied = 0;
+    
+    totalApplied += await migrateTableColumns('users', [
       { column: 'phone',         definition: 'VARCHAR(50)' },
       { column: 'province',      definition: 'VARCHAR(100)' },
       { column: 'city',          definition: 'VARCHAR(100)' },
       { column: 'barangayName',  definition: 'VARCHAR(100)' },
       { column: 'streetAddress', definition: 'VARCHAR(255)' },
       { column: 'tier',          definition: "VARCHAR(30) DEFAULT 'Bronze'" },
-    ];
-    const [userCols] = await db.query('SHOW COLUMNS FROM users');
-    const userExisting = new Set(userCols.map(c => c.Field));
-    let userApplied = 0;
-    for (const m of userMigrations) {
-      if (!userExisting.has(m.column)) {
-        await db.query(`ALTER TABLE users ADD COLUMN ${m.column} ${m.definition}`);
-        console.log(`🔧 Migration applied: Added column users.${m.column}`);
-        userApplied++;
-      }
-    }
-    totalApplied += userApplied;
+    ]);
 
-    // ── 2. barangays table migrations (contactInfo vs old contactNumber) ──
-    const barangayMigrations = [
-      { column: 'contactInfo',     definition: 'VARCHAR(100)',
-        renameFrom: 'contactNumber' },
+    totalApplied += await migrateTableColumns('barangays', [
+      { column: 'contactInfo',     definition: 'VARCHAR(100)', renameFrom: 'contactNumber' },
       { column: 'barangayCaptain', definition: 'VARCHAR(100)' },
       { column: 'userId',          definition: 'INT' },
-    ];
-    const [brgyCols] = await db.query('SHOW COLUMNS FROM barangays');
-    const brgyExisting = new Set(brgyCols.map(c => c.Field));
-    let brgyApplied = 0;
-    for (const m of barangayMigrations) {
-      if (!brgyExisting.has(m.column)) {
-        // If an old column name exists, rename it instead of adding new
-        if (m.renameFrom && brgyExisting.has(m.renameFrom)) {
-          await db.query(`ALTER TABLE barangays CHANGE COLUMN ${m.renameFrom} ${m.column} ${m.definition}`);
-          console.log(`🔧 Migration applied: Renamed barangays.${m.renameFrom} → ${m.column}`);
-        } else {
-          await db.query(`ALTER TABLE barangays ADD COLUMN ${m.column} ${m.definition}`);
-          console.log(`🔧 Migration applied: Added column barangays.${m.column}`);
-        }
-        brgyApplied++;
-      }
-    }
-    totalApplied += brgyApplied;
+    ]);
 
-    // ── 3. administrators table: ensure roleId + createdAt exist ──
+    totalApplied += await migrateTableColumns('administrators', [
+      { column: 'roleId',    definition: 'INT' },
+      { column: 'createdAt', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
+    ]);
+
     try {
-      const adminMigrations = [
-        { column: 'roleId',    definition: 'INT' },
-        { column: 'createdAt', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
-      ];
-      const [adminCols] = await db.query('SHOW COLUMNS FROM administrators');
-      const adminExisting = new Set(adminCols.map(c => c.Field));
-      let adminApplied = 0;
-      for (const m of adminMigrations) {
-        if (!adminExisting.has(m.column)) {
-          await db.query(`ALTER TABLE administrators ADD COLUMN ${m.column} ${m.definition}`);
-          console.log(`🔧 Migration applied: Added column administrators.${m.column}`);
-          adminApplied++;
-        }
-      }
-      totalApplied += adminApplied;
-      // Auto-fix: Ensure any admin row with empty email is synced with adminIdentifier
       await db.query("UPDATE administrators SET email = adminIdentifier WHERE email IS NULL OR email = ''");
-    } catch (_) {
-      // administrators table might not exist yet (fresh DB); ignore
-    }
+    } catch (_) {}
 
     if (totalApplied === 0) {
       console.log('✅ All table schemas are up to date');

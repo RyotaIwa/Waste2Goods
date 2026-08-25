@@ -157,5 +157,5 @@ INSERT INTO rewards (rewardName, description, pointsCost, stockQuantity, categor
 ('Herbal Tea Set', 'Set of herbal tea packs', 300, 35, 'Wellness', '🍵', 1);
 
 -- Insert Recycling Task
-INSERT INTO recycling_tasks (taskName, description, bonusPoints, startDate, endDate, status) VALUES
-('Weekly Recycling Challenge', 'Submit at least 5kg of recyclables this week', 150, '2026-06-17T00:00:00Z', '2026-06-24T00:00:00Z', 'active');
+INSERT INTO recycling_tasks (taskName, description, bonusPoints, startDate, endDate) VALUES
+('Weekly Recycling Challenge', 'Submit at least 5kg of recyclables this week', 150, '2026-06-17T00:00:00Z', '2026-06-24T00:00:00Z');

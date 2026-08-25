@@ -652,47 +652,61 @@ export default function App() {
     }
     const user = connectedUser;
     return (
-      <div className="w-full flex gap-10 items-center">
-        <div className="flex flex-col items-center gap-4 flex-shrink-0">
-          <p className="text-green-300 text-sm font-bold uppercase tracking-widest">
-            Live Weight
-          </p>
-          <div className="relative w-56 h-56 flex items-center justify-center">
-            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 200 200">
-              <circle
-                cx="100"
-                cy="100"
-                r="88"
-                fill="none"
-                stroke="rgba(255,255,255,0.08)"
-                strokeWidth="8"
-              />
-              <circle
-                cx="100"
-                cy="100"
-                r="88"
-                fill="none"
-                stroke="#16a34a"
-                strokeWidth="8"
-                strokeLinecap="round"
-                strokeDasharray={`${2 * Math.PI * 88}`}
-                strokeDashoffset={`${2 * Math.PI * 88 * (1 - Math.min(1, weight / 5))}`}
-                style={{ transition: "stroke-dashoffset 0.3s ease" }}
-              />
-            </svg>
-            <div className="text-center z-10">
-              <Scale className="w-6 h-6 text-green-400 mx-auto mb-1" />
-              <span className="text-5xl font-black text-white">{weight.toFixed(1)}</span>
-              <p className="text-green-300 font-bold text-lg">kg</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/10">
-            <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-300 text-xs font-semibold">
-              Measuring {selectedType}...
-            </span>
-          </div>
+function KioskWeighingRing({ weight, selectedType }: { weight: number; selectedType: string }) {
+  return (
+    <div className="flex flex-col items-center gap-4 flex-shrink-0">
+      <p className="text-green-300 text-sm font-bold uppercase tracking-widest">
+        Live Weight
+      </p>
+      <div className="relative w-56 h-56 flex items-center justify-center">
+        <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 200 200">
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="rgba(255,255,255,0.08)"
+            strokeWidth="8"
+          />
+          <circle
+            cx="100"
+            cy="100"
+            r="88"
+            fill="none"
+            stroke="#16a34a"
+            strokeWidth="8"
+            strokeLinecap="round"
+            strokeDasharray={`${2 * Math.PI * 88}`}
+            strokeDashoffset={`${2 * Math.PI * 88 * (1 - Math.min(1, weight / 5))}`}
+            style={{ transition: "stroke-dashoffset 0.3s ease" }}
+          />
+        </svg>
+        <div className="text-center z-10">
+          <Scale className="w-6 h-6 text-green-400 mx-auto mb-1" />
+          <span className="text-5xl font-black text-white">{weight.toFixed(1)}</span>
+          <p className="text-green-300 font-bold text-lg">kg</p>
         </div>
+      </div>
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/10">
+        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+        <span className="text-green-300 text-xs font-semibold">
+          Measuring {selectedType}...
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function KioskLeaderboardBadge() {
+  return (
+    <div className="flex items-center gap-3 px-6 py-3 rounded-2xl bg-white/5 border border-white/10">
+      <Trophy className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+      <p className="text-white text-sm font-semibold">
+        You moved to <strong className="text-yellow-300">#3</strong> on this week's leaderboard! 🏆 Keep recycling!
+      </p>
+    </div>
+  );
+}
         <div className="flex-1 space-y-4">
           <div className="rounded-2xl bg-white/8 border border-white/15 p-5">
             <div className="grid grid-cols-2 gap-4">
