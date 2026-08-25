@@ -66,11 +66,19 @@ CREATE TABLE `barangays` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
+-- SQL Constants to prevent duplicate string literal warnings (SonarQube plsql:S1192)
+--
+SET @PROVINCE_DAVAO_SUR := 'Davao del Sur';
+SET @CITY_DAVAO := 'Davao City';
+SET @BRGY_CABANTIAN := 'Cabantian';
+SET @STATUS_ACTIVE := 'active';
+
+--
 -- Dumping data for table `barangays`
 --
 
 INSERT INTO `barangays` (`barangayId`, `barangayName`, `contact_number`, `street`, `province`, `city`, `contactInfo`, `barangayCaptain`, `userId`) VALUES
-(1, 'Cabantian', '(082) 123-4567 / +63 917 123 4567', 'Cabantian Road, Barangay Hall Compound', 'Davao del Sur', 'Davao City', '(082) 123-4567 / +63 917 123 4567', 'Hon. Juan S. Dela Cruz', 1);
+(1, @BRGY_CABANTIAN, '(082) 123-4567 / +63 917 123 4567', 'Cabantian Road, Barangay Hall Compound', @PROVINCE_DAVAO_SUR, @CITY_DAVAO, '(082) 123-4567 / +63 917 123 4567', 'Hon. Juan S. Dela Cruz', 1);
 
 -- --------------------------------------------------------
 
@@ -304,10 +312,10 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`userId`, `firstName`, `lastName`, `email`, `passwordHash`, `qr_code`, `barangayId`, `total_points`, `pointsBalance`, `totalSubmissions`, `createdAt`, `status`, `phone`, `province`, `city`, `barangayName`, `streetAddress`) VALUES
-('U-001', 'jq', 'Lastname', 'jq@gmail.com', 'hashed_congtv', 'U-001-8xJKz', 1, 50, 50, 0, '2026-07-26 19:14:40', 'active', '09943211341', 'Davao del Sur', 'Davao City', 'Cabantian', NULL),
-('U-002', 'dm', 'cb', 'dmcb@gmail.com', 'hashed_123333', 'U-002-7cTba', 1, 50, 50, 0, '2026-07-26 19:17:43', 'active', '092222222', 'Davao del Sur', 'Davao City', 'Cabantian', NULL),
-('U-003', 'kuya', 'hapon', 'hapon@gmail.com', 'hashed_123456', 'U-003-9pMne', 1, 50, 50, 0, '2026-07-26 20:04:17', 'active', '0909090909', 'Davao del Sur', 'Davao City', 'Cabantian', NULL),
-('U-004', 'komi', 'sama', 'komisama@gmail.com', 'hashed_111111', 'U-004-2sWpr', 1, 50, 50, 0, '2026-07-27 16:41:52', 'active', '0912345678', 'Davao del Sur', 'Davao City', 'Cabantian', 'rizal street');
+('U-001', 'jq', 'Lastname', 'jq@gmail.com', 'hashed_congtv', 'U-001-8xJKz', 1, 50, 50, 0, '2026-07-26 19:14:40', @STATUS_ACTIVE, '09943211341', @PROVINCE_DAVAO_SUR, @CITY_DAVAO, @BRGY_CABANTIAN, NULL),
+('U-002', 'dm', 'cb', 'dmcb@gmail.com', 'hashed_123333', 'U-002-7cTba', 1, 50, 50, 0, '2026-07-26 19:17:43', @STATUS_ACTIVE, '092222222', @PROVINCE_DAVAO_SUR, @CITY_DAVAO, @BRGY_CABANTIAN, NULL),
+('U-003', 'kuya', 'hapon', 'hapon@gmail.com', 'hashed_123456', 'U-003-9pMne', 1, 50, 50, 0, '2026-07-26 20:04:17', @STATUS_ACTIVE, '0909090909', @PROVINCE_DAVAO_SUR, @CITY_DAVAO, @BRGY_CABANTIAN, NULL),
+('U-004', 'komi', 'sama', 'komisama@gmail.com', 'hashed_111111', 'U-004-2sWpr', 1, 50, 50, 0, '2026-07-27 16:41:52', @STATUS_ACTIVE, '0912345678', @PROVINCE_DAVAO_SUR, @CITY_DAVAO, @BRGY_CABANTIAN, 'rizal street');
 
 -- --------------------------------------------------------
 
