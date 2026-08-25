@@ -27,9 +27,29 @@ import {
   DEMO_KIOSK_USER,
 } from "./constants";
 
-// API Configuration — host stored in localStorage so mobile/kiosk can switch Wi‑Fi without rebuild
+// API Configuration — host stored in localStorage so mobile/kiosk can switch Wi‑Fi without rebuild.
+// On DigitalOcean / production builds, prefer VITE_API_BASE_URL (absolute or origin-relative "/api")
+// so the UI hits the Nginx reverse proxy on the same HTTPS domain (no port number needed).
 const API_HOST_STORAGE_KEY = "w2g_api_host";
-const DEFAULT_API_HOST = "localhost";
+const API_PORT_STORAGE_KEY = "w2g_api_port";
+const API_PROTOCOL_STORAGE_KEY = "w2g_api_protocol";
+
+const STATIC_BASE_URL: string | undefined = (
+  typeof (import.meta as any)?.env?.VITE_API_BASE_URL === "string" && (import.meta as any).env.VITE_API_BASE_URL !== ""
+) ? (import.meta as any).env.VITE_API_BASE_URL : undefined;
+
+const DEFAULT_PROTOCOL =
+  (typeof (import.meta as any)?.env?.VITE_API_PROTOCOL === "string" && (import.meta as any).env.VITE_API_PROTOCOL) ||
+  (typeof window !== "undefined" && window.location.protocol === "https:" ? "https" : "http") ||
+  "http";
+
+const DEFAULT_PORT =
+  (typeof (import.meta as any)?.env?.VITE_API_PORT === "string" && (import.meta as any).env.VITE_API_PORT) ||
+  (DEFAULT_PROTOCOL === "https" ? "" : "3001");
+
+const DEFAULT_API_HOST =
+  (typeof (import.meta as any)?.env?.VITE_API_HOST === "string" && (import.meta as any).env.VITE_API_HOST) ||
+  "localhost";
 
 export function getApiHost(): string {
   try {
@@ -48,21 +68,65 @@ export function setApiHost(host: string) {
   }
 }
 
+export function getApiPort(): string {
+  try {
+    const stored = localStorage.getItem(API_PORT_STORAGE_KEY);
+    if (stored != null) return stored.trim();
+  } catch { /* ignore */ }
+  return String(DEFAULT_PORT);
+}
+
+export function setApiPort(port: string) {
+  try { localStorage.setItem(API_PORT_STORAGE_KEY, String(port ?? "").trim()); } catch { /* ignore */ }
+}
+
+export function getApiProtocol(): string {
+  try {
+    const stored = localStorage.getItem(API_PROTOCOL_STORAGE_KEY);
+    if (stored === "http" || stored === "https") return stored;
+  } catch { /* ignore */ }
+  return DEFAULT_PROTOCOL;
+}
+
+export function setApiProtocol(proto: "http" | "https") {
+  try { localStorage.setItem(API_PROTOCOL_STORAGE_KEY, proto); } catch { /* ignore */ }
+}
+
 export function getApiBaseUrl(): string {
-  return `http://${getApiHost()}:3001/api`;
+  if (STATIC_BASE_URL) {
+    if (STATIC_BASE_URL.startsWith("http://") || STATIC_BASE_URL.startsWith("https://") || STATIC_BASE_URL.startsWith("/")) {
+      return STATIC_BASE_URL.endsWith("/api") ? STATIC_BASE_URL : `${STATIC_BASE_URL.replace(/\/$/, "")}/api`;
+    }
+  }
+  const proto = getApiProtocol();
+  const host = getApiHost();
+  const port = getApiPort();
+  const portPart = port ? `:${port}` : "";
+  return `${proto}://${host}${portPart}/api`;
 }
 
 export async function testApiConnection(): Promise<{ ok: boolean; message: string }> {
-  const host = getApiHost();
   try {
-    const res = await fetch(`http://${host}:3001/`, {
-      method: "GET",
-      signal: AbortSignal.timeout(5000),
-    });
-    if (res.ok) return { ok: true, message: `Connected to http://${host}:3001` };
+    if (STATIC_BASE_URL) {
+      const root = STATIC_BASE_URL.endsWith("/api") ? STATIC_BASE_URL.slice(0, -"/api".length) || "/" : "/";
+      const url = root.startsWith("http") ? (root.endsWith("/") ? root : root + "/") : "/";
+      const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(8000) });
+      if (res.ok) return { ok: true, message: `Connected to ${url}` };
+      return { ok: false, message: `Server responded with HTTP ${res.status}` };
+    }
+  } catch { /* ignore, fall through to direct host:port check */ }
+
+  const proto = getApiProtocol();
+  const host = getApiHost();
+  const port = getApiPort();
+  const portPart = port ? `:${port}` : "";
+  const url = `${proto}://${host}${portPart}/`;
+  try {
+    const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(5000) });
+    if (res.ok) return { ok: true, message: `Connected to ${proto}://${host}${portPart}` };
     return { ok: false, message: `Server responded with HTTP ${res.status}` };
   } catch {
-    return { ok: false, message: `Cannot reach http://${host}:3001 — check IP and that the backend is running` };
+    return { ok: false, message: `Cannot reach ${proto}://${host}${portPart} — check IP and that the backend is running` };
   }
 }
 

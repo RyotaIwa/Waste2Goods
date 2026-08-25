@@ -1,37 +1,48 @@
 import mysql from 'mysql2/promise';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import bcrypt from 'bcryptjs';
+import { ADMIN_CREDENTIALS, DEMO_RESIDENT_CREDENTIALS } from '@waste2goods/core';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Create MySQL connection (XAMPP defaults)
-const db = mysql.createPool({
-  host: 'localhost',
-  user: 'root',
-  password: '', // Default XAMPP root has no password
-  database: 'waste2goods', // You'll create this database in phpMyAdmin
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
-});
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_PORT = Number(process.env.DB_PORT || 3306);
+const DB_USER = process.env.DB_USER || 'root';
+const DB_PASSWORD = process.env.DB_PASSWORD || '';
+const DB_NAME = process.env.DB_NAME || 'waste2goods';
+const DB_SSL = process.env.DB_SSL === '1' || process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined;
 
-// Test the connection, apply auto-migration for missing columns, and seed infrastructure data
+const poolConfig = {
+  host: DB_HOST,
+  port: DB_PORT,
+  user: DB_USER,
+  password: DB_PASSWORD,
+  database: DB_NAME,
+  waitForConnections: true,
+  connectionLimit: Number(process.env.DB_CONN_LIMIT || 10),
+  queueLimit: 0,
+};
+if (DB_SSL) poolConfig.ssl = DB_SSL;
+
+const db = mysql.createPool(poolConfig);
+
+async function precomputeHash(plain) {
+  try { return await bcrypt.hash(plain, 10); } catch { return `hashed_${plain}`; }
+}
+
 async function init() {
   try {
     const connection = await db.getConnection();
-    console.log('✅ Connected to MySQL database (XAMPP)');
+    const tag = process.env.NODE_ENV === 'production' ? 'DigitalOcean' : 'XAMPP';
+    console.log(`✅ Connected to MySQL database (${tag}) ${DB_HOST}:${DB_PORT}/${DB_NAME} as ${DB_USER}`);
     connection.release();
-    console.log('ℹ️  Manual mode: No demo users auto-inserted. Register accounts via Mobile App to populate users table.');
     
-    // Auto-migrate: add missing columns to users table (phone, province, city, barangayName)
-    // This handles existing databases where the old schema-mysql.sql was already imported.
     await applySchemaMigrations();
-    
-    // Insert infrastructure data (kiosks) if not exists
     await insertInfrastructureData();
-    // Insert admin user (Juan Reyes A-001) if not exists
     await insertAdminData();
+    await insertResidentData();
   } catch (err) {
     console.error('❌ Error connecting to MySQL:', err);
     console.log('💡 Make sure XAMPP is running and you created the "waste2goods" database in phpMyAdmin!');
@@ -143,12 +154,8 @@ async function insertInfrastructureData() {
   }
 }
 
-// Auto-insert default admin (Juan Reyes A-001) into administrators table if missing.
-// This is the actual DB-backed admin user that the login endpoint checks BEFORE falling back
-// to the hardcoded ADMIN_CREDENTIALS constant.
 async function insertAdminData() {
   try {
-    // Check if A-001 or admin@waste2goods.ph identifier already exists
     const [rows] = await db.query(
       "SELECT COUNT(*) as count FROM administrators WHERE adminId = 'A-001' OR adminIdentifier = 'admin@waste2goods.ph'"
     );
@@ -156,7 +163,8 @@ async function insertAdminData() {
       console.log('✅ Admin user (A-001 Juan Reyes) already present in administrators table');
       return;
     }
-    // Insert with passwordHash matching the demo admin password
+    const pw = (ADMIN_CREDENTIALS && ADMIN_CREDENTIALS.password) ? ADMIN_CREDENTIALS.password : 'AdminCabantian2025';
+    const passwordHash = await precomputeHash(pw);
     await db.query(`
       INSERT INTO administrators (adminId, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt)
       VALUES (
@@ -164,22 +172,19 @@ async function insertAdminData() {
         'admin@waste2goods.ph',
         'Juan',
         'Reyes',
-        'hashed_AdminCabantian2025',
+        ?,
         1,
         1,
         NOW()
       )
-    `);
+    `, [passwordHash]);
     console.log('✅ Admin user (A-001 Juan Reyes) inserted into administrators table');
-    console.log('   → Email: admin@waste2goods.ph  |  Password: AdminCabantian2025');
+    console.log('   → Email: admin@waste2goods.ph  |  Password: ' + pw);
   } catch (err) {
     console.error('Warning inserting admin user:', err.message);
   }
 }
 
-// Auto-insert default resident (Maria Santos U-001) into users table if missing.
-// This matches DEMO_RESIDENT_CREDENTIALS so users can log in immediately
-// (resident@cabantian.ph / ResidentCabantian2025) without registering first.
 async function insertResidentData() {
   try {
     const [rows] = await db.query(
@@ -189,6 +194,8 @@ async function insertResidentData() {
       console.log('✅ Demo resident (U-001 Maria Santos) already present in users table');
       return;
     }
+    const pw = (DEMO_RESIDENT_CREDENTIALS && DEMO_RESIDENT_CREDENTIALS.password) ? DEMO_RESIDENT_CREDENTIALS.password : 'ResidentCabantian2025';
+    const passwordHash = await precomputeHash(pw);
     await db.query(`
       INSERT INTO users (
         userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
@@ -199,7 +206,7 @@ async function insertResidentData() {
         'Maria',
         'Santos',
         'resident@cabantian.ph',
-        'hashed_ResidentCabantian2025',
+        ?,
         'U-001-QRSA1',
         1,
         50,
@@ -213,9 +220,9 @@ async function insertResidentData() {
         'Cabantian',
         'Cabantian Road'
       )
-    `);
+    `, [passwordHash]);
     console.log('✅ Demo resident (U-001 Maria Santos) inserted into users table');
-    console.log('   → Email: resident@cabantian.ph  |  Password: ResidentCabantian2025');
+    console.log('   → Email: resident@cabantian.ph  |  Password: ' + pw);
   } catch (err) {
     console.error('Warning inserting demo resident user:', err.message);
   }

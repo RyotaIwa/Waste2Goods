@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import db from './db-mysql.js';
 import {
   ADMIN_CREDENTIALS,
@@ -9,12 +11,75 @@ import {
   DEMO_RESIDENT_USER,
   DEMO_KIOSK_USER
 } from '@waste2goods/core';
+import { signToken, authenticateJWT, requireRole, hashPassword, comparePassword } from './security/auth-jwt.js';
+import { globalLimiter, authLimiter, writeLimiter } from './security/rate-limit.js';
+import { cacheRoute, CacheBust } from './security/cache.js';
+import { validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema, RewardCRUDSchema } from './security/validate.js';
+import { gatewayLogger, apiNotFound, errorHandler } from './security/gateway.js';
 
 const app = express();
-const PORT = 3001;
+const PORT = Number(process.env.PORT || 3001);
 
-app.use(cors());
-app.use(express.json());
+const DEFAULT_CORS_ORIGINS = [
+  /^http:\/\/localhost(:[0-9]+)?$/,
+  /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
+  /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+];
+
+function buildCorsOrigins() {
+  const list = [...DEFAULT_CORS_ORIGINS];
+  const env = process.env.CORS_ORIGINS;
+  if (env) {
+    for (const raw of env.split(',').map(s => s.trim()).filter(Boolean)) {
+      try {
+        if (raw.startsWith('/') && raw.endsWith('/')) {
+          list.push(new RegExp(raw.slice(1, -1)));
+        } else {
+          const exact = raw;
+          list.push((origin) => origin === exact);
+        }
+      } catch (_) {
+        list.push((origin) => origin && origin.includes(raw.replace(/^https?:\/\//, '').split('/')[0]));
+      }
+    }
+  }
+  return list;
+}
+
+const CORS_ALLOWED = buildCorsOrigins();
+const isProd = process.env.NODE_ENV === 'production';
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    useDefaults: true,
+    directives: isProd
+      ? undefined
+      : { 'img-src': ["'self'", 'data:', 'https:'], 'script-src': ["'self'"] },
+  },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+  hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+}));
+if (isProd) app.set('trust proxy', 2);
+else app.set('trust proxy', 1);
+app.use(globalLimiter);
+app.use(gatewayLogger);
+app.use(cors({
+  origin: (origin, cb) => {
+    if (!origin) return cb(null, true);
+    const ok = CORS_ALLOWED.some(r => typeof r === 'function' ? r(origin) : r.test(origin));
+    if (ok) return cb(null, true);
+    if (!isProd) return cb(null, true);
+    return cb(new Error(`CORS blocked: ${origin}`));
+  },
+  credentials: false,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','X-Request-ID'],
+  exposedHeaders: ['X-Request-ID','X-W2G-Cache','X-RateLimit-Limit','X-RateLimit-Remaining'],
+  maxAge: 86400,
+}));
+app.use(express.json({ limit: process.env.BODY_LIMIT || '100kb' }));
 
 // Root route - show welcome message
 app.get('/', (req, res) => {
@@ -39,29 +104,11 @@ app.get('/', (req, res) => {
   });
 });
 
-// Simple middleware to check auth token
-const authenticate = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  const token = authHeader.slice(7);
-  // Accept mock tokens + ANY dynamic tokens emitted by /api/auth/* (token_U-*, token_A-*, admin_token_*, kiosk_token_*)
-  if (
-    ['mock_admin_token_123', 'mock_resident_token_456', 'mock_kiosk_token_789'].includes(token) ||
-    token.startsWith('token_U-') ||
-    token.startsWith('token_A-') ||
-    token.startsWith('admin_token_') ||
-    token.startsWith('kiosk_token_')
-  ) {
-    next();
-  } else {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-};
+// D2 P1: authenticate = real signed JWT via authenticateJWT
+const authenticate = (req, res, next) => authenticateJWT(req, res, next);
 
 // Auth Routes
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authLimiter, validateBody(RegisterSchema), async (req, res) => {
   try {
     const {
       firstName, lastName, email, password,
@@ -69,24 +116,16 @@ app.post('/api/auth/register', async (req, res) => {
       province = '', city = '', barangayName = '',
       streetAddress = ''
     } = req.body;
-    
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ error: 'Required fields missing (first name, last name, email, password)' });
-    }
+
     if (!province || !city || !barangayName) {
       return res.status(400).json({ error: 'Please select Province, City, and Barangay' });
     }
 
-    // Check if email already exists
-    const [existing] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [existing] = await db.query('SELECT userId FROM users WHERE email = ?', [email.toLowerCase().trim()]);
     if (existing.length > 0) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
-    // Generate user ID — use MAX numeric suffix, NOT COUNT(*)
-    // COUNT(*) is buggy: if you delete U-002 (count drops to 3),
-    // next ID would be U-004 which collides with existing U-004 PK.
-    // Instead, MAX(userId parsed number) + 1 guarantees no collisions regardless of gaps/deletions.
     const [[maxUserRow]] = await db.query(
       "SELECT COALESCE(MAX(CAST(SUBSTRING(userId, 3) AS UNSIGNED)), 0) AS maxNum FROM users"
     );
@@ -94,18 +133,17 @@ app.post('/api/auth/register', async (req, res) => {
     const userId = `U-${String(userNumber).padStart(3, '0')}`;
     const qrCode = `${userId}-${Math.random().toString(36).slice(2, 7)}`;
 
-    // Insert user (with province/city/barangayName/phone/streetAddress columns now present after schema migration)
-    const passwordHash = `hashed_${password}`;
+    const passwordHash = await hashPassword(password);
+
     await db.query(
       `INSERT INTO users 
          (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
           total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
        VALUES (?, ?, ?, ?, ?, ?, ?, 50, 50, 0, 'active', ?, ?, ?, ?, ?)`,
-      [userId, firstName, lastName, email, passwordHash, qrCode, barangayId,
+      [userId, firstName, lastName, email.toLowerCase().trim(), passwordHash, qrCode, barangayId,
        phone, province, city, barangayName, streetAddress]
     );
 
-    // Fetch back the newly inserted user to include timestamp/compatibility fields
     const [newRows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     const dbUser = newRows[0];
 
@@ -120,80 +158,68 @@ app.post('/api/auth/register', async (req, res) => {
       redeemed: 0
     };
 
-    const token = `token_${userId}_${Date.now()}`;
+    const token = signToken({ userId, role: 'resident', name: `${firstName} ${lastName}` });
+    CacheBust.users();
     res.status(201).json({ token, user, message: 'Registration successful! +50 welcome points!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authLimiter, validateBody(LoginSchema), async (req, res) => {
   const { email, password } = req.body;
+  const normalizedEmail = email.toLowerCase().trim();
 
-  // ──────────────────────────────────────────────────────
-  // 1. TRY DB-BASED ADMIN LOGIN FIRST (administrators table)
-  // ──────────────────────────────────────────────────────
-  // This checks against REAL admin rows in the administrators table
-  // (inserted by db-mysql.js seed: Juan Reyes A-001, admin@waste2goods.ph)
+  // 1. DB-based admin login
   try {
     const [adminRows] = await db.query(
-      'SELECT * FROM administrators WHERE adminIdentifier = ? OR adminIdentifier = ? LIMIT 1',
-      [email, email.toLowerCase().trim()]
+      'SELECT * FROM administrators WHERE adminIdentifier = ? OR email = ? LIMIT 1',
+      [normalizedEmail, normalizedEmail]
     );
     if (adminRows.length > 0) {
       const adm = adminRows[0];
-      const expectedAdminHash = `hashed_${password}`;
-      // Accept both plain password (dev convenience) and hashed_ prefixed version
-      if (password === ADMIN_CREDENTIALS.password ||
-          adm.passwordHash === password ||
-          adm.passwordHash === expectedAdminHash) {
+      const pwOk = await comparePassword(password, String(adm.passwordHash || ''));
+      if (pwOk || password === ADMIN_CREDENTIALS.password) {
+        const adminName = `${adm.firstName || 'Juan'} ${adm.lastName || 'Reyes'}`;
         const adminUser = {
           id: adm.adminId || `A-${adm.adminIdentifier}`,
-          name: `${adm.firstName || 'Juan'} ${adm.lastName || 'Reyes'}`,
-          email: adm.adminIdentifier,
+          name: adminName,
+          email: adm.adminIdentifier || normalizedEmail,
           role: 'admin',
           barangay: 'Cabantian',
           roleId: adm.roleId || 1,
           adminId: adm.adminId || null,
         };
-        // IMPORTANT: authenticate accepts token_A-* (and admin_token_* fallback). Use canonical token_A- prefix.
-        const token = `token_${adm.adminId || 'A-001'}_${Date.now()}`;
-        console.log(`🔐 Admin logged in from DB: ${adminUser.name} (${adminUser.id})`);
+        const token = signToken({ adminId: adm.adminId || 'A-001', role: 'admin', name: adminName });
+        console.log(`🔐 Admin logged in from DB: ${adminName} (${adminUser.id})`);
         return res.json({ token, user: adminUser });
       }
     }
-  } catch (_) {
-    // administrators table may not exist yet; ignore and fall through
+  } catch (_) { /* ignore */ }
+
+  // 2. Hardcoded admin fallback
+  if (normalizedEmail === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
+    console.log('🔐 Admin logged in via hardcoded fallback');
+    const token = signToken({ adminId: 'A-001', role: 'admin', name: DEMO_ADMIN_USER.name });
+    return res.json({ token, user: DEMO_ADMIN_USER });
   }
 
-  // ──────────────────────────────────────────────────────
-  // 2. HARDCODED ADMIN FALLBACK (if DB admin check failed/missing table)
-  // ──────────────────────────────────────────────────────
-  if (email === ADMIN_CREDENTIALS.email && password === ADMIN_CREDENTIALS.password) {
-    console.log('🔐 Admin logged in via hardcoded fallback (administrators table not used)');
-    return res.json({ token: 'mock_admin_token_123', user: DEMO_ADMIN_USER });
+  // 3. Hardcoded resident fallback
+  if (normalizedEmail === DEMO_RESIDENT_CREDENTIALS.email && password === DEMO_RESIDENT_CREDENTIALS.password) {
+    console.log('🔐 Resident logged in via hardcoded fallback');
+    const token = signToken({ userId: 'U-001', role: 'resident', name: DEMO_RESIDENT_USER.name });
+    return res.json({ token, user: DEMO_RESIDENT_USER });
   }
 
-  // ──────────────────────────────────────────────────────
-  // 3. HARDCODED RESIDENT FALLBACK (if DB resident check fails/missing users or seed)
-  // ──────────────────────────────────────────────────────
-  if (email === DEMO_RESIDENT_CREDENTIALS.email && password === DEMO_RESIDENT_CREDENTIALS.password) {
-    console.log('🔐 Resident logged in via hardcoded fallback (users row not found / DB seed missing)');
-    return res.json({ token: 'mock_resident_token_456', user: DEMO_RESIDENT_USER });
-  }
-
-  // ──────────────────────────────────────────────────────
-  // 4. RESIDENT LOGIN (users table)
-  // ──────────────────────────────────────────────────────
-  // All residents MUST be registered via the Mobile App Sign-Up first.
+  // 4. Resident login (users table)
   try {
-    const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [rows] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
     if (rows.length === 0) {
       return res.status(401).json({ error: 'Invalid credentials or user not registered yet. Please sign up first!' });
     }
     const user = rows[0];
-    const expectedHash = `hashed_${password}`;
-    if (user.passwordHash !== password && user.passwordHash !== expectedHash) {
+    const pwOk = await comparePassword(password, String(user.passwordHash || ''));
+    if (!pwOk) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
@@ -208,7 +234,7 @@ app.post('/api/auth/login', async (req, res) => {
       redeemed: 0
     };
 
-    const token = `token_${user.userId}_${Date.now()}`;
+    const token = signToken({ userId: user.userId, role: 'resident', name: userWithCompat.name });
     console.log(`🔐 Resident logged in from DB: ${userWithCompat.name} (${user.userId})`);
     return res.json({ token, user: userWithCompat });
   } catch (err) {
@@ -216,16 +242,17 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/kiosk-login', (req, res) => {
+app.post('/api/auth/kiosk-login', authLimiter, (req, res) => {
   const { pin } = req.body;
   if (pin === KIOSK_PIN) {
-    return res.json({ token: 'mock_kiosk_token_789', user: DEMO_KIOSK_USER });
+    const token = signToken({ kioskId: 'KIOSK-01', role: 'kiosk', name: 'Recycling Kiosk' });
+    return res.json({ token, user: DEMO_KIOSK_USER });
   }
   res.status(401).json({ error: 'Invalid PIN' });
 });
 
 // Protected API Routes (require authentication)
-app.get('/api/users', authenticate, async (req, res) => {
+app.get('/api/users', authenticate, cacheRoute(30), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM users ORDER BY createdAt ASC');
     const [txCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(weightKg),0) as totalKg, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions GROUP BY userId');
@@ -259,7 +286,7 @@ app.get('/api/users', authenticate, async (req, res) => {
   }
 });
 
-app.get('/api/users/:id', authenticate, async (req, res) => {
+app.get('/api/users/:id', authenticate, cacheRoute(15), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [req.params.id]);
     if (rows.length === 0) {
@@ -288,7 +315,7 @@ app.get('/api/users/:id', authenticate, async (req, res) => {
   }
 });
 
-app.get('/api/kiosks', authenticate, async (req, res) => {
+app.get('/api/kiosks', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM kiosks');
     const kiosksWithCompat = rows.map(kiosk => ({
@@ -303,7 +330,7 @@ app.get('/api/kiosks', authenticate, async (req, res) => {
   }
 });
 
-app.get('/api/rewards', authenticate, async (req, res) => {
+app.get('/api/rewards', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM rewards ORDER BY rewardId ASC');
     const [redCounts] = await db.query('SELECT rewardId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions GROUP BY rewardId');
@@ -329,7 +356,7 @@ app.get('/api/rewards', authenticate, async (req, res) => {
 });
 
 // Transactions from database
-app.get('/api/transactions', authenticate, async (req, res) => {
+app.get('/api/transactions', authenticate, cacheRoute(30), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM recycling_transactions');
     const transactionsWithCompat = rows.map(tx => ({
@@ -347,7 +374,7 @@ app.get('/api/transactions', authenticate, async (req, res) => {
 });
 
 // Add a new recycling transaction (POST)
-app.post('/api/transactions', authenticate, async (req, res) => {
+app.post('/api/transactions', authenticate, writeLimiter, validateBody(TransactionSchema), async (req, res) => {
   try {
     const { userId, materialId, weightKg, kioskId } = req.body;
     const pointsEarned = Math.round(weightKg * 50);
@@ -365,6 +392,7 @@ app.post('/api/transactions', authenticate, async (req, res) => {
       [pointsEarned, userId]
     );
 
+    CacheBust.transactions();
     res.json({ 
       message: 'Transaction created successfully', 
       transactionId, 
@@ -390,7 +418,7 @@ function getMonthName(dateObj) {
 }
 
 // Weekly analytics — GROUP recycling_transactions by DAY of the past 7 days
-app.get('/api/analytics/weekly', authenticate, async (req, res) => {
+app.get('/api/analytics/weekly', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT DATE(timestamp) AS day, SUM(weightKg) AS kg
@@ -413,7 +441,7 @@ app.get('/api/analytics/weekly', authenticate, async (req, res) => {
 });
 
 // Monthly analytics — GROUP transactions & users by MONTH of current year
-app.get('/api/analytics/monthly', authenticate, async (req, res) => {
+app.get('/api/analytics/monthly', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [txRows] = await db.query(`
       SELECT DATE_FORMAT(timestamp, '%Y-%m') AS ym,
@@ -458,7 +486,7 @@ app.get('/api/analytics/monthly', authenticate, async (req, res) => {
 // NEW: Dashboard Summary endpoint — computes stat card TOTALS from real DB tables
 //    totalKgCollected | totalTransactions | totalUsers | activeResidents | totalPointsAwarded | rewardsRedeemed
 // +  recentTransactions (top 8 with user names) + top5 leaderboard
-app.get('/api/analytics/summary', authenticate, async (req, res) => {
+app.get('/api/analytics/summary', authenticate, cacheRoute(30), async (req, res) => {
   try {
     // Total collected kg & points & submissions from transactions
     const [sum1] = await db.query(`
@@ -554,12 +582,9 @@ app.get('/api/analytics/summary', authenticate, async (req, res) => {
 // REDEEM: User spends points to claim a reward
 // (deducts points, inserts redemption row, decrements stock)
 // ──────────────────────────────────────────────────────
-app.post('/api/rewards/redeem', authenticate, async (req, res) => {
+app.post('/api/rewards/redeem', authenticate, writeLimiter, validateBody(RedeemSchema), async (req, res) => {
   try {
     const { userId, rewardId, quantity = 1 } = req.body;
-    if (!userId || !rewardId) {
-      return res.status(400).json({ error: 'userId and rewardId are required' });
-    }
     const [users] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     if (users.length === 0) return res.status(404).json({ error: 'User not found' });
     const user = users[0];
@@ -595,6 +620,7 @@ app.post('/api/rewards/redeem', authenticate, async (req, res) => {
 
     const [updatedUserRows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     const updatedUser = updatedUserRows[0];
+    CacheBust.redemptions();
     res.json({
       ok: true,
       redemptionId,
@@ -610,7 +636,7 @@ app.post('/api/rewards/redeem', authenticate, async (req, res) => {
 });
 
 // NEW: Reward Redemptions endpoint (list all redemptions from reward_redemptions table)
-app.get('/api/redemptions', authenticate, async (req, res) => {
+app.get('/api/redemptions', authenticate, cacheRoute(30), async (req, res) => {
   try {
     const [rows] = await db.query(`
       SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
@@ -628,7 +654,7 @@ app.get('/api/redemptions', authenticate, async (req, res) => {
   }
 });
 
-app.get('/api/leaderboard', authenticate, async (req, res) => {
+app.get('/api/leaderboard', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT userId, firstName, lastName, email, barangayId, barangayName, pointsBalance, totalSubmissions, tier, phone, createdAt, status FROM users ORDER BY pointsBalance DESC LIMIT 10');
     const leaderboard = rows.map((user, index) => {
@@ -681,7 +707,7 @@ app.get('/api/tasks', authenticate, (req, res) => {
 // ──────────────────────────────────────────────────────
 // ADMIN MANAGEMENT: List + Create (authenticated admins only)
 // ──────────────────────────────────────────────────────
-app.get('/api/admin/admins', authenticate, async (req, res) => {
+app.get('/api/admin/admins', authenticate, cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT adminId, adminIdentifier, firstName, lastName, roleId, barangayId, createdAt FROM administrators ORDER BY createdAt ASC');
     res.json(rows.map(a => ({
@@ -699,7 +725,7 @@ app.get('/api/admin/admins', authenticate, async (req, res) => {
   }
 });
 
-app.post('/api/admin/admins', authenticate, async (req, res) => {
+app.post('/api/admin/admins', authenticate, writeLimiter, async (req, res) => {
   try {
     const { firstName, lastName, email, password, barangayId = 1, roleId = 1 } = req.body;
     if (!firstName || !lastName || !email || !password) {
@@ -718,12 +744,13 @@ app.post('/api/admin/admins', authenticate, async (req, res) => {
     );
     const nextNum = Number(maxAdminRow.maxNum || 0) + 1;
     const adminId = `A-${String(nextNum).padStart(3, '0')}`;
-    const passwordHash = `hashed_${password}`;
+    const passwordHash = await hashPassword(password);
     const createdAt = new Date();
     await db.query(
       'INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [adminId, email.toLowerCase().trim(), email.toLowerCase().trim(), firstName, lastName, passwordHash, barangayId, roleId, createdAt]
     );
+    CacheBust.all();
     res.json({
       ok: true,
       admin: {
@@ -743,7 +770,7 @@ app.post('/api/admin/admins', authenticate, async (req, res) => {
 });
 
 // Delete Admin Account
-app.delete('/api/admin/admins/:id', authenticate, async (req, res) => {
+app.delete('/api/admin/admins/:id', authenticate, writeLimiter, async (req, res) => {
   try {
     const adminId = String(req.params.id).trim();
     if (adminId === 'A-001' || adminId.toLowerCase() === 'admin@waste2goods.ph') {
@@ -754,6 +781,7 @@ app.delete('/api/admin/admins/:id', authenticate, async (req, res) => {
       return res.status(404).json({ error: 'Admin account not found' });
     }
     await db.query('DELETE FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
+    CacheBust.all();
     res.json({ ok: true, adminId, message: 'Admin account deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -763,18 +791,16 @@ app.delete('/api/admin/admins/:id', authenticate, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // REWARDS CRUD (Admin: Create / Update / Delete reward)
 // ─────────────────────────────────────────────────────────
-app.post('/api/rewards', authenticate, async (req, res) => {
+app.post('/api/rewards', authenticate, writeLimiter, validateBody(RewardCRUDSchema), async (req, res) => {
   try {
     const { rewardName, pointsCost, stockQuantity = 0, description = '', category = 'Eco Essentials', icon = '🎁', isSeasonal = 0, status = 'active' } = req.body;
-    if (!rewardName || pointsCost == null) {
-      return res.status(400).json({ error: 'rewardName and pointsCost are required' });
-    }
     await db.query(
       'INSERT INTO rewards (rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
       [String(rewardName).trim(), Number(pointsCost), Number(stockQuantity), String(description), String(category), String(icon), isSeasonal ? 1 : 0, String(status)]
     );
     const [rows] = await db.query('SELECT * FROM rewards ORDER BY rewardId DESC LIMIT 1');
     const r = rows[0];
+    CacheBust.rewards();
     res.json({
       ok: true,
       reward: {
@@ -791,7 +817,7 @@ app.post('/api/rewards', authenticate, async (req, res) => {
   }
 });
 
-app.put('/api/rewards/:id', authenticate, async (req, res) => {
+app.put('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status } = req.body;
@@ -812,6 +838,7 @@ app.put('/api/rewards/:id', authenticate, async (req, res) => {
     );
     const [rows] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
     const r = rows[0];
+    CacheBust.rewards();
     res.json({
       ok: true,
       reward: {
@@ -828,7 +855,7 @@ app.put('/api/rewards/:id', authenticate, async (req, res) => {
   }
 });
 
-app.delete('/api/rewards/:id', authenticate, async (req, res) => {
+app.delete('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [exists] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
@@ -839,6 +866,7 @@ app.delete('/api/rewards/:id', authenticate, async (req, res) => {
     } catch {
       await db.query("UPDATE rewards SET status = 'inactive' WHERE rewardId = ?", [id]);
     }
+    CacheBust.rewards();
     res.json({ ok: true, rewardId: id, deleted: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -848,7 +876,7 @@ app.delete('/api/rewards/:id', authenticate, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // USERS — Admin Create / Update / Adjust Points
 // ─────────────────────────────────────────────────────────
-app.post('/api/users', authenticate, async (req, res) => {
+app.post('/api/users', authenticate, writeLimiter, async (req, res) => {
   try {
     const { firstName, lastName, email, password, barangayId = 1, pointsBalance = 0, phone = '', province = '', city = '', barangayName = 'Cabantian', streetAddress = '' } = req.body;
     if (!firstName || !lastName || !email || !password) {
@@ -862,13 +890,14 @@ app.post('/api/users', authenticate, async (req, res) => {
     );
     const nextNum = Number(maxUserRow2.maxNum || 0) + 1;
     const userId = `U-${String(nextNum).padStart(3, '0')}`;
-    const passwordHash = `hashed_${password}`;
+    const passwordHash = await hashPassword(password);
     await db.query(
       'INSERT INTO users (userId, firstName, lastName, email, passwordHash, barangayId, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress) VALUES (?, ?, ?, ?, ?, ?, ?, 0, "active", ?, ?, ?, ?, ?)',
       [userId, String(firstName).trim(), String(lastName).trim(), String(email).toLowerCase().trim(), passwordHash, Number(barangayId), Number(pointsBalance), String(phone), String(province), String(city), String(barangayName), String(streetAddress)]
     );
     const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     const u = rows[0];
+    CacheBust.users();
     res.json({
       ok: true,
       user: {
@@ -883,7 +912,7 @@ app.post('/api/users', authenticate, async (req, res) => {
   }
 });
 
-app.put('/api/users/:id', authenticate, async (req, res) => {
+app.put('/api/users/:id', authenticate, writeLimiter, async (req, res) => {
   try {
     const userId = String(req.params.id).toUpperCase();
     const { firstName, lastName, email, barangayId, pointsBalance, phone, province, city, barangayName, streetAddress, status, passwordHash } = req.body;
@@ -908,6 +937,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
     );
     const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     const u = rows[0];
+    CacheBust.users();
     res.json({
       ok: true,
       user: {
@@ -922,7 +952,7 @@ app.put('/api/users/:id', authenticate, async (req, res) => {
   }
 });
 
-app.put('/api/users/:id/points', authenticate, async (req, res) => {
+app.put('/api/users/:id/points', authenticate, writeLimiter, async (req, res) => {
   try {
     const userId = String(req.params.id).toUpperCase();
     const { delta, reason = 'Admin adjustment', adminId = 'A-001' } = req.body;
@@ -932,6 +962,7 @@ app.put('/api/users/:id/points', authenticate, async (req, res) => {
     const current = Number(exists[0].pointsBalance || 0);
     const next = Math.max(0, current + Number(delta));
     await db.query('UPDATE users SET pointsBalance = ? WHERE userId = ?', [next, userId]);
+    CacheBust.users();
     res.json({
       ok: true,
       userId,
@@ -950,7 +981,7 @@ app.put('/api/users/:id/points', authenticate, async (req, res) => {
 // NOTIFICATIONS — Recent admin activity feed
 // (new redemptions, new users, high-collection transactions)
 // ─────────────────────────────────────────────────────────
-app.get('/api/notifications', authenticate, async (req, res) => {
+app.get('/api/notifications', authenticate, cacheRoute(15), async (req, res) => {
   try {
     const notifications = [];
     const [redemptions] = await db.query(
@@ -1196,11 +1227,12 @@ app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // KIOSK OPS — Admin actions (Calibrate / View Logs / Restart)
 // ─────────────────────────────────────────────────────────
-app.post('/api/kiosks/:id/calibrate', authenticate, async (req, res) => {
+app.post('/api/kiosks/:id/calibrate', authenticate, writeLimiter, async (req, res) => {
   try {
     const kioskId = String(req.params.id).toUpperCase();
     const lastPing = 'just now';
     await db.query('UPDATE kiosks SET lastPing = ? WHERE kioskId = ?', [lastPing, kioskId]);
+    CacheBust.kiosks();
     res.json({ ok: true, kioskId, calibratedAt: new Date().toISOString(), message: `Calibration job dispatched to ${kioskId}` });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1273,9 +1305,13 @@ app.get('/api/kiosk/session/:userId', (req, res) => {
   res.json({ connected: true, kioskId: s.kioskId, userName: s.userName, connectedAt: s.connectedAt, lastPing: s.lastPing });
 });
 
+// ── D2 P1: API Gateway fallbacks ─────────────────────────────────────
+app.use(apiNotFound);
+app.use(errorHandler);
+
 // Start server — bind on 0.0.0.0 so phones on the LAN can reach us via the PC's Wi-Fi IP
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Waste2Goods API Server running at http://localhost:${PORT} (with MySQL/XAMPP)`);
+  console.log(`🚀 Waste2Goods API Server running at http://localhost:${PORT} (with MySQL/XAMPP — D2 P1 DevSecOps)`);
   console.log(`📡 LAN access: http://<YOUR-PC-WIFI-IP>:${PORT} — find your IP with: ipconfig`);
-  console.log(`📡 Available endpoints: /api/users, /api/admin/admins, /api/kiosks, /api/rewards, /api/transactions, /api/analytics/weekly, /api/analytics/monthly, /api/leaderboard, /api/tasks`);
+  console.log(`🔒 Security stack: Helmet | JWT(24h) | bcrypt(10) | Rate-Limit | Zod | Cache | Gateway Logger`);
 });
