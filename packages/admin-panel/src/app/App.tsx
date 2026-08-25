@@ -924,7 +924,9 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
       const nextStatus = String(u.status || "active").toLowerCase() === "active" ? "inactive" : "active";
       const res = await Waste2GoodsAPI.updateUser(uid, { status: nextStatus });
       if (res && (res as any).ok && onRefresh) await onRefresh();
-    } catch {}
+    } catch (e) {
+      console.error("Failed to toggle user status:", e);
+    }
   };
 
   const exportCSV = () => {
