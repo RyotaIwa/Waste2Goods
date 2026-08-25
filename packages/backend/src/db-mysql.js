@@ -29,7 +29,12 @@ if (DB_SSL) poolConfig.ssl = DB_SSL;
 const db = mysql.createPool(poolConfig);
 
 async function precomputeHash(plain) {
-  try { return await bcrypt.hash(plain, 10); } catch { return `hashed_${plain}`; }
+  try {
+    return await bcrypt.hash(plain, 10);
+  } catch (err) {
+    console.warn('Warning precomputing hash:', err.message);
+    return `hashed_${plain}`;
+  }
 }
 
 async function init() {
@@ -67,8 +72,8 @@ async function migrateTableColumns(tableName, migrations) {
         applied++;
       }
     }
-  } catch (_) {
-    // Table might not exist yet
+  } catch (err) {
+    console.debug(`Column migration check skipped for table ${tableName}:`, err.message);
   }
   return applied;
 }
@@ -99,7 +104,9 @@ async function applySchemaMigrations() {
 
     try {
       await db.query("UPDATE administrators SET email = adminIdentifier WHERE email IS NULL OR email = ''");
-    } catch (_) {}
+    } catch (err) {
+      console.debug('Email migration sync skipped:', err.message);
+    }
 
     if (totalApplied === 0) {
       console.log('✅ All table schemas are up to date');
@@ -142,7 +149,7 @@ async function insertAdminData() {
       console.log('✅ Admin user (A-001 Juan Reyes) already present in administrators table');
       return;
     }
-    const pw = (ADMIN_CREDENTIALS && ADMIN_CREDENTIALS.password) ? ADMIN_CREDENTIALS.password : 'AdminCabantian2025';
+    const pw = ADMIN_CREDENTIALS?.password ?? 'AdminCabantian2025';
     const passwordHash = await precomputeHash(pw);
     await db.query(`
       INSERT INTO administrators (adminId, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt)
@@ -173,7 +180,7 @@ async function insertResidentData() {
       console.log('✅ Demo resident (U-001 Maria Santos) already present in users table');
       return;
     }
-    const pw = (DEMO_RESIDENT_CREDENTIALS && DEMO_RESIDENT_CREDENTIALS.password) ? DEMO_RESIDENT_CREDENTIALS.password : 'ResidentCabantian2025';
+    const pw = DEMO_RESIDENT_CREDENTIALS?.password ?? 'ResidentCabantian2025';
     const passwordHash = await precomputeHash(pw);
     await db.query(`
       INSERT INTO users (
@@ -208,6 +215,6 @@ async function insertResidentData() {
 }
 
 // Initialize
-init();
+await init();
 
 export default db;

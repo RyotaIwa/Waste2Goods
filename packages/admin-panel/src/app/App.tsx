@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import {
   BarChart3, Users, TrendingUp, Bell, Search, LogOut, Recycle,
   ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
-  X, Plus, Filter, Download, Eye, Edit, Trash2, MoreHorizontal,
+  X, Plus, Download, Eye, Edit, Trash2,
   AlertCircle, MapPin, Cpu, RefreshCw, Battery, Gift,
   Lock, Mail, AlertTriangle, Check
 } from "lucide-react";
@@ -99,17 +99,20 @@ async function handleNotificationToggle(
   }
 }
 
-async function handlePointAdjustSubmit(
-  type: "Add" | "Deduct" | "Set",
-  amountStr: string,
-  reason: string,
-  selectedUser: any,
-  setSubmitting: (v: boolean) => void,
-  setMsg: (v: { type: "ok" | "err"; text: string } | null) => void,
-  setSelectedUserFn: (u: any) => void,
-  setShowModal: (v: boolean) => void,
-  refreshFn: () => Promise<void>,
-) {
+interface PointAdjustParams {
+  type: "Add" | "Deduct" | "Set";
+  amountStr: string;
+  reason: string;
+  selectedUser: any;
+  setSubmitting: (v: boolean) => void;
+  setMsg: (v: { type: "ok" | "err"; text: string } | null) => void;
+  setSelectedUserFn: (u: any) => void;
+  setShowModal: (v: boolean) => void;
+  refreshFn: () => Promise<void>;
+}
+
+async function handlePointAdjustSubmit(params: PointAdjustParams) {
+  const { type, amountStr, reason, selectedUser, setSubmitting, setMsg, setSelectedUserFn, setShowModal, refreshFn } = params;
   setMsg(null);
   const amt = Math.max(0, Number(amountStr) || 0);
   const curBal = Number(selectedUser.points ?? selectedUser.pointsBalance ?? 0);
@@ -130,6 +133,29 @@ async function handlePointAdjustSubmit(
   } catch (e) {
     setMsg({ type: 'err', text: e instanceof Error ? e.message : 'Failed to adjust points. Is backend running on :3001 with MySQL?' });
   } finally { setSubmitting(false); }
+}
+
+function getSearchPlaceholder(section: string): string {
+  if (section === "users") return "Search residents by name, email, or ID...";
+  if (section === "rewards") return "Search rewards by name or category...";
+  return "Search users, rewards, redemptions...";
+}
+
+function getNotifSeverityBg(severity: string): string {
+  if (severity === "success") return "bg-green-100";
+  if (severity === "danger") return "bg-red-100";
+  return "bg-blue-100";
+}
+
+function getNotifIcon(type: string, severity: string) {
+  if (type === "redemption") {
+    const color = severity === "success" ? "text-green-600" : severity === "danger" ? "text-red-500" : "text-blue-600";
+    return <ShoppingCart className={`w-4 h-4 ${color}`} />;
+  }
+  if (type === "newUser") {
+    return <Users className="w-4 h-4 text-blue-600" />;
+  }
+  return <Award className="w-4 h-4 text-green-600" />;
 }
 
 function computeAdminDisplay(
@@ -296,10 +322,11 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             </div>
           )}
           <div>
-            <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email</label>
+            <label htmlFor="login-email" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email</label>
             <div className="relative">
               <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -310,10 +337,11 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
             </div>
           </div>
           <div>
-            <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password</label>
+            <label htmlFor="login-password" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password</label>
             <div className="relative">
               <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -512,7 +540,7 @@ export default function App() {
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                   className="pl-9 pr-4 py-2 rounded-xl border border-border bg-background text-xs focus:outline-none focus:ring-2 focus:ring-primary/30 w-64"
-                  placeholder={section === "users" ? "Search residents by name, email, or ID..." : section === "rewards" ? "Search rewards by name or category..." : "Search users, rewards, redemptions..."}
+                  placeholder={getSearchPlaceholder(section)}
                 />
               </div>
               <button type="button" onClick={() => handleNotificationToggle(notificationsOpen, setNotificationsOpen, setNotifications, setNotifUnread)} className="relative p-2 rounded-xl border border-border hover:bg-muted transition-colors">
@@ -535,17 +563,17 @@ export default function App() {
                   <button type="button" onClick={() => setNotificationsOpen(false)}><X className="w-4 h-4 text-muted-foreground" /></button>
                 </div>
                 <div className="max-h-96 overflow-auto divide-y divide-border">
-                  {(!notifications || notifications.length === 0) && (
+                  {!notifications?.length && (
                     <div className="px-4 py-10 text-center text-xs text-muted-foreground flex flex-col items-center gap-2">
                       <Bell className="w-8 h-8 text-muted-foreground/40" />
                       No notifications yet.
                     </div>
                   )}
-                  {(notifications || []).slice(0, 20).map(n => (
+                  {(notifications ?? []).slice(0, 20).map(n => (
                     <div key={n.id} className="px-4 py-3 hover:bg-muted/30 transition-colors">
                       <div className="flex items-start gap-2">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${n.severity === 'success' ? 'bg-green-100' : n.severity === 'danger' ? 'bg-red-100' : 'bg-blue-100'}`}>
-                          {n.type === 'redemption' ? <ShoppingCart className={`w-4 h-4 ${n.severity === 'success' ? 'text-green-600' : n.severity === 'danger' ? 'text-red-500' : 'text-blue-600'}`} /> : n.type === 'newUser' ? <Users className="w-4 h-4 text-blue-600" /> : <Award className="w-4 h-4 text-green-600" />}
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${getNotifSeverityBg(n.severity)}`}>
+                          {getNotifIcon(n.type, n.severity)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-foreground leading-tight">{n.title || ''}</p>
@@ -602,18 +630,18 @@ export default function App() {
             <p className="text-sm text-muted-foreground mb-4">Manually adjust points for <strong>{selectedUser.name}</strong> (current: <span className="font-black text-primary">{(selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()} pts</span>)</p>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Adjustment Type</label>
-                <select value={adjustType} onChange={e => setAdjustType(e.target.value as any)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm">
+                <label htmlFor="adjust-type" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Adjustment Type</label>
+                <select id="adjust-type" value={adjustType} onChange={e => setAdjustType(e.target.value as any)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm">
                   <option value="Add">Add Points</option><option value="Deduct">Deduct Points</option><option value="Set">Set Balance</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Amount</label>
-                <input type="number" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <label htmlFor="adjust-amount" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Amount</label>
+                <input id="adjust-amount" type="number" value={adjustAmount} onChange={e => setAdjustAmount(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
               <div>
-                <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reason</label>
-                <input value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                <label htmlFor="adjust-reason" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reason</label>
+                <input id="adjust-reason" value={adjustReason} onChange={e => setAdjustReason(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
             </div>
             {adjustMsg && (
@@ -627,13 +655,187 @@ export default function App() {
               <button
                 type="button"
                 disabled={adjustSubmitting}
-                onClick={() => handlePointAdjustSubmit(adjustType, adjustAmount, adjustReason, selectedUser, setAdjustSubmitting, setAdjustMsg, setSelectedUser, setShowAdjustModal, refreshData)}
+                onClick={() => handlePointAdjustSubmit({ type: adjustType, amountStr: adjustAmount, reason: adjustReason, selectedUser, setSubmitting: setAdjustSubmitting, setMsg: setAdjustMsg, setSelectedUserFn: setSelectedUser, setShowModal: setShowAdjustModal, refreshFn: refreshData })}
                 className="flex-1 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-1.5"
               >{adjustSubmitting ? 'Saving...' : 'Apply'}</button>
             </div>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function formatDemoVal(s: any, demoStr: string, unit?: string) {
+  if (s === null || s === undefined || Number.isNaN(Number(s))) return demoStr;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n <= 0) return demoStr;
+  if (unit === "kg") return `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`;
+  if (unit === "K") return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
+  return n.toLocaleString();
+}
+
+function formatDashboardLeaderboard(liveLeaderboard: any[] | null) {
+  if (!liveLeaderboard || liveLeaderboard.length === 0) {
+    return leaderboard.slice(0, 5);
+  }
+  return liveLeaderboard.slice(0, 5).map((u, i) => ({
+    rank: Number(u.rank) || i + 1,
+    name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Resident",
+    avatar: (u.name || "RU").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase() || "RU",
+    points: Number(u.points || u.pointsBalance || 0),
+  }));
+}
+
+function formatDashboardTransactions(liveTx: any[] | null) {
+  if (!liveTx || liveTx.length === 0) {
+    return transactions.slice(0, 5);
+  }
+  return liveTx.slice(0, 5).map((t, i) => {
+    const kg = Number(t.weightKg || t.kg || 0);
+    const material = t.materialName || t.materialId || "PET Plastic";
+    const kiosk = t.kioskId || "K-01";
+    const pts = Number(t.pointsEarned || t.points || 0);
+    const desc = pts > 0 ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}` : t.desc || `Reward redemption`;
+    const isEarn = pts > 0 && t.pointsEarned !== undefined ? true : (t.type === "earn");
+    return {
+      id: t.transactionId || t.id || `tx-${i}`,
+      date: t.timestamp || t.date || "Today",
+      type: isEarn ? "earn" : (t.type || "earn"),
+      desc,
+      pts: pts || 0,
+    };
+  });
+}
+
+function DashboardSummaryCards({ liveSummary }: { liveSummary: any }) {
+  const totalCollectedStr = liveSummary ? formatDemoVal(liveSummary.totalKg, "12,450 kg", "kg") : "12,450 kg";
+  const activeResidentsStr = liveSummary ? formatDemoVal(liveSummary.activeResidents, "847") : "847";
+  const pointsAwardedStr = liveSummary ? formatDemoVal(liveSummary.pointsAwarded, "284.5K", "K") : "284.5K";
+  const redeemedStr = liveSummary ? formatDemoVal(liveSummary.redeemed, "234") : "234";
+
+  return (
+    <div className="grid grid-cols-4 gap-4">
+      <SCard label="Total Collected" value={totalCollectedStr} sub={liveSummary ? `From ${liveSummary.kgDelta || 0} total recycling transactions` : "↑ 18% vs May"} icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveSummary && liveSummary.kgDelta > 0 ? `Tx:${liveSummary.kgDelta}` : "+18%"} />
+      <SCard label="Active Residents" value={activeResidentsStr} sub={liveSummary ? `${liveSummary.newUsers || 0} registered users (DB total)` : "34 new this week"} icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveSummary && liveSummary.newUsers > 0 ? `Users:${liveSummary.newUsers}` : "+34"} />
+      <SCard label="Points Awarded" value={pointsAwardedStr} sub="All time points distributed" icon={<Award className="w-5 h-5 text-amber-600" />} color="bg-amber-100" />
+      <SCard label="Rewards Redeemed" value={redeemedStr} sub={liveSummary ? `Total redemptions processed` : "All time total"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveSummary && liveSummary.redeemedDelta > 0 ? `Redeemed:${liveSummary.redeemedDelta}` : "+41"} />
+    </div>
+  );
+}
+
+function WeeklyCollectionCard({ liveWeekly }: { liveWeekly: any[] | null }) {
+  const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
+  const isLive = Boolean(liveWeekly && liveWeekly.length > 0);
+
+  return (
+    <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
+        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+      </div>
+      <ResponsiveContainer width="100%" height={180}>
+        <AreaChart data={mergedWeekly}>
+          <defs>
+            <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor="#16a34a" stopOpacity={0.25} />
+              <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+          <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+          <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #e5e7eb" }} />
+          <Area type="monotone" dataKey="kg" stroke="#16a34a" strokeWidth={2.5} fill="url(#wg)" />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function WasteCompositionCard() {
+  return (
+    <div className="col-span-2 bg-white rounded-2xl p-4 border border-border">
+      <h3 className="font-black text-sm text-foreground mb-3">Waste Composition</h3>
+      <ResponsiveContainer width="100%" height={130}>
+        <PieChart>
+          <Pie data={wasteTypes} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={3}>
+            {wasteTypes.map((e) => <Cell key={e.name} fill={e.color} />)}
+          </Pie>
+          <Tooltip contentStyle={{ borderRadius: 10, fontSize: 11 }} />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="space-y-1 mt-1">
+        {wasteTypes.map(w => (
+          <div key={w.name} className="flex items-center gap-2 text-xs">
+            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: w.color }} />
+            <span className="text-muted-foreground flex-1 truncate">{w.name}</span>
+            <span className="font-bold">{w.value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopResidentsCard({ liveLeaderboard }: { liveLeaderboard: any[] | null }) {
+  const mergedLeaderboard = formatDashboardLeaderboard(liveLeaderboard);
+  const isLive = Boolean(liveLeaderboard && liveLeaderboard.length > 0);
+
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-border">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-black text-sm text-foreground">Top Residents</h3>
+        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+      </div>
+      <div className="space-y-2">
+        {mergedLeaderboard.map(u => (
+          <div key={String(u.rank)} className="flex items-center gap-2">
+            <RankIcon rank={u.rank} />
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.avatar}</div>
+            <span className="text-xs font-semibold flex-1 truncate">{u.name}</span>
+            <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (u.points / Math.max(5000, u.points)) * 100)}%` }} /></div>
+            <span className="text-xs font-black text-primary w-16 text-right">{Number(u.points || 0).toLocaleString()}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function getTxBadgeBg(type: string): string {
+  if (type === "earn") return "bg-green-100";
+  if (type === "redeem") return "bg-blue-100";
+  return "bg-amber-100";
+}
+
+function getTxIcon(type: string) {
+  if (type === "earn") return <Recycle className="w-3 h-3 text-green-600" />;
+  if (type === "redeem") return <Gift className="w-3 h-3 text-blue-600" />;
+  return <Zap className="w-3 h-3 text-amber-600" />;
+}
+
+function RecentActivityCard({ liveTx }: { liveTx: any[] | null }) {
+  const mergedTx = formatDashboardTransactions(liveTx);
+  const isLive = Boolean(liveTx && liveTx.length > 0);
+
+  return (
+    <div className="bg-white rounded-2xl p-4 border border-border">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="font-black text-sm text-foreground">Recent Activity</h3>
+        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+      </div>
+      <div className="space-y-2">
+        {mergedTx.map(t => (
+          <div key={String(t.id)} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
+            <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${getTxBadgeBg(t.type)}`}>
+              {getTxIcon(t.type)}
+            </div>
+            <div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{t.desc}</p><p className="text-xs text-muted-foreground">{String(t.date)}</p></div>
+            <span className={`text-xs font-black ${t.pts > 0 ? "text-primary" : "text-red-500"}`}>{t.pts > 0 ? "+" : ""}{t.pts}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -649,131 +851,16 @@ function AdminDashboard({
   liveLeaderboard: any[] | null;
   liveTx: any[] | null;
 }) {
-  // Use REAL data where available; fall back to demo placeholders (#8 req: do not remove demo ones yet)
-  const demoVal = (s: any, demoStr: string, unit?: string) => {
-    if (s === null || s === undefined || Number.isNaN(Number(s))) return demoStr;
-    const n = Number(s);
-    if (!isFinite(n) || n <= 0) return demoStr;
-    return unit === "kg" ? `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg` : unit === "K" ? (n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)) : `${n.toLocaleString()}`;
-  };
-  const totalCollectedStr = liveSummary ? demoVal(liveSummary.totalKg, "12,450 kg", "kg") : "12,450 kg";
-  const activeResidentsStr = liveSummary ? demoVal(liveSummary.activeResidents, "847") : "847";
-  const pointsAwardedStr = liveSummary ? demoVal(liveSummary.pointsAwarded, "284.5K", "K") : "284.5K";
-  const redeemedStr = liveSummary ? demoVal(liveSummary.redeemed, "234") : "234";
-  const mergedWeekly: any[] = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
-  const mergedLeaderboard: any[] = liveLeaderboard && liveLeaderboard.length > 0
-    ? liveLeaderboard.slice(0, 5).map((u, i) => ({
-        rank: Number(u.rank) || i + 1,
-        name: u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Resident",
-        avatar: (u.name || "RU").split(" ").map((p: string) => p[0]).join("").slice(0, 2).toUpperCase() || "RU",
-        points: Number(u.points || u.pointsBalance || 0),
-      }))
-    : leaderboard.slice(0, 5);
-  const mergedTx: any[] = liveTx && liveTx.length > 0
-    ? liveTx.slice(0, 5).map((t, i) => {
-        const residentName = t.residentName || t.firstName ? `${t.firstName || ""} ${t.lastName || ""}`.trim() : (typeof t.userId === "string" ? t.userId : "Resident");
-        const kg = Number(t.weightKg || t.kg || 0);
-        const material = t.materialName || t.materialId || "PET Plastic";
-        const kiosk = t.kioskId || "K-01";
-        const pts = Number(t.pointsEarned || t.points || 0);
-        const desc = pts > 0 ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}` : t.desc || `Reward redemption`;
-        const isEarn = pts > 0 && t.pointsEarned !== undefined ? true : (t.type === "earn");
-        return {
-          id: t.transactionId || t.id || `tx-${i}`,
-          date: t.timestamp || t.date || "Today",
-          type: isEarn ? "earn" : (t.type || "earn"),
-          desc,
-          pts: pts || 0,
-        };
-      })
-    : transactions.slice(0, 5);
-
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-4 gap-4">
-        <SCard label="Total Collected" value={totalCollectedStr} sub={liveSummary ? `From ${liveSummary.kgDelta || 0} total recycling transactions` : "↑ 18% vs May"} icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveSummary && liveSummary.kgDelta > 0 ? `Tx:${liveSummary.kgDelta}` : "+18%"} />
-        <SCard label="Active Residents" value={activeResidentsStr} sub={liveSummary ? `${liveSummary.newUsers || 0} registered users (DB total)` : "34 new this week"} icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveSummary && liveSummary.newUsers > 0 ? `Users:${liveSummary.newUsers}` : "+34"} />
-        <SCard label="Points Awarded" value={pointsAwardedStr} sub="All time points distributed" icon={<Award className="w-5 h-5 text-amber-600" />} color="bg-amber-100" />
-        <SCard label="Rewards Redeemed" value={redeemedStr} sub={liveSummary ? `Total redemptions processed` : "All time total"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveSummary && liveSummary.redeemedDelta > 0 ? `Redeemed:${liveSummary.redeemedDelta}` : "+41"} />
-      </div>
+      <DashboardSummaryCards liveSummary={liveSummary} />
       <div className="grid grid-cols-5 gap-4">
-        <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
-            {liveWeekly && liveWeekly.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
-          </div>
-          <ResponsiveContainer width="100%" height={180}>
-            <AreaChart data={mergedWeekly}>
-              <defs>
-                <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#16a34a" stopOpacity={0.25} />
-                  <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-              <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #e5e7eb" }} />
-              <Area type="monotone" dataKey="kg" stroke="#16a34a" strokeWidth={2.5} fill="url(#wg)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="col-span-2 bg-white rounded-2xl p-4 border border-border">
-          <h3 className="font-black text-sm text-foreground mb-3">Waste Composition</h3>
-          <ResponsiveContainer width="100%" height={130}>
-            <PieChart>
-              <Pie data={wasteTypes} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={3}>
-                {wasteTypes.map((e, i) => <Cell key={`wt-${i}`} fill={e.color} />)}
-              </Pie>
-              <Tooltip contentStyle={{ borderRadius: 10, fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="space-y-1 mt-1">
-            {wasteTypes.map(w => (
-              <div key={w.name} className="flex items-center gap-2 text-xs">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: w.color }} />
-                <span className="text-muted-foreground flex-1 truncate">{w.name}</span>
-                <span className="font-bold">{w.value}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <WeeklyCollectionCard liveWeekly={liveWeekly} />
+        <WasteCompositionCard />
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <div className="bg-white rounded-2xl p-4 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-black text-sm text-foreground">Top Residents</h3>
-            {liveLeaderboard && liveLeaderboard.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
-          </div>
-          <div className="space-y-2">
-            {mergedLeaderboard.map(u => (
-              <div key={String(u.rank)} className="flex items-center gap-2">
-                <RankIcon rank={u.rank} />
-                <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.avatar}</div>
-                <span className="text-xs font-semibold flex-1 truncate">{u.name}</span>
-                <div className="w-24 h-1.5 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, (u.points/Math.max(5000,u.points))*100)}%` }} /></div>
-                <span className="text-xs font-black text-primary w-16 text-right">{Number(u.points||0).toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="bg-white rounded-2xl p-4 border border-border">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="font-black text-sm text-foreground">Recent Activity</h3>
-            {liveTx && liveTx.length > 0 ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
-          </div>
-          <div className="space-y-2">
-            {mergedTx.map(t => (
-              <div key={String(t.id)} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
-                <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${t.type==="earn"?"bg-green-100":t.type==="redeem"?"bg-blue-100":"bg-amber-100"}`}>
-                  {t.type==="earn"?<Recycle className="w-3 h-3 text-green-600" />:t.type==="redeem"?<Gift className="w-3 h-3 text-blue-600" />:<Zap className="w-3 h-3 text-amber-600" />}
-                </div>
-                <div className="flex-1 min-w-0"><p className="text-xs font-semibold truncate">{t.desc}</p><p className="text-xs text-muted-foreground">{String(t.date)}</p></div>
-                <span className={`text-xs font-black ${t.pts>0?"text-primary":"text-red-500"}`}>{t.pts>0?"+":""}{t.pts}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <TopResidentsCard liveLeaderboard={liveLeaderboard} />
+        <RecentActivityCard liveTx={liveTx} />
       </div>
     </div>
   );
@@ -852,6 +939,17 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     URL.revokeObjectURL(url);
   };
 
+function formatUserJoinedDate(rawJoined: any): string {
+  if (!rawJoined) return "May 14, 2025";
+  if (typeof rawJoined !== "string") {
+    return new Date(Number(rawJoined)).toLocaleDateString();
+  }
+  if (rawJoined.includes("T")) {
+    return new Date(rawJoined).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+  return rawJoined;
+}
+
   // Merge: live DB users first (convert to UI shape), fall back to demo adminUsers array when not available.
   let mergedUsers: any[] = liveUsers && liveUsers.length > 0
     ? liveUsers.map((u: any, i: number) => {
@@ -861,7 +959,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
         const submissions = Number(u.totalSubmissions || u.submissions || 0);
         const redeemed = Number(u.redeemed || 0);
         const rawJoined = u.createdAt || u.joined || u.registrationDate;
-        const joined = rawJoined ? (typeof rawJoined === "string" ? (rawJoined.includes("T") ? new Date(rawJoined).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : rawJoined) : new Date(Number(rawJoined)).toLocaleDateString()) : "May 14, 2025";
+        const joined = formatUserJoinedDate(rawJoined);
         const statusBase = String(u.status || (points > 0 || submissions > 0 ? "active" : "inactive")).toLowerCase();
         const status = statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
         const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
@@ -992,41 +1090,41 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
-              <input value={uFirst} onChange={e => setUFirst(e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="user-edit-first" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
+              <input id="user-edit-first" value={uFirst} onChange={e => setUFirst(e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
-              <input value={uLast} onChange={e => setULast(e.target.value)} placeholder="Reyes" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="user-edit-last" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
+              <input id="user-edit-last" value={uLast} onChange={e => setULast(e.target.value)} placeholder="Reyes" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
+              <label htmlFor="user-edit-email" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input type="email" value={uEmail} onChange={e => setUEmail(e.target.value)} placeholder="resident@example.com" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+                <input id="user-edit-email" type="email" value={uEmail} onChange={e => setUEmail(e.target.value)} placeholder="resident@example.com" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
               </div>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">New Password (leave blank to keep)</label>
+              <label htmlFor="user-edit-pass" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">New Password (leave blank to keep)</label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input type="password" value={uPass} onChange={e => setUPass(e.target.value)} placeholder="Min 6 chars (optional)" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+                <input id="user-edit-pass" type="password" value={uPass} onChange={e => setUPass(e.target.value)} placeholder="Min 6 chars (optional)" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
               </div>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm New Password</label>
+              <label htmlFor="user-edit-pass2" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm New Password</label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <input type="password" value={uPass2} onChange={e => setUPass2(e.target.value)} placeholder="Only if updating password" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+                <input id="user-edit-pass2" type="password" value={uPass2} onChange={e => setUPass2(e.target.value)} placeholder="Only if updating password" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
               </div>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Phone</label>
-              <input value={uPhone} onChange={e => setUPhone(e.target.value)} placeholder="+63 9XX XXX XXXX" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="user-edit-phone" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Phone</label>
+              <input id="user-edit-phone" value={uPhone} onChange={e => setUPhone(e.target.value)} placeholder="+63 9XX XXX XXXX" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Balance</label>
-              <input type="number" value={uPoints} onChange={e => setUPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="user-edit-points" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Balance</label>
+              <input id="user-edit-points" type="number" value={uPoints} onChange={e => setUPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
           </div>
           <div className="flex gap-2 justify-end">
@@ -1082,6 +1180,10 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
       </div>
     </div>
   );
+}
+function getRewardSubmitButtonText(saving: boolean, editing: boolean): string {
+  if (saving) return "Saving...";
+  return editing ? "Save Changes" : "Create Reward";
 }
 
 function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh }: { liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }) {
@@ -1257,31 +1359,31 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reward Name *</label>
-              <input value={rName} onChange={e => setRName(e.target.value)} placeholder="Eco Water Bottle" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="reward-name" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Reward Name *</label>
+              <input id="reward-name" value={rName} onChange={e => setRName(e.target.value)} placeholder="Eco Water Bottle" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Cost *</label>
-              <input type="number" value={rPoints} onChange={e => setRPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="reward-points" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Points Cost *</label>
+              <input id="reward-points" type="number" value={rPoints} onChange={e => setRPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Stock Quantity</label>
-              <input type="number" value={rStock} onChange={e => setRStock(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="reward-stock" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Stock Quantity</label>
+              <input id="reward-stock" type="number" value={rStock} onChange={e => setRStock(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Short Description</label>
-              <textarea value={rDesc} onChange={e => setRDesc(e.target.value)} rows={2} placeholder="Describe the reward..." className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm resize-none" />
+              <label htmlFor="reward-desc" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Short Description</label>
+              <textarea id="reward-desc" value={rDesc} onChange={e => setRDesc(e.target.value)} rows={2} placeholder="Describe the reward..." className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm resize-none" />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Category</label>
-              <select value={rCat} onChange={e => setRCat(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm">
+              <label htmlFor="reward-cat" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Category</label>
+              <select id="reward-cat" value={rCat} onChange={e => setRCat(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm">
                 {CAT_CHOICES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Icon Emoji</label>
+              <label htmlFor="reward-icon" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Icon Emoji</label>
               <div className="relative">
-                <select value={rIcon} onChange={e => setRIcon(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm appearance-none">
+                <select id="reward-icon" value={rIcon} onChange={e => setRIcon(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm appearance-none">
                   {ICON_CHOICES.map(ic => <option key={ic} value={ic}>{ic}</option>)}
                 </select>
               </div>
@@ -1296,7 +1398,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
           <div className="flex gap-2 justify-end">
             <button type="button" onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
             <button type="button" disabled={saving} onClick={submitForm} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
-              {saving ? "Saving..." : (editing ? "Save Changes" : "Create Reward")}
+              {getRewardSubmitButtonText(saving, Boolean(editing))}
             </button>
           </div>
         </div>
@@ -1466,6 +1568,36 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: { liveWeek
   );
 }
 
+function getKioskBg(status: string): string {
+  if (status === "online") return "bg-green-100";
+  if (status === "maintenance") return "bg-amber-100";
+  return "bg-red-100";
+}
+
+function getKioskIconColor(status: string): string {
+  if (status === "online") return "text-green-600";
+  if (status === "maintenance") return "text-amber-600";
+  return "text-red-500";
+}
+
+function getKioskBadgeClass(status: string): string {
+  if (status === "online") return BADGE_SUCCESS_CLS;
+  if (status === "maintenance") return BADGE_WARN_CLS;
+  return "bg-red-100 text-red-600";
+}
+
+function getBatteryBg(battery: number): string {
+  if (battery > 50) return "bg-green-500";
+  if (battery > 20) return "bg-amber-500";
+  return "bg-red-500";
+}
+
+function getLogLevelBadgeClass(level: string): string {
+  if (level === "error") return "bg-red-100 text-red-700";
+  if (level === "warn") return BADGE_WARN_CLS;
+  return "bg-blue-100 text-blue-700";
+}
+
 function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void> }) {
   const [openLogsKiosk, setOpenLogsKiosk] = useState<string | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
@@ -1549,16 +1681,17 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
         </div>
         {onRefresh && <button type="button" onClick={() => onRefresh()} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"><RefreshCw className="w-3 h-3" />Refresh all</button>}
       </div>
+
       <div className="space-y-3">
         {mergedKiosks.map(k => (
           <div key={k.id} className="bg-white rounded-2xl border border-border p-4 flex items-center gap-4">
-            <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${k.status==="online"?"bg-green-100":k.status==="maintenance"?"bg-amber-100":"bg-red-100"}`}>
-              <Cpu className={`w-5 h-5 ${k.status==="online"?"text-green-600":k.status==="maintenance"?"text-amber-600":"text-red-500"}`} />
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${getKioskBg(k.status)}`}>
+              <Cpu className={`w-5 h-5 ${getKioskIconColor(k.status)}`} />
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-black text-sm text-foreground">{k.id}</p>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize flex items-center gap-1 ${k.status==="online" ? BADGE_SUCCESS_CLS : k.status==="maintenance" ? BADGE_WARN_CLS : "bg-red-100 text-red-600"}`}>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize flex items-center gap-1 ${getKioskBadgeClass(k.status)}`}>
                   <StatusPip status={k.status} />{k.status}
                 </span>
               </div>
@@ -1572,7 +1705,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
             <div className="flex flex-col items-end gap-2 flex-shrink-0">
               <div className="flex items-center gap-1.5">
                 <Battery className="w-3.5 h-3.5 text-muted-foreground" />
-                <div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${k.battery>50?"bg-green-500":k.battery>20?"bg-amber-500":"bg-red-500"}`} style={{ width: `${k.battery}%` }} /></div>
+                <div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${getBatteryBg(k.battery)}`} style={{ width: `${k.battery}%` }} /></div>
                 <span className="text-xs font-bold text-muted-foreground">{k.battery}%</span>
               </div>
               <div className="flex gap-1.5">
@@ -1607,8 +1740,8 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: { liveKiosks: any[] 
                 <div className="px-4 py-10 text-center text-xs text-muted-foreground">No logs.</div>
               )}
               {!logsLoading && logs.map((l: any, i: number) => (
-                <div key={i} className="px-4 py-2 flex items-start gap-2">
-                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${l.level === 'error' ? 'bg-red-100 text-red-700' : l.level === 'warn' ? BADGE_WARN_CLS : 'bg-blue-100 text-blue-700'}`}>{l.level || 'info'}</span>
+                <div key={l.id || l.logId || `log-${i}`} className="px-4 py-2 flex items-start gap-2">
+                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${getLogLevelBadgeClass(l.level)}`}>{l.level || 'info'}</span>
                   <span className="text-[10px] text-muted-foreground w-32 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleString()}</span>
                   <span className="text-xs font-semibold text-foreground flex-1 min-w-0 break-words">{l.message || l.msg || String(l)}</span>
                 </div>
@@ -1740,26 +1873,29 @@ function AdminAdmins() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
+              <label htmlFor="admin-create-first" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
               <input
+                id="admin-create-first"
                 value={firstName} onChange={e => setFirstName(e.target.value)}
                 placeholder="Juan"
                 className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
+              <label htmlFor="admin-create-last" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
               <input
+                id="admin-create-last"
                 value={lastName} onChange={e => setLastName(e.target.value)}
                 placeholder="Reyes"
                 className="w-full px-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
             <div className="col-span-2">
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
+              <label htmlFor="admin-create-email" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
               <div className="relative">
                 <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="admin-create-email"
                   type="email" value={email} onChange={e => setEmail(e.target.value)}
                   placeholder="barangay.assistant@waste2goods.ph"
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -1767,10 +1903,11 @@ function AdminAdmins() {
               </div>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password *</label>
+              <label htmlFor="admin-create-pass" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password *</label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="admin-create-pass"
                   type="password" value={password} onChange={e => setPassword(e.target.value)}
                   placeholder="Min 6 chars"
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
@@ -1778,10 +1915,11 @@ function AdminAdmins() {
               </div>
             </div>
             <div>
-              <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm Password *</label>
+              <label htmlFor="admin-create-pass2" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm Password *</label>
               <div className="relative">
                 <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                 <input
+                  id="admin-create-pass2"
                   type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
                   placeholder="Re-type password"
                   className="w-full pl-10 pr-4 py-3 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
