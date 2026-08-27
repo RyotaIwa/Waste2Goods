@@ -307,7 +307,7 @@ function runAdminDataFetchEffect(
 function runAdminAuthGuardEffect(screen: AppScreen, setScreen: (s: AppScreen) => void): void {
   if (screen === "login") return;
   const auth = Waste2GoodsAPI.getAuthState();
-  if (!auth || !auth.isAuthenticated || !auth.token) {
+  if (!auth?.isAuthenticated || !auth?.token) {
     console.log("🔐 Auth guard: no valid token — returning to login screen");
     Waste2GoodsAPI.logout();
     setScreen("login");
