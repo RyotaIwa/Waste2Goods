@@ -4,12 +4,13 @@ import { Waste2GoodsAPI, getApiHost, setApiHost, getApiBaseUrl, testApiConnectio
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   Monitor, Recycle, Home, QrCode, Gift,
-  Target, User, ArrowLeft, Check, AlertCircle, Scale, CheckCircle,
-  RefreshCw, MapPin, Activity, ShoppingCart,
-  Clock, Trophy, Medal, Zap,
-  Bell, LogOut, HelpCircle,
-  ChevronRight, Shield, Mail, Phone, Leaf, Star,
-  Settings, Lock, Info, Flame, Camera, Globe
+  Target, User, ArrowLeft, AlertCircle, CheckCircle2,
+  RefreshCw, MapPin,
+  Trophy, Medal, Zap,
+  Bell, LogOut,
+  ChevronRight, Shield, Mail, Phone, Leaf,
+  Settings, Lock, Info, Flame, Camera, Globe,
+  ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package
 } from "lucide-react";
 
 type MobileScreen =
@@ -44,14 +45,14 @@ const DEMO_LEADERBOARD_FALLBACK = [
   { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 },
 ];
 const rewards = [
-  { id: 1, name: "School Supplies Kit", points: 500, category: "Education", stock: 23, icon: "📚", seasonal: false },
-  { id: 2, name: "Grocery Voucher ₱100", points: 800, category: "Grocery", stock: 15, icon: "🛒", seasonal: false },
-  { id: 3, name: "Eco Water Bottle", points: 350, category: "Lifestyle", stock: 41, icon: "🍶", seasonal: false },
-  { id: 4, name: "Rice (5kg)", points: 1200, category: "Grocery", stock: 8, icon: "🌾", seasonal: false },
-  { id: 5, name: "Plant Seedling Set", points: 250, category: "Garden", stock: 60, icon: "🌱", seasonal: true },
-  { id: 6, name: "Reusable Bag Bundle", points: 180, category: "Lifestyle", stock: 88, icon: "👜", seasonal: false },
-  { id: 7, name: "Back-to-School Bundle", points: 650, category: "Education", stock: 12, icon: "🎒", seasonal: true },
-  { id: 8, name: "Herbal Tea Set", points: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true },
+  { id: 1, name: "School Supplies Kit", points: 500, cost: 500, category: "Education", stock: 23, icon: "📚", seasonal: false, description: "Complete school essentials set including notebooks, pens, and bag.", delivery: "Barangay Pick-up", validity: "30 Days" },
+  { id: 2, name: "Grocery Voucher ₱100", points: 800, cost: 800, category: "Grocery", stock: 15, icon: "🛒", seasonal: false, description: "₱100 voucher redeemable at all participating local grocery stores.", delivery: "Digital Code", validity: "60 Days" },
+  { id: 3, name: "Eco Water Bottle", points: 350, cost: 350, category: "Lifestyle", stock: 41, icon: "🍶", seasonal: false, description: "BPA-free stainless steel insulated 750ml eco water bottle.", delivery: "Barangay Pick-up", validity: "30 Days" },
+  { id: 4, name: "Rice (5kg)", points: 1200, cost: 1200, category: "Grocery", stock: 8, icon: "🌾", seasonal: false, description: "5kg premium white rice bag for family consumption.", delivery: "Kiosk Pickup", validity: "14 Days" },
+  { id: 5, name: "Plant Seedling Set", points: 250, cost: 250, category: "Garden", stock: 60, icon: "🌱", seasonal: true, description: "Assorted vegetable seedlings set for home gardening.", delivery: "Barangay Pick-up", validity: "14 Days" },
+  { id: 6, name: "Reusable Bag Bundle", points: 180, cost: 180, category: "Lifestyle", stock: 88, icon: "👜", seasonal: false, description: "3x heavy-duty canvas reusable shopping bags.", delivery: "Barangay Pick-up", validity: "60 Days" },
+  { id: 7, name: "Back-to-School Bundle", points: 650, cost: 650, category: "Education", stock: 12, icon: "🎒", seasonal: true, description: "Backpack, water flask, and basic stationery kit.", delivery: "Barangay Pick-up", validity: "30 Days" },
+  { id: 8, name: "Herbal Tea Set", points: 300, cost: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true, description: "Organic herbal tea selection with bamboo strainer.", delivery: "Barangay Pick-up", validity: "30 Days" },
 ];
 const tasks = [
   { id: 1, title: "Submit 2kg of PET bottles", reward: 100, progress: 1.4, goal: 2, unit: "kg", type: "daily", done: false },
@@ -109,6 +110,19 @@ function SignalIcon({ className }: Readonly<{ className?: string }>) {
   );
 }
 
+function AnimatedNumber({ value, suffix = "", className = "" }: Readonly<{ value: number; suffix?: string; className?: string }>) {
+  return <span className={className}>{value}{suffix}</span>;
+}
+
+function elapsedFromTs(ts?: number | string | null): string {
+  if (!ts) return "";
+  const diffSec = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (diffSec < 60) return `${diffSec}s ago`;
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  return `${Math.floor(diffMin / 60)}h ago`;
+}
+
 function useAnimatedWeight(target: number, running: boolean) {
   const [val, setVal] = useState(0);
   useEffect(() => {
@@ -117,7 +131,7 @@ function useAnimatedWeight(target: number, running: boolean) {
     let cur = 0;
     const iv = setInterval(() => {
       cur = Math.min(cur + step, target);
-      setVal(parseFloat(cur.toFixed(2)));
+      setVal(Number.parseFloat(cur.toFixed(2)));
       if (cur >= target) clearInterval(iv);
     }, 60);
     return () => clearInterval(iv);
@@ -125,19 +139,45 @@ function useAnimatedWeight(target: number, running: boolean) {
   return val;
 }
 
-function Field({ label, placeholder, type = "text", icon, value, onChange, defaultValue, defaultVal }: { label: string; placeholder: string; type?: string; icon?: React.ReactNode; value?: string; onChange?: (value: string) => void; defaultValue?: string; defaultVal?: string }) {
-  const initialValue = value !== undefined ? value : (defaultValue ?? defaultVal);
+function Field({
+  label,
+  placeholder,
+  type = "text",
+  icon,
+  value,
+  onChange,
+  defaultValue,
+  defaultVal,
+  containerClassName,
+  inputClassName,
+  id,
+}: Readonly<{
+  label: string;
+  placeholder: string;
+  type?: string;
+  icon?: React.ReactNode;
+  value?: string;
+  onChange?: (value: string) => void;
+  defaultValue?: string;
+  defaultVal?: string;
+  containerClassName?: string;
+  inputClassName?: string;
+  id?: string;
+}>) {
+  const initialValue = value ?? defaultValue ?? defaultVal;
+  const inputId = id || (label ? label.toLowerCase().replace(/[^a-z0-9]/g, "-") : undefined);
   return (
-    <div>
-      <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label>
+    <div className={containerClassName}>
+      {label ? <label htmlFor={inputId} className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label> : null}
       <div className="relative">
-        {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">{icon}</div>}
+        {icon && <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">{icon}</div>}
         <input
+          id={inputId}
           type={type}
           value={initialValue}
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
-          className={`w-full ${icon ? "pl-10" : "pl-4"} pr-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40`}
+          className={`w-full ${icon ? "pl-10" : "pl-4"} pr-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 ${inputClassName ?? ""}`}
         />
       </div>
     </div>
@@ -152,7 +192,7 @@ function SelectField({
   options,
   onChange,
   disabled,
-}: {
+}: Readonly<{
   label: string;
   placeholder: string;
   icon?: React.ReactNode;
@@ -160,7 +200,7 @@ function SelectField({
   options: string[];
   onChange: (value: string) => void;
   disabled?: boolean;
-}) {
+}>) {
   return (
     <div>
       <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{label}</label>
@@ -205,129 +245,7 @@ function getRedeemButtonLabel(loading: boolean, success: any): string {
   return "Confirm Redemption";
 }
 
-function RedeemConfirmScreen({
-  reward,
-  currentUser,
-  onBack,
-  onCancel,
-}: {
-  reward: { id?: any; rewardId?: any; name: string; icon: string; category: string; points: number; stock?: number; };
-  currentUser: { id?: string; userId?: string; points: number; name: string; };
-  onBack: () => void;
-  onCancel: () => void;
-}) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState<null | { newBalance: number; redemptionId: string; rewardName: string; message: string }>(null);
-  const remaining = Math.max(0, currentUser.points - reward.points);
-  const disabled = loading || !!success || currentUser.points < reward.points;
 
-  const confirm = async () => {
-    setError("");
-    setLoading(true);
-    try {
-      const userId = currentUser.id || currentUser.userId || "";
-      if (!userId) throw new Error("Please login (or register) first before redeeming.");
-      if (currentUser.points < reward.points) throw new Error("Not enough points to redeem this item.");
-      const rewardIdVal = reward.rewardId ?? reward.id;
-      if (rewardIdVal === undefined || rewardIdVal === null || rewardIdVal === "") throw new Error("Reward id missing.");
-      const res = await Waste2GoodsAPI.redeemReward({
-        userId,
-        rewardId: rewardIdVal,
-        quantity: 1,
-      });
-      if (!res?.ok) {
-        throw new Error((res as any)?.error || "Redemption failed.");
-      }
-      setSuccess({
-        newBalance: Number((res as any).newBalance ?? 0),
-        redemptionId: (res as any).redemptionId || "",
-        rewardName: (res as any).rewardName || reward.name,
-        message: (res as any).message || "Ready for pick-up.",
-      });
-      patchAuthBalance(Number((res as any).newBalance ?? 0));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Redemption failed. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-      <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-        <button type="button" onClick={onCancel}><ArrowLeft className="w-5 h-5" /></button>
-        <h2 className="text-base font-black">Confirm Redemption</h2>
-      </div>
-      <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-8">
-        <div className="flex flex-col items-center gap-3 py-4">
-          <div className="text-6xl">{reward.icon}</div>
-          <h3 className="text-xl font-black text-foreground text-center">{reward.name}</h3>
-          <span className="text-sm font-semibold px-3 py-1 rounded-full bg-secondary text-secondary-foreground">{reward.category}</span>
-        </div>
-
-        <div className="rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
-          <div className="flex justify-between"><span className="text-muted-foreground">Current balance</span><span className="font-bold">{currentUser.points.toLocaleString()} pts</span></div>
-          <div className="flex justify-between"><span className="text-muted-foreground">Cost</span><span className="font-bold text-red-600">−{reward.points} pts</span></div>
-          <div className="h-px bg-border" />
-          <div className="flex justify-between"><span className="font-black">Remaining balance</span><span className="font-black text-primary">{remaining.toLocaleString()} pts</span></div>
-        </div>
-
-        {reward.stock !== undefined && reward.stock < 10 && (
-          <div className="rounded-2xl bg-red-50 border border-red-200 p-3 flex gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 font-semibold">Only {reward.stock} left! Claim now before stock runs out.</p>
-          </div>
-        )}
-
-        {error && (
-          <div className="rounded-2xl bg-red-50 border border-red-200 p-3 flex gap-2">
-            <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-red-700 font-semibold">{error}</p>
-          </div>
-        )}
-
-        {success && (
-          <div className="rounded-2xl bg-green-50 border border-green-200 p-4 space-y-2">
-            <div className="flex items-start gap-2">
-              <CheckCircle className="w-5 h-5 text-primary flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-black text-foreground">Redemption confirmed! 🎉</p>
-                <p className="text-xs text-muted-foreground">Reference #: {success.redemptionId}</p>
-                <p className="text-xs text-green-800 mt-1 font-semibold">{success.message}</p>
-                <p className="text-xs text-muted-foreground mt-1">New balance: <strong className="text-primary">{success.newBalance.toLocaleString()} pts</strong></p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
-          <Info className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700 font-semibold">Pick up your reward at the Barangay Hall within 7 days. Bring a valid ID.</p>
-        </div>
-
-        <div className="mt-auto space-y-3">
-          <button
-            type="button"
-            onClick={confirm}
-            disabled={disabled}
-            className="w-full py-4 rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          >
-            {loading && <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
-            {getRedeemButtonLabel(loading, success)}
-          </button>
-          <button
-            type="button"
-            onClick={success ? onCancel : onBack}
-            className="w-full py-3 rounded-2xl border border-border text-sm font-bold text-foreground hover:bg-secondary transition-colors"
-          >
-            {success ? "Back to Rewards" : "Cancel"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): string | null {
   const trimmed = apiHost.trim();
@@ -364,12 +282,12 @@ function ServerIpPanel({
   setApiHostState,
   onSaved,
   compact,
-}: {
+}: Readonly<{
   apiHost: string;
   setApiHostState: (v: string) => void;
   onSaved?: (msg: { type: "ok" | "err"; text: string }) => void;
   compact?: boolean;
-}) {
+}>) {
   const [testing, setTesting] = useState(false);
   const save = () => {
     saveServerIp(apiHost, onSaved);
@@ -392,8 +310,9 @@ function ServerIpPanel({
         </div>
       </div>
       <div>
-        <label className="text-[11px] font-black text-muted-foreground uppercase tracking-wide mb-1 block">PC IP Address</label>
+        <label htmlFor="server-ip-addr-input" className="text-[11px] font-black text-muted-foreground uppercase tracking-wide mb-1 block">PC IP Address</label>
         <input
+          id="server-ip-addr-input"
           type="text"
           value={apiHost}
           onChange={e => setApiHostState(e.target.value)}
@@ -448,19 +367,42 @@ function ServerIpPanel({
   );
 }
 
+function renderKioskBadgeBody(checking?: boolean, connected?: boolean, kioskId?: string, elapsedLabel?: string) {
+  if (checking && !connected) {
+    return <span className="truncate">Checking kiosk link…</span>;
+  }
+  if (connected) {
+    return (
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <span>Kiosk linked · <strong className="truncate">{kioskId || "K-01"}</strong></span>
+        {elapsedLabel && (
+          <>
+            <span className="text-green-600/70 font-normal">·</span>
+            <span className="text-[10px] font-semibold text-green-700/80">{elapsedLabel} elapsed</span>
+          </>
+        )}
+        <span className="block w-full text-[10px] font-semibold text-green-700/80 -mt-0.5">
+          You can submit PET plastic at this kiosk
+        </span>
+      </div>
+    );
+  }
+  return <span className="truncate">No kiosk linked — scan the kiosk QR via Submit tab</span>;
+}
+
 function KioskLinkBadge({
   connected,
   kioskId,
   checking,
   connectedAt,
   onDisconnect,
-}: {
+}: Readonly<{
   connected: boolean;
   kioskId?: string;
   checking?: boolean;
   connectedAt?: number;
   onDisconnect?: () => void;
-}) {
+}>) {
   const elapsed = connectedAt ? Math.floor((Date.now() - connectedAt) / 1000) : 0;
   const elapsedLabel = (() => {
     if (!connectedAt) return "";
@@ -476,24 +418,7 @@ function KioskLinkBadge({
     >
       <Monitor className={`w-4 h-4 flex-shrink-0 ${connected ? "text-green-600" : ""}`} />
       <div className="flex-1 min-w-0">
-        {checking && !connected ? (
-          <span className="truncate">Checking kiosk link…</span>
-        ) : connected ? (
-          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-            <span>Kiosk linked · <strong className="truncate">{kioskId || "K-01"}</strong></span>
-            {elapsedLabel && (
-              <>
-                <span className="text-green-600/70 font-normal">·</span>
-                <span className="text-[10px] font-semibold text-green-700/80">{elapsedLabel} elapsed</span>
-              </>
-            )}
-            <span className="block w-full text-[10px] font-semibold text-green-700/80 -mt-0.5">
-              You can submit PET plastic at this kiosk
-            </span>
-          </div>
-        ) : (
-          <span className="truncate">No kiosk linked — scan the kiosk QR via Submit tab</span>
-        )}
+        {renderKioskBadgeBody(checking, connected, kioskId, elapsedLabel)}
       </div>
       {checking && <RefreshCw className="w-3 h-3 ml-auto animate-spin flex-shrink-0 opacity-60" />}
       {connected && !checking && (
@@ -504,7 +429,6 @@ function KioskLinkBadge({
               type="button"
               onClick={(e) => { e.stopPropagation(); onDisconnect(); }}
               className="ml-1 text-[10px] font-bold px-2 py-1 rounded-lg border border-green-300 bg-white/60 text-green-800 hover:bg-green-100 transition-colors flex-shrink-0"
-              title="End this kiosk session"
             >
               Disconnect
             </button>
@@ -519,7 +443,7 @@ type MobileUserShape = {
   id: string; userId: string; name: string; initials: string; email: string; phone: string;
   barangay: string; barangayName: string; province: string; city: string; streetAddress: string;
   points: number; submissions: number; redeemed: number; joined: string; createdAt: any;
-  firstName: string; lastName: string;
+  firstName: string; lastName: string; totalKg: number;
 };
 
 function initialsFromName(name: string, fallback: string) {
@@ -560,13 +484,14 @@ function buildCurrentUser(profileUser: any): MobileUserShape {
       createdAt: (userObj as any).createdAt || null,
       firstName: (userObj as any).firstName || "",
       lastName: (userObj as any).lastName || "",
+      totalKg: Number((userObj as any).totalKg || 0),
     };
   }
   return {
     id: "", userId: "", name: "", initials: "", email: "", phone: "",
     barangay: "Cabantian", barangayName: "Cabantian", province: "Davao del Sur", city: "Davao City",
     streetAddress: "", points: 0, submissions: 0, redeemed: 0, joined: "", createdAt: null,
-    firstName: "", lastName: "",
+    firstName: "", lastName: "", totalKg: 0,
   };
 }
 
@@ -606,7 +531,7 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
   return DEMO_LEADERBOARD_FALLBACK.map((u, i) => ({ ...u, rank: i + 1, isMe: false }));
 }
 
-function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileScreen) => void }) {
+function MobileBottomNav({ screen, go }: Readonly<{ screen: MobileScreen; go: (s: MobileScreen) => void }>) {
   const items = [
     { icon: <Home className="w-5 h-5" />, label: "Home", s: "home" as MobileScreen },
     { icon: <QrCode className="w-5 h-5" />, label: "Submit", s: "submit" as MobileScreen },
@@ -617,7 +542,7 @@ function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileS
   return (
     <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-3 pt-3 flex justify-around z-20" style={{ paddingBottom: "calc(0.75rem + var(--sab))" }}>
       {items.map(i => (
-        <button key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
+        <button type="button" key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
           {i.icon}
           <span className="text-xs font-bold">{i.label}</span>
         </button>
@@ -674,13 +599,13 @@ const ALPHABETICAL_COLLATOR = new Intl.Collator("en", {
 const alphabeticalCompare = (a: string, b: string) => ALPHABETICAL_COLLATOR.compare(a, b);
 const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
 
-const UNPROTECTED_SCREENS: MobileScreen[] = [
+const UNPROTECTED_SCREENS = new Set<MobileScreen>([
   "splash", "onboard1", "onboard2", "onboard3",
   "login", "register", "mfa", "profile-setup",
-];
+]);
 
 function isAuthRequiredScreen(screen: MobileScreen) {
-  return !UNPROTECTED_SCREENS.includes(screen);
+  return !UNPROTECTED_SCREENS.has(screen);
 }
 
 function isSessionValid() {
@@ -724,63 +649,7 @@ function notifIconBgClass(type: string) {
   return "bg-slate-100";
 }
 
-function NotificationsScreen({
-  currentUserId,
-  notifItems,
-  notifUnread,
-  go,
-  screen,
-}: {
-  currentUserId: string;
-  notifItems: any[];
-  notifUnread: number;
-  go: (s: MobileScreen) => void;
-  screen: MobileScreen;
-}) {
-  return (
-    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-      <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-        <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
-        <div className="flex-1 min-w-0">
-          <h2 className="text-base font-black leading-tight">Notifications</h2>
-          <p className="text-[10px] text-muted-foreground">{notifItems.length} total{notifUnread > 0 ? ` · ${notifUnread} unread` : " · All read ✓"}</p>
-        </div>
-        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary">
-          <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-          LIVE · {currentUserId || "U-000"}
-        </span>
-      </div>
-      <div className="flex-1 overflow-y-auto p-5 space-y-2 pb-24">
-        {notifItems.length === 0 && (
-          <div className="py-16 flex flex-col items-center gap-3 text-center px-5">
-            <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
-              <Bell className="w-7 h-7 text-slate-400" />
-            </div>
-            <h3 className="font-black text-foreground">No notifications yet</h3>
-            <p className="text-xs text-muted-foreground">When you submit waste, redeem rewards, or unlock badges — you'll see them here.</p>
-            <button onClick={() => go("home")} className="mt-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-black">Return to Home</button>
-          </div>
-        )}
-        {notifItems.map(n => (
-          <div key={n.id} className={`flex gap-3 p-3.5 rounded-2xl border ${n.read === false ? "bg-primary/5 border-primary/20" : "bg-white border-border"}`}>
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${notifIconBgClass(n.type)}`}>
-              {notifIconForType(n.type, n.severity || "info")}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <p className={`text-sm font-bold text-foreground leading-snug ${n.read === false ? "" : "opacity-90"}`}>{n.title}</p>
-                <span className="flex-shrink-0 text-[10px] text-muted-foreground font-semibold whitespace-nowrap">{formatNotifTimeAgo(n.time)}</span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
-              {n.read === false && <span className="inline-block mt-1.5 w-1.5 h-1.5 rounded-full bg-primary" title="Unread" />}
-            </div>
-          </div>
-        ))}
-      </div>
-      <MobileBottomNav screen={screen} go={go} />
-    </div>
-  );
-}
+
 
 type RegFormFields = {
   regFullName: string;
@@ -895,6 +764,1346 @@ function mapKioskSessionResponse(
   };
 }
 
+type SetState<T> = React.Dispatch<React.SetStateAction<T>>;
+
+function validateRegisterStep1(v: { full: string; email: string; phone?: string; pwd: string; confirm: string }, setError: SetState<string>): boolean {
+  setError("");
+  if (!v.full || !v.email || !v.pwd || !v.confirm) {
+    setError("Please fill in all fields: name, email, phone, password, confirm password");
+    return false;
+  }
+  if (v.pwd !== v.confirm) {
+    setError("Passwords do not match");
+    return false;
+  }
+  if (v.pwd.length < 6) {
+    setError("Password must be at least 6 characters");
+    return false;
+  }
+  return true;
+}
+
+function validateRegisterAddress(v: { province: string; city: string; barangay: string }, setError: SetState<string>): boolean {
+  setError("");
+  if (!v.province || !v.city || !v.barangay) {
+    setError("Please select Province, City/Municipality, and Barangay");
+    return false;
+  }
+  return true;
+}
+
+function validateRegisterAll(v: { full: string; email: string; pwd: string; confirm: string; province: string; city: string; barangay: string }, setError: SetState<string>, goStep: (n: number) => void): boolean {
+  setError("");
+  if (!v.full || !v.email || !v.pwd) {
+    setError("Please fill in all fields from Step 1");
+    goStep(0);
+    return false;
+  }
+  if (v.pwd !== v.confirm) {
+    setError("Passwords do not match");
+    goStep(0);
+    return false;
+  }
+  if (!v.province || !v.city || !v.barangay) {
+    setError("Please select Province, City, and Barangay in Step 2");
+    goStep(1);
+    return false;
+  }
+  return true;
+}
+
+function splitFullName(full: string): { firstName: string; lastName: string } {
+  const names = full.trim().split(/\s+/);
+  return { firstName: names[0] || "User", lastName: names.slice(1).join(" ") || "Lastname" };
+}
+
+function buildQrBridgePayload(authUser: any, currentUser: any, decodedText: string) {
+  const u = authUser || {};
+  const uid = u.id || u.userId || currentUser.id || "U-001";
+  const rawName = currentUser.name && currentUser.name !== "Guest User"
+    ? currentUser.name
+    : (u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Registered User");
+  const pts = currentUser.points || u.pointsBalance || 50;
+  return {
+    user: {
+      id: uid,
+      userId: uid,
+      name: rawName,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      email: currentUser.email || u.email || "",
+      points: pts,
+      pointsBalance: pts,
+    },
+    kioskPayload: decodedText,
+    timestamp: Date.now(),
+  };
+}
+
+type RegisterSubmitCtx = Readonly<{
+  full: string;
+  email: string;
+  pwd: string;
+  confirm: string;
+  phone: string;
+  province: string;
+  city: string;
+  barangay: string;
+  street: string;
+}>;
+
+async function doRegisterSubmit(
+  ctx: RegisterSubmitCtx,
+  setError: SetState<string>,
+  setLoading: SetState<boolean>,
+  setProfileUser: SetState<any>,
+  setRegStep: SetState<number>,
+  go: (s: MobileScreen) => void,
+  targetAfter: MobileScreen,
+): Promise<void> {
+  const goStep = (n: number) => setRegStep(n);
+  if (!validateRegisterAll(ctx, setError, goStep)) return;
+  const names = splitFullName(ctx.full);
+  try {
+    setLoading(true);
+    const regAuth = await Waste2GoodsAPI.register({
+      firstName: names.firstName,
+      lastName: names.lastName,
+      email: ctx.email,
+      password: ctx.pwd,
+      phone: ctx.phone,
+      province: ctx.province,
+      city: ctx.city,
+      barangayName: ctx.barangay,
+      streetAddress: ctx.street,
+    });
+    if (regAuth?.user) setProfileUser({ ...regAuth.user });
+    setLoading(false);
+    setRegStep(0);
+    go(targetAfter);
+  } catch (e) {
+    setLoading(false);
+    setError(e instanceof Error ? e.message : "Registration failed");
+    setRegStep(0);
+  }
+}
+
+type MobileAppRouterProps = Readonly<{
+  screen: MobileScreen;
+  leaderTab: "weekly" | "monthly";
+  regStep: number;
+  selectedReward: typeof rewards[number] | null;
+  rewardFilter: string;
+  mfaCode: string[];
+  weighing: boolean;
+  email: string;
+  password: string;
+  loginError: string;
+  loginLoading: boolean;
+  regFullName: string;
+  regEmail: string;
+  regPassword: string;
+  regConfirmPassword: string;
+  regPhone: string;
+  regProvince: string;
+  regCity: string;
+  regBarangay: string;
+  regStreetAddress: string;
+  regLoading: boolean;
+  regError: string;
+  profileUser: any;
+  profileRank: string;
+  profileSaving: boolean;
+  profileBanner: { type: "ok" | "err"; text: string } | null;
+  setFName: string;
+  setLName: string;
+  setFormEmail: string;
+  setPhone: string;
+  setBrgy: string;
+  setCity: string;
+  setProvince: string;
+  notifItems: any[];
+  notifUnread: number;
+  kioskSession: { connected: boolean; kioskId?: string; connectedAt?: number };
+  kioskChecking: boolean;
+  apiHost: string;
+  showLoginServer: boolean;
+  loginServerBanner: { type: "ok" | "err"; text: string } | null;
+  weight: any;
+  mfaRefs: React.RefObject<(HTMLInputElement | null)[]>;
+  availableCities: string[];
+  availableBarangays: string[];
+  currentUser: any;
+  mergedLeaderboard: any[];
+  profileSinceLabel: string;
+  rewardCategories: string[];
+  filteredRewards: typeof rewards;
+  setSelectedReward: (r: typeof rewards[number] | null) => void;
+  setRewardFilter: (v: string) => void;
+  setMfaCode: (v: string[]) => void;
+  setEmail: SetState<string>;
+  setPassword: SetState<string>;
+  setRegFullName: SetState<string>;
+  setRegEmail: SetState<string>;
+  setRegPassword: SetState<string>;
+  setRegConfirmPassword: SetState<string>;
+  setRegPhone: SetState<string>;
+  setRegProvince: SetState<string>;
+  setRegCity: SetState<string>;
+  setRegBarangay: SetState<string>;
+  setRegStreetAddress: SetState<string>;
+  setRegError: SetState<string>;
+  setRegStep: SetState<number>;
+  setLeaderTab: SetState<"weekly" | "monthly">;
+  setProfileBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
+  setSetFName: SetState<string>;
+  setSetLName: SetState<string>;
+  setSetFormEmail: SetState<string>;
+  setSetPhone: SetState<string>;
+  setSetBrgy: SetState<string>;
+  setSetCity: SetState<string>;
+  setSetProvince: SetState<string>;
+  setLoginServerBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
+  setApiHostState: SetState<string>;
+  handleSaveProfile: () => Promise<void>;
+  handleDisconnectKiosk: () => Promise<void>;
+  onLogin: () => Promise<void>;
+  onRegisterStep1Next: () => void;
+  onRegisterStep2Next: () => void;
+  onRegisterStep3MFA: () => Promise<void>;
+  onRegisterStep3Skip: () => Promise<void>;
+  onToggleLoginServer: () => void;
+  onRewardRedeem: () => Promise<void>;
+  onRewardClose: () => void;
+  onSubmitConfirm: () => void;
+  go: (s: MobileScreen) => void;
+}>;
+
+function MobileScreens(p: MobileAppRouterProps) {
+  const el = (
+    <div className="relative flex flex-col w-full flex-1 min-h-0" style={{ background: "#f0fdf4" }}>
+      <MobileScreenContent {...p} />
+    </div>
+  );
+  return el;
+}
+
+function MobileScreenContent(p: MobileAppRouterProps) {
+  const s = p.screen;
+  switch (s) {
+    case "splash": return <ScreenSplash />;
+    case "onboard1": return <ScreenOnboard1 go={p.go} />;
+    case "onboard2": return <ScreenOnboard2 go={p.go} />;
+    case "onboard3": return <ScreenOnboard3 go={p.go} />;
+    case "register":
+      return (
+        <ScreenRegister
+          regStep={p.regStep}
+          regFullName={p.regFullName} regEmail={p.regEmail} regPhone={p.regPhone}
+          regPassword={p.regPassword} regConfirmPassword={p.regConfirmPassword}
+          regProvince={p.regProvince} regCity={p.regCity} regBarangay={p.regBarangay}
+          regStreetAddress={p.regStreetAddress}
+          regError={p.regError} regLoading={p.regLoading}
+          availableCities={p.availableCities} availableBarangays={p.availableBarangays}
+          setRegFullName={p.setRegFullName} setRegEmail={p.setRegEmail} setRegPhone={p.setRegPhone}
+          setRegPassword={p.setRegPassword} setRegConfirmPassword={p.setRegConfirmPassword}
+          setRegProvince={p.setRegProvince} setRegCity={p.setRegCity} setRegBarangay={p.setRegBarangay}
+          setRegStreetAddress={p.setRegStreetAddress} setRegError={p.setRegError}
+          setRegStep={p.setRegStep} go={p.go}
+          onStep1Next={p.onRegisterStep1Next} onStep2Next={p.onRegisterStep2Next}
+          onStep3MFA={p.onRegisterStep3MFA} onStep3Skip={p.onRegisterStep3Skip}
+        />
+      );
+    case "login":
+      return (
+        <ScreenLogin
+          email={p.email} password={p.password} loginError={p.loginError} loginLoading={p.loginLoading}
+          setEmail={p.setEmail} setPassword={p.setPassword}
+          showLoginServer={p.showLoginServer} loginServerBanner={p.loginServerBanner}
+          apiHost={p.apiHost} setApiHostState={p.setApiHostState}
+          onToggleLoginServer={p.onToggleLoginServer} onLogin={p.onLogin}
+          setLoginServerBanner={p.setLoginServerBanner} go={p.go}
+        />
+      );
+    case "profile-setup": return <ScreenProfileSetup currentUser={p.currentUser} go={p.go} />;
+    case "mfa": return <ScreenMFA mfaCode={p.mfaCode} setMfaCode={p.setMfaCode} mfaRefs={p.mfaRefs} go={p.go} />;
+    case "home": return <ScreenHome {...p} />;
+    case "rewards": return <ScreenRewards {...p} />;
+    case "submit": return <ScreenSubmit go={p.go} screen={s} />;
+    case "submit-scan": return <ScreenSubmitScan />;
+    case "submit-confirm": return <ScreenSubmitConfirm weight={p.weight} weighing={p.weighing} onConfirm={p.onSubmitConfirm} />;
+    case "submit-done": return <ScreenSubmitDone go={p.go} currentUser={p.currentUser} />;
+    case "tasks": return <ScreenTasks {...p} />;
+    case "leaderboard": return <ScreenLeaderboard {...p} />;
+    case "notifications": return <ScreenNotifications {...p} />;
+    case "profile": return <ScreenProfile {...p} />;
+    case "settings": return <ScreenSettings {...p} />;
+    case "history": return <ScreenHistory {...p} />;
+    case "redeem-history": return <ScreenRedeemHistory {...p} />;
+    case "redeem-confirm":
+      return p.selectedReward ? <ScreenRedeemConfirm {...p} onRedeem={p.onRewardRedeem} onClose={p.onRewardClose} /> : <ScreenRewards {...p} />;
+    default:
+      return p.selectedReward ? <ScreenRewardDetail {...p} onClose={p.onRewardClose} onRedeem={p.onRewardRedeem} /> : <ScreenHome {...p} />;
+  }
+}
+
+function ScreenSplash() {
+  return (
+    <div className="h-full flex flex-col items-center justify-center" style={{ background: "linear-gradient(160deg, #052e16 0%, #166534 45%, #0c4a6e 100%)" }}>
+      <div className="relative">
+        <div className="w-24 h-24 rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center" style={{ boxShadow: "0 0 80px rgba(34,197,94,0.3)" }}>
+          <Recycle className="w-12 h-12 text-white" />
+        </div>
+        <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-green-400 border-2 border-green-900 flex items-center justify-center">
+          <Leaf className="w-4 h-4 text-green-900" />
+        </div>
+      </div>
+      <h1 className="text-4xl font-black text-white mt-6 tracking-tight">Waste2Goods</h1>
+      <p className="text-green-300 text-sm mt-1 font-semibold">Recycle · Earn · Thrive</p>
+      <div className="mt-12 flex gap-1.5">
+        {[0,1,2].map(i => <div key={`item-${i}`} className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: `${i*0.3}s` }} />)}
+      </div>
+    </div>
+  );
+}
+
+function ScreenOnboard1({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
+  return (
+    <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
+        <div className="w-48 h-48 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(22,163,74,0.15)" }}>
+          <div className="text-8xl">♻️</div>
+        </div>
+        <div className="text-center">
+          <h2 className="text-3xl font-black text-foreground">Recycle for Rewards</h2>
+          <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Bring your plastic bottles, cardboard, and metal cans to any Waste2Goods kiosk and earn points instantly.</p>
+        </div>
+      </div>
+      <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
+        <div className="flex justify-center gap-2">
+          <div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" />
+        </div>
+        <button type="button" onClick={() => go("onboard2")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Next</button>
+        <button type="button" onClick={() => go("login")} className="w-full text-center text-sm text-muted-foreground font-semibold">Skip</button>
+      </div>
+    </div>
+  );
+}
+
+function ScreenOnboard2({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
+  return (
+    <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
+        <div className="w-48 h-48 rounded-full bg-blue-100 border-4 border-blue-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(14,165,233,0.15)" }}>
+          <div className="text-8xl">🏆</div>
+        </div>
+        <div className="text-center">
+          <h2 className="text-3xl font-black text-foreground">Climb the Leaderboard</h2>
+          <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Compete with neighbors and earn special recognition. Top recyclers win bonus rewards each week.</p>
+        </div>
+      </div>
+      <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
+        <div className="flex justify-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" />
+        </div>
+        <button type="button" onClick={() => go("onboard3")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Next</button>
+        <button type="button" onClick={() => go("login")} className="w-full text-center text-sm text-muted-foreground font-semibold">Skip</button>
+      </div>
+    </div>
+  );
+}
+
+function ScreenOnboard3({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
+  return (
+    <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #fef3c7 0%, #fde68a 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
+        <div className="w-48 h-48 rounded-full bg-amber-100 border-4 border-amber-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(217,119,6,0.15)" }}>
+          <div className="text-8xl">🎁</div>
+        </div>
+        <div className="text-center">
+          <h2 className="text-3xl font-black text-foreground">Redeem Real Rewards</h2>
+          <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Turn points into groceries, load credits, school supplies, and partner vouchers — directly in the app.</p>
+        </div>
+      </div>
+      <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
+        <div className="flex justify-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" />
+        </div>
+        <button type="button" onClick={() => go("register")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Create Account</button>
+        <button type="button" onClick={() => go("login")} className="w-full text-center text-sm font-semibold text-muted-foreground">Already have an account? <span className="text-primary">Sign in</span></button>
+      </div>
+    </div>
+  );
+}
+
+type ScreenRegisterProps = Readonly<{
+  regStep: number;
+  regFullName: string; regEmail: string; regPhone: string;
+  regPassword: string; regConfirmPassword: string;
+  regProvince: string; regCity: string; regBarangay: string;
+  regStreetAddress: string;
+  regError: string; regLoading: boolean;
+  availableCities: string[]; availableBarangays: string[];
+  setRegFullName: SetState<string>; setRegEmail: SetState<string>; setRegPhone: SetState<string>;
+  setRegPassword: SetState<string>; setRegConfirmPassword: SetState<string>;
+  setRegProvince: SetState<string>; setRegCity: SetState<string>; setRegBarangay: SetState<string>;
+  setRegStreetAddress: SetState<string>; setRegError: SetState<string>;
+  setRegStep: SetState<number>;
+  go: (s: MobileScreen) => void;
+  onStep1Next: () => void;
+  onStep2Next: () => void;
+  onStep3MFA: () => Promise<void>;
+  onStep3Skip: () => Promise<void>;
+}>;
+
+function ScreenRegister(p: ScreenRegisterProps) {
+  return (
+    <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
+         style={{ paddingTop: "calc(0.5rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+      <div className="px-5 py-3 flex items-center gap-3 border-b border-border bg-white sticky top-0 z-20" style={{ top: "var(--sat)" }}>
+        <button type="button" onClick={() => p.go("onboard3")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <div>
+          <h2 className="text-base font-black text-foreground">Create Account</h2>
+          <div className="flex gap-1 mt-1">
+            {[1,2,3].map(s => <div key={s} className={`h-1 rounded-full transition-all ${p.regStep >= s-1 ? "bg-primary w-8" : "bg-muted w-4"}`} />)}
+          </div>
+        </div>
+      </div>
+      <div className="p-5 md:p-8 flex-1 max-w-xl w-full mx-auto">
+        {p.regStep === 0 && (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-3">Step 1 of 3 — Account Info</p>
+              <div className="space-y-3">
+                <Field label="Full Name" placeholder="Maria Santos" icon={<User className="w-4 h-4" />} value={p.regFullName} onChange={p.setRegFullName} />
+                <Field label="Email Address" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} value={p.regEmail} onChange={p.setRegEmail} />
+                <Field label="Phone Number" placeholder="+63 912 345 6789" icon={<Phone className="w-4 h-4" />} value={p.regPhone} onChange={p.setRegPhone} />
+                <Field label="Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={p.regPassword} onChange={p.setRegPassword} />
+                <Field label="Confirm Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={p.regConfirmPassword} onChange={p.setRegConfirmPassword} />
+              </div>
+            </div>
+            {p.regError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+                <AlertCircle className="w-4 h-4" />
+                <span>{p.regError}</span>
+              </div>
+            )}
+            <button type="button" onClick={p.onStep1Next} className={`w-full py-4 ${BTN_PRIMARY_CLS}`}>Continue</button>
+          </div>
+        )}
+        {p.regStep === 1 && (
+          <div className="space-y-4">
+            <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 2 of 3 — Community Address</p>
+            {p.regError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+                <AlertCircle className="w-4 h-4" />
+                <span>{p.regError}</span>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mb-1">
+              Select your <strong>Province</strong> first — City and Barangay options will auto-filter based on your choice.
+            </p>
+            <SelectField label="Province" placeholder="Select a Province..." icon={<MapPin className="w-4 h-4" />} value={p.regProvince} options={PROVINCES} onChange={(v) => { p.setRegProvince(v); p.setRegCity(""); p.setRegBarangay(""); }} />
+            <SelectField label="City / Municipality" placeholder={p.regProvince ? "Select a City..." : "Select a Province first"} icon={<MapPin className="w-4 h-4" />} value={p.regCity} options={p.availableCities} disabled={!p.regProvince} onChange={(v) => { p.setRegCity(v); p.setRegBarangay(""); }} />
+            <SelectField label="Barangay" placeholder={p.regCity ? "Select a Barangay..." : "Select a City first"} icon={<MapPin className="w-4 h-4" />} value={p.regBarangay} options={p.availableBarangays} disabled={!p.regCity} onChange={p.setRegBarangay} />
+            <Field label="Street / House / Building No." placeholder="e.g. Block 12 Lot 5, Rizal Street or Purok 7" icon={<MapPin className="w-4 h-4" />} value={p.regStreetAddress} onChange={p.setRegStreetAddress} />
+            <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
+              <Info className="w-4 h-4 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-emerald-800 font-semibold">
+                No Region required. Leaderboards are based on Barangay level only; the street address above is used for delivery of redeemed items.
+              </p>
+            </div>
+            <button type="button" onClick={p.onStep2Next} className={`w-full py-4 ${BTN_PRIMARY_CLS}`}>Continue</button>
+            <button type="button" onClick={() => p.setRegStep(0)} className="w-full text-center text-sm text-muted-foreground font-semibold">Back</button>
+          </div>
+        )}
+        {p.regStep === 2 && (
+          <div className="space-y-4">
+            <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 3 of 3 — Security</p>
+            <div className="rounded-2xl bg-blue-50 border border-blue-200 p-4 flex gap-3">
+              <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-blue-700 font-semibold leading-relaxed">Enable Multi-Factor Authentication to protect your account and points balance from unauthorized access.</p>
+            </div>
+            {p.regError && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
+                <AlertCircle className="w-4 h-4" />
+                <span>{p.regError}</span>
+              </div>
+            )}
+            <div className="grid grid-cols-4 gap-3 my-4">
+              {[
+                { i: "📱", l: "SMS" }, { i: "🔐", l: "Authenticator" },
+                { i: "📧", l: "Email" }, { i: "🆔", l: "Barangay ID" },
+              ].map((o) => (
+                <label key={o.l} className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${o.l === "SMS" ? "border-primary bg-primary/5" : "border-border bg-white"}`}>
+                  <div className="text-2xl">{o.i}</div>
+                  <div className="text-[10px] font-black text-muted-foreground uppercase tracking-wide">{o.l}</div>
+                </label>
+              ))}
+            </div>
+            <button type="button" disabled={p.regLoading} onClick={p.onStep3MFA} className={`w-full py-4 ${BTN_PRIMARY_CLS} disabled:opacity-60`}>
+              {p.regLoading ? "Creating account..." : "Enable MFA & Continue"}
+            </button>
+            <button type="button" disabled={p.regLoading} onClick={p.onStep3Skip} className="w-full text-center text-sm text-muted-foreground font-semibold disabled:opacity-60">Skip for now</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type ScreenLoginProps = Readonly<{
+  email: string; password: string; loginError: string; loginLoading: boolean;
+  setEmail: SetState<string>; setPassword: SetState<string>;
+  showLoginServer: boolean; loginServerBanner: { type: "ok" | "err"; text: string } | null;
+  apiHost: string; setApiHostState: SetState<string>;
+  onToggleLoginServer: () => void; onLogin: () => Promise<void>;
+  setLoginServerBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
+  go: (s: MobileScreen) => void;
+}>;
+
+function ScreenLogin(p: ScreenLoginProps) {
+  return (
+    <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
+         style={{ paddingTop: "calc(0.75rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+      <div className="flex flex-col items-center gap-2 px-8 pt-4 pb-3 shrink-0">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
+          <Recycle className="w-7 h-7 text-primary" />
+        </div>
+        <h2 className="text-2xl font-black text-foreground">Welcome back!</h2>
+        <p className="text-muted-foreground text-sm text-center">Sign in to your Waste2Goods account</p>
+      </div>
+      <div className="px-6 flex flex-1 flex-col w-full max-w-xl mx-auto space-y-3">
+        <Field label="Email Address" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} value={p.email} onChange={p.setEmail} />
+        <Field label="Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={p.password} onChange={p.setPassword} />
+        <p className="text-right text-xs text-primary font-bold cursor-pointer shrink-0">Forgot Password?</p>
+        {p.loginError && (
+          <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-xl text-xs font-semibold shrink-0">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600" />
+            <span>{p.loginError}</span>
+          </div>
+        )}
+        <button type="button" onClick={p.onToggleLoginServer} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0">
+          <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
+          <ChevronRight className={`w-4 h-4 transition-transform ${p.showLoginServer ? "rotate-90" : ""}`} />
+        </button>
+        {p.showLoginServer && (
+          <div className="space-y-2 shrink-0">
+            {p.loginServerBanner && (
+              <div className={`rounded-xl px-3 py-2 text-xs font-bold ${p.loginServerBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{p.loginServerBanner.text}</div>
+            )}
+            <ServerIpPanel apiHost={p.apiHost} setApiHostState={p.setApiHostState} onSaved={p.setLoginServerBanner} compact />
+          </div>
+        )}
+        <div className="mt-auto space-y-3 pt-3 shrink-0">
+          <button type="button" disabled={p.loginLoading} onClick={p.onLogin} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60 flex items-center justify-center gap-2`}>
+            {p.loginLoading ? "Signing in..." : "Sign In"}
+          </button>
+          <div className="flex items-center gap-3"><div className="flex-1 h-px bg-border" /><span className="text-xs text-muted-foreground">or</span><div className="flex-1 h-px bg-border" /></div>
+          <button type="button" className={`w-full py-3 ${BTN_SECONDARY_CLS} text-sm flex items-center justify-center gap-2`}>
+            🇵🇭 Continue with Barangay ID
+          </button>
+        </div>
+      </div>
+      <p className="text-center text-xs text-muted-foreground pt-5 shrink-0">New resident? <button type="button" onClick={() => p.go("register")} className="text-primary font-bold">Create account</button></p>
+    </div>
+  );
+}
+
+function ScreenProfileSetup({ currentUser, go }: Readonly<{ currentUser: any; go: (s: MobileScreen) => void }>) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="px-5 py-3 flex items-center gap-3 border-b border-border bg-white sticky top-0 z-20" style={{ top: "var(--sat)" }}>
+        <button type="button" onClick={() => go("register")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <div>
+          <h2 className="text-base font-black text-foreground">Almost done!</h2>
+          <p className="text-xs text-muted-foreground">Complete your profile to earn <strong className="text-primary">+50 bonus pts</strong></p>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-24">
+        <div className="flex flex-col items-center gap-3">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
+              <User className="w-10 h-10 text-primary/40" />
+            </div>
+            <button type="button" className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center border-2 border-white">
+              <Camera className="w-3.5 h-3.5 text-white" />
+            </button>
+          </div>
+          <p className="text-xs text-muted-foreground font-semibold">Upload a profile photo (optional)</p>
+        </div>
+        <Field label="Display Name" placeholder="Your display name" icon={<User className="w-4 h-4" />} defaultVal={currentUser.name && currentUser.name !== "Guest User" ? currentUser.name : ""} />
+        <div>
+          <label htmlFor="profile-bio" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Bio (optional)</label>
+          <textarea id="profile-bio" className={INPUT_BASE_CLS} rows={3} placeholder="I recycle because I care about my community..." />
+        </div>
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
+          <Zap className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-700 font-semibold">Complete your profile to earn a <strong>50 bonus points</strong> welcome gift!</p>
+        </div>
+        <button type="button" onClick={() => go("home")} className={`w-full py-4 ${BTN_PRIMARY_CLS}`}>Start Recycling!</button>
+      </div>
+    </div>
+  );
+}
+
+type ScreenMFAProps = Readonly<{ mfaCode: string[]; setMfaCode: (v: string[]) => void; mfaRefs: React.RefObject<(HTMLInputElement | null)[]>; go: (s: MobileScreen) => void; }>;
+function ScreenMFA({ mfaCode, setMfaCode, mfaRefs, go }: ScreenMFAProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-8 gap-7 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center">
+        <Shield className="w-8 h-8 text-blue-600" />
+      </div>
+      <div className="text-center">
+        <h2 className="text-2xl font-black text-foreground">Verify Your Phone</h2>
+        <p className="text-sm text-muted-foreground mt-2 leading-relaxed">We sent a 6-digit code to <strong>+63 912 *** 6789</strong>. Enter it below.</p>
+      </div>
+      <div className="flex gap-2">
+        {mfaCode.map((d, i) => (
+          <input key={`mfa-digit-${["one","two","three","four","five","six"][i]}`}
+            ref={el => { mfaRefs.current[i] = el; }}
+            value={d}
+            maxLength={1}
+            onChange={e => {
+              const v = e.target.value.replace(/\D/g, "");
+              if (!v) { setMfaCode(mfaCode.map((c, idx) => idx === i ? "" : c)); return; }
+              const copy = [...mfaCode]; copy[i] = v; setMfaCode(copy);
+              if (v && i < 5) mfaRefs.current[i + 1]?.focus();
+              if (!v && i > 0) mfaRefs.current[i - 1]?.focus();
+            }}
+            onKeyDown={e => { if (e.key === "Backspace" && !mfaCode[i] && i > 0) { mfaRefs.current[i - 1]?.focus(); } }}
+            inputMode="numeric"
+            className={`w-12 h-14 rounded-xl border-2 text-center text-xl font-black text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 ${mfaCode[i] ? "border-primary bg-primary/5" : "border-border bg-white"}`}
+          />
+        ))}
+      </div>
+      <p className="text-xs text-muted-foreground">Didn't receive a code? <span className="text-primary font-bold">Resend</span></p>
+      <button type="button" onClick={() => go("profile-setup")} className={`w-full max-w-xs py-4 ${BTN_PRIMARY_CLS} text-base`}>Verify & Continue</button>
+    </div>
+  );
+}
+
+function ScreenSubmit({ go, screen }: Readonly<{ go: (s: MobileScreen) => void; screen: MobileScreen }>) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ top: "var(--sat)" }}>
+        <button type="button" onClick={() => go("home")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <div>
+          <h2 className="text-base font-black text-foreground">Submit Recycling</h2>
+          <p className="text-xs text-muted-foreground">Link to a kiosk, scan QR, or enter manually</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-5 overflow-y-auto flex-1 pb-28">
+        <button type="button" onClick={() => go("submit-scan")} className="w-full text-left p-5 rounded-2xl border-2 border-dashed border-primary bg-primary/5 hover:bg-primary/10 transition-colors">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center"><ScanLine className="w-6 h-6" /></div>
+            <div>
+              <p className="font-black text-foreground">Scan Kiosk QR Code</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Fastest — point your camera at the kiosk screen</p>
+            </div>
+          </div>
+        </button>
+        <div className="p-5 rounded-2xl border border-border bg-white">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-muted text-muted-foreground flex items-center justify-center"><Keyboard className="w-6 h-6" /></div>
+            <div className="flex-1">
+              <p className="font-black text-foreground">Enter Kiosk Code</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Type the 4-digit K- code shown on kiosk display</p>
+            </div>
+            <Field label="" placeholder="K-001" icon={<Hash className="w-4 h-4" />} containerClassName="!mb-0" inputClassName="text-center font-mono font-black text-foreground" />
+          </div>
+        </div>
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex gap-2">
+          <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-blue-700 font-semibold">Visit any partner barangay kiosk with your items. Drop into the weigh bin — points appear here automatically.</p>
+        </div>
+      </div>
+      <MobileBottomNav screen={screen} go={go} />
+    </div>
+  );
+}
+
+function ScreenSubmitScan() {
+  return (
+    <div className="min-h-[100dvh] flex flex-col bg-black" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="px-5 py-3 flex items-center gap-3 border-b border-white/10 sticky top-0 z-10" style={{ top: "var(--sat)" }}>
+        <h2 className="text-base font-black text-white flex-1 text-center pr-10">Scan Kiosk QR</h2>
+      </div>
+      <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+        <div id="qr-reader" className="w-full max-w-md" />
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="w-64 h-64 rounded-3xl border-[3px] border-green-400/80 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)" }} />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64">
+            <div className="h-[3px] w-full bg-green-400 rounded-full animate-pulse" />
+          </div>
+        </div>
+        <p className="absolute bottom-12 left-1/2 -translate-x-1/2 text-xs text-white/80 font-semibold text-center w-full px-8">Align the QR code within the frame</p>
+      </div>
+    </div>
+  );
+}
+
+function ScreenSubmitConfirm({ weight, weighing, onConfirm }: Readonly<{ weight: any; weighing: boolean; onConfirm: () => void }>) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ top: "var(--sat)" }}>
+        <h2 className="text-base font-black text-foreground flex-1 text-center pr-10">Weighing Items</h2>
+      </div>
+      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-6">
+        <div className="relative">
+          <div className="w-56 h-56 rounded-full border-[6px] border-border bg-white flex items-center justify-center" style={{ boxShadow: "inset 0 -8px 32px rgba(0,0,0,0.05), 0 10px 40px rgba(34,197,94,0.1)" }}>
+            <div className="flex flex-col items-center">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${weighing ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{weighing ? "Measuring..." : "Place items"}</span>
+              <AnimatedNumber value={weight as number} suffix=" kg" className="text-5xl font-black text-foreground mt-3 tracking-tight" />
+              <p className="text-xs text-muted-foreground mt-2">~ <AnimatedNumber value={Math.round((weight as number) * 10)} suffix=" pts earned" className="text-xs font-black text-primary" /></p>
+            </div>
+          </div>
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={`item-${i}`} className="absolute left-1/2 top-1/2 w-0.5 h-3 bg-muted-foreground/30 origin-bottom" style={{ transform: `translate(-50%, -100%) rotate(${i * 30}deg) translateY(-108px)` }} />
+          ))}
+        </div>
+        <div className="w-full max-w-md space-y-2">
+          {[
+            { m: "PET Bottle", w: "0.8 kg", p: "+8 pts", c: "bg-blue-50 border-blue-200", ic: "🧴" },
+            { m: "Cardboard", w: "1.2 kg", p: "+12 pts", c: "bg-amber-50 border-amber-200", ic: "📦" },
+            { m: "Aluminum Can", w: "0.3 kg", p: "+3 pts", c: "bg-emerald-50 border-emerald-200", ic: "🥫" },
+          ].map(r => (
+            <div key={r.m} className={`flex items-center gap-3 p-3 rounded-xl border ${r.c}`}>
+              <div className="text-2xl">{r.ic}</div>
+              <div className="flex-1">
+                <p className="text-xs font-black text-foreground">{r.m}</p>
+                <p className="text-[10px] text-muted-foreground">{r.w}</p>
+              </div>
+              <p className="text-xs font-black text-primary">{r.p}</p>
+            </div>
+          ))}
+        </div>
+        <div className="w-full max-w-md space-y-3 pt-2">
+          <div className="flex items-center justify-between text-sm px-1">
+            <span className="text-muted-foreground font-semibold">Estimated points</span>
+            <span className="font-black text-primary">+{Math.round((weight as number) * 10)} pts</span>
+          </div>
+          <button type="button" onClick={onConfirm} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Confirm & Earn Points</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenSubmitDone({ go, currentUser }: Readonly<{ go: (s: MobileScreen) => void; currentUser: any }>) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-8 gap-6 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
+      <div className="relative">
+        <div className="w-28 h-28 rounded-full bg-green-100 flex items-center justify-center animate-bounce">
+          <CheckCircle2 className="w-14 h-14 text-green-500" />
+        </div>
+        <div className="absolute -bottom-2 -right-2 w-9 h-9 rounded-full bg-primary border-4 border-white flex items-center justify-center">
+          <Sparkles className="w-4 h-4 text-white" />
+        </div>
+      </div>
+      <div className="text-center space-y-2">
+        <h2 className="text-3xl font-black text-foreground">Points Earned!</h2>
+        <p className="text-5xl font-black text-primary tracking-tight">+23 pts</p>
+        <p className="text-muted-foreground text-sm mt-2">2.3 kg recycled · Thank you, {currentUser.initials}!</p>
+      </div>
+      <div className="w-full max-w-md space-y-3">
+        <div className="rounded-2xl border border-border bg-white p-4 flex items-center gap-4">
+          <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0"><Trophy className="w-6 h-6 text-green-500" /></div>
+          <div>
+            <p className="text-xs text-muted-foreground font-semibold">New balance</p>
+            <p className="font-black text-foreground">{Number(currentUser.points || 0) + 23} total points</p>
+          </div>
+        </div>
+        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
+          <Leaf className="w-5 h-5 text-amber-600 flex-shrink-0" />
+          <p className="text-xs text-amber-700 font-semibold leading-relaxed">🌍 You saved ~2.5 kg CO₂ today. Keep going!</p>
+        </div>
+        <button type="button" onClick={() => go("home")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Back to Home</button>
+      </div>
+    </div>
+  );
+}
+
+function ScreenHome(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <div>
+          <p className="text-xs text-muted-foreground font-semibold">Good morning,</p>
+          <h2 className="text-xl font-black text-foreground">{(p.currentUser.name && p.currentUser.name.trim() !== "") ? `${p.currentUser.name.split(" ")[0]} 👋` : "👋"}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => p.go("notifications")} className="relative p-2.5 rounded-xl border border-border bg-white hover:bg-secondary transition-colors">
+            <Bell className="w-5 h-5 text-muted-foreground" />
+            {p.notifUnread > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center border-2 border-white">{p.notifUnread <= 9 ? p.notifUnread : "9+"}</span>
+            )}
+          </button>
+          <button type="button" onClick={() => p.go("profile")} className="w-10 h-10 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{p.currentUser.initials}</button>
+        </div>
+      </div>
+      <div className="p-5 space-y-5 overflow-y-auto flex-1 pb-32">
+        <div className="rounded-3xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(135deg, #166534 0%, #14532d 50%, #0c4a6e 100%)", boxShadow: "0 20px 50px rgba(22,101,52,0.3)" }}>
+          <div className="absolute -right-10 -top-10 w-40 h-40 rounded-full bg-white/5" />
+          <div className="absolute -right-16 bottom-0 w-56 h-56 rounded-full bg-white/5" />
+          <div className="relative">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-green-200">Points Balance</p>
+                <h3 className="text-4xl font-black mt-1 tracking-tight">{p.currentUser.points?.toLocaleString()}</h3>
+                <p className="text-[11px] text-green-200 mt-0.5">{p.profileSinceLabel}</p>
+              </div>
+              <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-bold">{p.profileRank}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3 pt-3 border-t border-white/10">
+              {[
+                { l: "Recycled", v: `${(p.currentUser.totalKg || 0).toFixed(1)} kg`, i: <Recycle className="w-4 h-4" /> },
+                { l: "Streak", v: `${p.currentUser.streak || 0} d`, i: <Flame className="w-4 h-4" /> },
+                { l: "Badges", v: `${p.currentUser.badges || 0}`, i: <Award className="w-4 h-4" /> },
+              ].map(s => (
+                <div key={s.l} className="flex flex-col items-center gap-1 p-2.5 rounded-xl bg-white/5">
+                  <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">{s.i}</div>
+                  <p className="text-sm font-black">{s.v}</p>
+                  <p className="text-[9px] text-green-200 font-bold uppercase tracking-wider">{s.l}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <button type="button" onClick={() => p.go("submit")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center mb-3"><Upload className="w-5 h-5 text-primary" /></div>
+            <p className="text-sm font-black text-foreground">Submit Items</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Scan QR at kiosk</p>
+          </button>
+          <button type="button" onClick={() => p.go("rewards")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mb-3"><Gift className="w-5 h-5 text-amber-500" /></div>
+            <p className="text-sm font-black text-foreground">Redeem Rewards</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Spend your points</p>
+          </button>
+          <button type="button" onClick={() => p.go("tasks")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center mb-3"><CheckSquare2 className="w-5 h-5 text-blue-500" /></div>
+            <p className="text-sm font-black text-foreground">Daily Tasks</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Earn bonus points</p>
+          </button>
+          <button type="button" onClick={() => p.go("leaderboard")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
+            <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center mb-3"><Trophy className="w-5 h-5 text-purple-500" /></div>
+            <p className="text-sm font-black text-foreground">Leaderboard</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Top barangay recyclers</p>
+          </button>
+        </div>
+        {p.kioskSession.connected && (
+          <button type="button" onClick={p.handleDisconnectKiosk} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 transition-colors">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-400 flex items-center justify-center"><Cable className="w-4 h-4 text-emerald-900" /></div>
+              <div className="text-left">
+                <p className="text-xs font-black">Linked to {p.kioskSession.kioskId || "kiosk"}</p>
+                <p className="text-[10px] text-emerald-700 font-semibold">{elapsedFromTs(p.kioskSession.connectedAt) || "Active session"}{p.kioskChecking ? " · checking..." : ""}</p>
+              </div>
+            </div>
+            <span className="text-[10px] font-bold bg-emerald-400 text-emerald-900 px-2 py-1 rounded-full">Tap to disconnect</span>
+          </button>
+        )}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-black text-foreground">Community Leaderboard</p>
+            <button type="button" onClick={() => p.go("leaderboard")} className="text-xs font-bold text-primary">View all →</button>
+          </div>
+          <div className="rounded-2xl border border-border bg-white overflow-hidden">
+            {p.mergedLeaderboard.slice(0, 3).map((u: any, i: number) => (
+              <div key={u.id} className={`flex items-center gap-3 px-4 py-3 ${i !== 2 ? "border-b border-border" : ""}`}>
+                <RankIcon rank={i + 1} />
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-emerald-600 flex items-center justify-center text-white font-black text-sm border-2 border-white shadow-sm">{u._initials}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-black text-foreground truncate">{u._isYou ? `${u.displayName} (You)` : u.displayName}</p>
+                  <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Barangay · Level " + (u.level || 1)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
+                  <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+    </div>
+  );
+}
+
+function ScreenRewards(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <div>
+          <p className="text-xs text-muted-foreground font-semibold">Points: <span className="text-primary font-black">{p.currentUser.points?.toLocaleString()}</span></p>
+          <h2 className="text-xl font-black text-foreground">Rewards Catalog</h2>
+        </div>
+      </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32">
+        <div className="flex gap-2 overflow-x-auto -mx-5 px-5 pb-1">
+          {p.rewardCategories.map(c => (
+            <button type="button" key={c} onClick={() => p.setRewardFilter(c)} className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${p.rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {p.filteredRewards.map(r => {
+            const canRedeem = (Number(p.currentUser.points || 0) >= r.cost);
+            const cls = canRedeem ? "bg-primary text-white" : "bg-muted text-muted-foreground";
+            return (
+              <button type="button" key={r.name} onClick={() => p.setSelectedReward(r)} disabled={!canRedeem} className={`rounded-2xl border bg-white text-left overflow-hidden transition-all ${canRedeem ? "border-border hover:border-primary" : "border-border opacity-60 cursor-not-allowed"}`}>
+                <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
+                  <div className="text-5xl">{r.icon}</div>
+                  {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
+                </div>
+                <div className="p-3 space-y-1.5">
+                  <p className="text-sm font-black text-foreground line-clamp-2 leading-tight min-h-[2.5rem]">{r.name}</p>
+                  <div className="flex items-center justify-between pt-1">
+                    <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{r.cost} pts</span>
+                    <span className="text-[10px] text-muted-foreground font-bold capitalize">{r.category}</span>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+      {p.selectedReward && (
+        <ScreenRewardDetail {...p} onClose={p.onRewardClose} onRedeem={p.onRewardRedeem} />
+      )}
+    </div>
+  );
+}
+
+type DetailProps = MobileAppRouterProps & Readonly<{ onClose: () => void; onRedeem: () => Promise<void> }>;
+function ScreenRewardDetail(p: DetailProps) {
+  const r = p.selectedReward!;
+  const canRedeem = Number(p.currentUser.points || 0) >= r.cost;
+  return (
+    <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
+      <div className="w-full max-w-lg bg-background rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-8 duration-300">
+        <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center">
+          <div className="text-[8rem]">{r.icon}</div>
+          <button type="button" onClick={p.onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur border border-border flex items-center justify-center"><X className="w-5 h-5 text-foreground" /></button>
+          {r.seasonal && <div className="absolute top-4 left-4 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Limited Seasonal</div>}
+        </div>
+        <div className="p-6 space-y-4 overflow-y-auto">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">{r.category}</p>
+              <h2 className="text-2xl font-black text-foreground mt-1 leading-tight">{r.name}</h2>
+            </div>
+            <span className="flex-shrink-0 px-3 py-1.5 rounded-full bg-primary text-white font-black">{r.cost} pts</span>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">{r.description}</p>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[
+              { l: "Stock", v: r.stock }, { l: "Delivery", v: r.delivery }, { l: "Validity", v: r.validity },
+            ].map(s => (
+              <div key={s.l} className="rounded-xl border border-border bg-white p-3">
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider">{s.l}</p>
+                <p className="text-xs font-black text-foreground mt-1">{s.v}</p>
+              </div>
+            ))}
+          </div>
+          <div className={`rounded-2xl p-4 flex items-center gap-3 ${canRedeem ? BADGE_OK_BG : BADGE_DANGER_BG}`}>
+            <Wallet className={`w-5 h-5 ${canRedeem ? "text-green-700" : "text-red-700"}`} />
+            <div>
+              <p className="text-xs font-black">{canRedeem ? "✅ You have enough points" : "⚠️ Need more points"}</p>
+              <p className="text-[10px] font-semibold mt-0.5">{canRedeem ? `Balance after redeem: ${(Number(p.currentUser.points || 0) - r.cost).toLocaleString()} pts` : `Short by ${(r.cost - Number(p.currentUser.points || 0)).toLocaleString()} pts — submit more recycling!`}</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <button type="button" onClick={p.onClose} className={`py-4 ${BTN_SECONDARY_CLS} text-base`}>Close</button>
+            <button type="button" disabled={!canRedeem} onClick={p.onRedeem} className={`py-4 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60`}>Redeem Now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getTaskTypeBadgeClass(type: string): string {
+  if (type === "daily") return "bg-blue-100 text-blue-700";
+  if (type === "weekly") return "bg-purple-100 text-purple-700";
+  return "bg-amber-100 text-amber-700";
+}
+
+function ScreenTasks(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <h2 className="text-xl font-black text-foreground flex-1">Daily Tasks</h2>
+      </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32">
+        <div className="rounded-2xl p-4 border border-border bg-white">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-black text-foreground">Daily progress</p>
+            <p className="text-xs font-black text-primary">3 of 5</p>
+          </div>
+          <div className="w-full h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: "60%" }} /></div>
+          <p className="text-[10px] text-muted-foreground mt-1 font-semibold">Complete 5 tasks to unlock <strong>+100 bonus pts</strong></p>
+        </div>
+        {[
+          { t: "Submit 1kg of recyclables", pts: "+50 pts", type: "daily", p: "daily", d: true },
+          { t: "Use app 3 days in a row", pts: "+25 pts", type: "daily", p: "daily", d: true },
+          { t: "Invite 1 neighbor", pts: "+100 pts", type: "daily", p: "daily", d: false },
+          { t: "Attend barangay event", pts: "+200 pts", type: "weekly", p: "weekly", d: false },
+          { t: "Redeem 1 reward", pts: "+75 pts", type: "monthly", p: "monthly", d: false },
+        ].map((t, i) => (
+          <div key={t.t} className="rounded-2xl border border-border bg-white p-4 flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${t.d ? "bg-green-50 text-green-600" : "bg-muted text-muted-foreground"}`}>{t.d ? <CheckSquare2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-foreground">{t.t}</p>
+              <div className="flex items-center gap-1.5 mt-1">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${getTaskTypeBadgeClass(t.type)}`}>{t.p}</span>
+                <span className="text-xs font-black text-primary">{t.pts}</span>
+              </div>
+            </div>
+            <button type="button" disabled={t.d} className={`px-3 py-1.5 rounded-xl text-xs font-black ${t.d ? "bg-green-500 text-white cursor-default" : [BTN_PRIMARY_CLS, "px-3 py-1.5 text-xs"].join(" ")}`}>{t.d ? "Done" : "Start"}</button>
+          </div>
+        ))}
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+    </div>
+  );
+}
+
+function ScreenLeaderboard(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 bg-background border-b border-border z-10" style={{ paddingTop: "calc(0.5rem + var(--sat))" }}>
+        <div className="px-5 py-3">
+          <h2 className="text-xl font-black text-foreground">🏆 Community Leaderboard</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Top recyclers in <strong>{p.currentUser.barangay || "Barangay"}</strong></p>
+        </div>
+        <div className="flex border-b border-border px-5">
+          {(["weekly","monthly"] as const).map(t => (
+            <button type="button" key={t} onClick={() => p.setLeaderTab(t)} className={`px-4 py-2.5 text-xs font-black capitalize transition-colors relative ${p.leaderTab === t ? "text-primary" : "text-muted-foreground"}`}>
+              {t}
+              {p.leaderTab === t && <div className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary rounded-full" />}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="p-5 space-y-5 overflow-y-auto flex-1 pb-32">
+        <div className="grid grid-cols-3 gap-2 items-end">
+          {[
+            { r: 2, u: p.mergedLeaderboard[1], c: "from-slate-100 to-slate-200", h: "h-28", pl: "🥈", pr: true },
+            { r: 1, u: p.mergedLeaderboard[0], c: "from-amber-100 to-amber-200", h: "h-36", pl: "🏆", pr: false },
+            { r: 3, u: p.mergedLeaderboard[2], c: "from-orange-100 to-orange-200", h: "h-24", pl: "🥉", pr: true },
+          ].map(pod => (
+            <div key={pod.r} className={`rounded-2xl bg-gradient-to-b ${pod.c} p-3 flex flex-col items-center justify-end ${pod.h} relative`}>
+              {pod.u && (
+                <>
+                  <div className="absolute -top-4 text-3xl">{pod.pl}</div>
+                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center font-black text-sm border-2 border-white shadow-sm mb-2">{pod.u._initials}</div>
+                  <p className="text-xs font-black text-foreground text-center truncate w-full">{pod.u._isYou ? "You" : pod.u.displayName}</p>
+                  <p className="text-[10px] font-bold text-primary mt-0.5">{Number(pod.u.points || 0).toLocaleString()}</p>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-border bg-white overflow-hidden">
+          {p.mergedLeaderboard.slice(3).map((u: any, i: number) => (
+            <div key={u.id} className={`flex items-center gap-3 px-4 py-3 ${i !== p.mergedLeaderboard.length - 4 ? "border-b border-border" : ""}`}>
+              <RankIcon rank={i + 4} />
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-emerald-600 flex items-center justify-center text-white font-black text-sm border-2 border-white shadow-sm">{u._initials}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-foreground truncate">{u._isYou ? `${u.displayName} (You)` : u.displayName}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Barangay"}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+    </div>
+  );
+}
+
+function ScreenNotifications(p: MobileAppRouterProps) {
+  const items = p.notifItems.length > 0 ? p.notifItems : [
+    { title: "+23 Points Earned", desc: "You recycled 2.3 kg at Kiosk 01", time: "2h ago", i: "🎁", c: "bg-green-50 border-green-200", unread: true },
+    { title: "New Weekly Task", desc: "Submit 1kg to unlock bonus 50 points", time: "8h ago", i: "📋", c: "bg-blue-50 border-blue-200", unread: true },
+    { title: "Seasonal Reward: Christmas Grocery", desc: "Now available in the catalog!", time: "1d ago", i: "🎄", c: "bg-red-50 border-red-200", unread: false },
+    { title: "Welcome to Waste2Goods!", desc: "+50 bonus points for completing onboarding", time: "3d ago", i: "🎉", c: "bg-amber-50 border-amber-200", unread: false },
+  ];
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <h2 className="text-xl font-black text-foreground">Notifications</h2>
+        <p className="text-xs font-bold text-muted-foreground">{p.notifUnread || 0} unread</p>
+      </div>
+      <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-32">
+        {items.map((n: any) => (
+          <div key={String(n.id ?? n.title)} className={`rounded-2xl p-4 flex items-start gap-4 border ${n.c}`}>
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl flex-shrink-0 border border-white shadow-sm">{n.i}</div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-black text-foreground">{n.title}</p>
+                {n.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />}
+              </div>
+              <p className="text-xs text-foreground/80 mt-0.5">{n.desc}</p>
+              <p className="text-[10px] text-muted-foreground mt-1.5 font-semibold">{n.time}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+    </div>
+  );
+}
+
+function ScreenProfile(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="relative overflow-hidden" style={{ paddingTop: "calc(0.5rem + var(--sat))", background: "linear-gradient(135deg, #166534 0%, #14532d 50%, #0c4a6e 100%)" }}>
+        <div className="absolute inset-0 opacity-20">
+          <div className="absolute -right-20 top-0 w-64 h-64 rounded-full bg-white/20" />
+          <div className="absolute -left-10 -bottom-20 w-80 h-80 rounded-full bg-green-400/20" />
+        </div>
+        <div className="relative px-5 py-4 flex items-center justify-between z-10">
+          <h2 className="text-lg font-black text-white">My Profile</h2>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => p.go("settings")} className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white"><Settings className="w-4 h-4" /></button>
+            <button type="button" onClick={() => { Waste2GoodsAPI.logout(); p.go("login"); }} className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white" title="Sign out"><LogOut className="w-4 h-4" /></button>
+          </div>
+        </div>
+        <div className="relative z-10 px-5 pb-8 flex items-end gap-4">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-white/20 to-white/5 backdrop-blur flex items-center justify-center border-2 border-white/30">
+              <span className="text-white text-2xl font-black">{p.currentUser.initials}</span>
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-primary border-2 border-white flex items-center justify-center"><Camera className="w-3.5 h-3.5 text-white" /></div>
+          </div>
+          <div className="flex-1 pb-1 min-w-0">
+            <p className="text-lg font-black text-white truncate">{p.currentUser.name || "Guest User"}</p>
+            <p className="text-xs text-green-200 font-semibold mt-0.5">Level {p.currentUser.level || 1} Recycler · {p.profileRank}</p>
+            <div className="flex items-center gap-2 mt-1.5"><span className="text-[10px] font-bold bg-white/20 px-2.5 py-1 rounded-full text-green-100">{p.profileSinceLabel}</span></div>
+          </div>
+        </div>
+      </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32 -mt-4">
+        <div className="rounded-3xl bg-white border border-border p-4 -mt-4 relative shadow-sm">
+          <div className="grid grid-cols-4 gap-2 text-center">
+            {[
+              { l: "Points", v: Number(p.currentUser.points || 0).toLocaleString(), c: "text-primary" },
+              { l: "Recycled", v: `${(p.currentUser.totalKg || 0).toFixed(1)}kg`, c: "text-emerald-600" },
+              { l: "Streak", v: `${p.currentUser.streak || 0}d`, c: "text-orange-600" },
+              { l: "Badges", v: `${p.currentUser.badges || 0}`, c: "text-blue-600" },
+            ].map(s => (
+              <div key={s.l} className="flex flex-col items-center gap-0.5 py-2">
+                <p className={`text-lg font-black ${s.c} leading-none`}>{s.v}</p>
+                <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-wider mt-0.5">{s.l}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
+          <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Recent activity</p>
+          {[
+            { t: "Recycled PET bottles", v: "+8 pts", sub: "K-01 · 2h ago", i: "🧴", c: "bg-blue-50" },
+            { t: "Redeemed: P50 Load", v: "-500 pts", sub: "Today · 9:12 AM", i: "📱", c: "bg-purple-50" },
+            { t: "Daily streak", v: "+25 pts", sub: "3 days in a row!", i: "🔥", c: "bg-orange-50" },
+            { t: "Level 2 Milestone", v: "+100 pts", sub: "2 days ago", i: "⭐", c: "bg-amber-50" },
+          ].map(a => (
+            <div key={a.t} className={`rounded-xl p-3 flex items-center gap-3 ${a.c}`}>
+              <div className="text-2xl">{a.i}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-foreground truncate">{a.t}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">{a.sub}</p>
+              </div>
+              <span className={`text-xs font-black ${a.v.startsWith("-") ? "text-red-500" : "text-primary"}`}>{a.v}</span>
+            </div>
+          ))}
+        </div>
+        <div className="space-y-2">
+          <button type="button" onClick={() => p.go("history")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center"><Recycle className="w-4 h-4 text-primary" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Recycling History</p><p className="text-[10px] text-muted-foreground font-semibold">All submitted items</p></div></div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <button type="button" onClick={() => p.go("redeem-history")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center"><Package className="w-4 h-4 text-amber-600" /></div><div className="text-left"><p className="text-sm font-black text-foreground">My Redemptions</p><p className="text-[10px] text-muted-foreground font-semibold">Redeemed rewards & delivery</p></div></div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <button type="button" onClick={() => p.go("tasks")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><CheckSquare2 className="w-4 h-4 text-blue-600" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Achievements</p><p className="text-[10px] text-muted-foreground font-semibold">Milestones & badges</p></div></div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <button type="button" onClick={() => p.go("settings")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center"><Settings className="w-4 h-4 text-muted-foreground" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Settings</p><p className="text-[10px] text-muted-foreground font-semibold">Account, server IP, security</p></div></div>
+            <ChevronRight className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+      </div>
+      <MobileBottomNav screen={p.screen} go={p.go} />
+    </div>
+  );
+}
+
+function ScreenSettings(p: MobileAppRouterProps) {
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button type="button" onClick={() => p.go("profile")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <h2 className="text-xl font-black text-foreground flex-1">Settings</h2>
+      </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-16">
+        {p.profileBanner && (
+          <div className={`rounded-xl px-4 py-3 text-sm font-bold ${p.profileBanner.type === "ok" ? BADGE_OK_BG : BADGE_DANGER_BG}`}>{p.profileBanner.text}</div>
+        )}
+        <div className="rounded-2xl border border-border bg-white p-5 space-y-3">
+          <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Edit profile</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="First Name" placeholder="Maria" icon={<User className="w-4 h-4" />} value={p.setFName} onChange={p.setSetFName} />
+            <Field label="Last Name" placeholder="Santos" icon={<User className="w-4 h-4" />} value={p.setLName} onChange={p.setSetLName} />
+          </div>
+          <Field label="Email" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} value={p.setFormEmail} onChange={p.setSetFormEmail} />
+          <Field label="Phone Number" placeholder="+63 912 345 6789" icon={<Phone className="w-4 h-4" />} value={p.setPhone} onChange={p.setSetPhone} />
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Province" placeholder="Metro Manila" icon={<MapPin className="w-4 h-4" />} value={p.setProvince} onChange={p.setSetProvince} />
+            <Field label="City" placeholder="Quezon City" icon={<MapPin className="w-4 h-4" />} value={p.setCity} onChange={p.setSetCity} />
+            <Field label="Barangay" placeholder="Commonwealth" icon={<MapPin className="w-4 h-4" />} value={p.setBrgy} onChange={p.setSetBrgy} />
+          </div>
+          <button type="button" onClick={p.handleSaveProfile} disabled={p.profileSaving} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60`}>
+            {p.profileSaving ? "Saving..." : "💾 Save Changes"}
+          </button>
+        </div>
+        <div className="rounded-2xl border border-border bg-white p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Backend Server IP</p>
+              <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">XAMPP LAN IP where Waste2Goods backend runs. Mobile app expects raw IP (no http:// or port).</p>
+            </div>
+            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><Globe className="w-4 h-4 text-blue-600" /></div>
+          </div>
+          <ServerIpPanel apiHost={p.apiHost} setApiHostState={p.setApiHostState} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenHistory(p: MobileAppRouterProps) {
+  const items = [
+    { t: "Mixed recyclables", v: "+23 pts", sub: "2.3 kg · K-01 · 2h ago", i: "♻️", c: "bg-green-50", kg: "2.3kg", p: "+23" },
+    { t: "PET Bottles (15x)", v: "+8 pts", sub: "0.8 kg · K-01 · Yesterday", i: "🧴", c: "bg-blue-50", kg: "0.8kg", p: "+8" },
+    { t: "Cardboard boxes", v: "+12 pts", sub: "1.2 kg · K-02 · 2 days ago", i: "📦", c: "bg-amber-50", kg: "1.2kg", p: "+12" },
+    { t: "Aluminum cans (20x)", v: "+3 pts", sub: "0.3 kg · K-01 · 4 days ago", i: "🥫", c: "bg-emerald-50", kg: "0.3kg", p: "+3" },
+    { t: "Mixed paper", v: "+5 pts", sub: "0.5 kg · K-03 · 1 week ago", i: "📄", c: "bg-purple-50", kg: "0.5kg", p: "+5" },
+  ];
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button type="button" onClick={() => p.go("profile")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <h2 className="text-xl font-black text-foreground flex-1">Recycling History</h2>
+      </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-20">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[
+            { l: "Total", v: `${(Number(p.currentUser.totalKg || 0) + 5.1).toFixed(1)} kg`, c: "from-primary to-emerald-600" },
+            { l: "Submissions", v: `${items.length}`, c: "from-blue-500 to-cyan-600" },
+            { l: "Points earned", v: `+51`, c: "from-amber-500 to-orange-600" },
+          ].map(s => (
+            <div key={s.l} className={`rounded-2xl p-3 bg-gradient-to-br ${s.c} text-white`}>
+              <p className="text-xs font-bold opacity-80">{s.l}</p>
+              <p className="text-xl font-black mt-0.5">{s.v}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-border bg-white overflow-hidden">
+          {items.map((a, i) => (
+            <div key={a.t} className={`flex items-center gap-3 px-4 py-3 ${i !== items.length - 1 ? "border-b border-border" : ""}`}>
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${a.c}`}>{a.i}</div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-foreground">{a.t}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">{a.sub}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs font-black text-primary">{a.v}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold">{a.kg}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScreenRedeemHistory(p: MobileAppRouterProps) {
+  const items = [
+    { n: "P50 GCash Load", pts: "500 pts", i: "📱", status: "ready", t: "Arrives in 24 hours", code: "GC-2G-XXXX" },
+    { n: "5kg Rice Voucher", pts: "1,200 pts", i: "🍚", status: "claimed", t: "Redeemed at K-01", code: "RICE-88-XXXX" },
+    { n: "School Supplies Kit", pts: "800 pts", i: "🎒", status: "ready", t: "Pick up at Barangay Hall", code: "EDU-44-XXXX" },
+  ];
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button type="button" onClick={() => p.go("profile")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <h2 className="text-xl font-black text-foreground flex-1">My Redemptions</h2>
+      </div>
+      <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-20">
+        {items.map(h => (
+          <div key={h.n} className="rounded-2xl border border-border bg-white p-4 flex items-start gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{h.i}</div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-black text-foreground">{h.n}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{h.t} · {h.code}</p>
+              <p className="text-xs font-black text-primary mt-0.5">{h.pts} spent</p>
+            </div>
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${h.status === "ready" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{h.status === "ready" ? "Ready to pick up" : "Claimed"}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type RedeemConfirmProps = MobileAppRouterProps & Readonly<{ onRedeem: () => Promise<void>; onClose: () => void }>;
+function ScreenRedeemConfirm(p: RedeemConfirmProps) {
+  const r = p.selectedReward!;
+  const cost = r.cost ?? r.points ?? 0;
+  return (
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto bg-white">
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <button type="button" onClick={p.onClose}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
+        <h2 className="text-xl font-black text-foreground flex-1">Confirm Redemption</h2>
+      </div>
+      <div className="flex-1 flex flex-col items-center p-6 space-y-5 overflow-y-auto pb-20">
+        <div className="w-28 h-28 rounded-2xl bg-gradient-to-br from-emerald-50 to-green-100 border-2 border-primary/20 flex items-center justify-center text-6xl">{r.icon}</div>
+        <div className="text-center">
+          <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Redeeming</p>
+          <h2 className="text-2xl font-black text-foreground mt-1">{r.name}</h2>
+          <p className="text-xs text-muted-foreground mt-2">{r.description ?? "Redeemable with your recycling points."}</p>
+        </div>
+        <div className="w-full max-w-md rounded-2xl border border-border bg-white p-4 flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0"><Wallet className="w-5 h-5 text-primary" /></div>
+          <div className="flex-1">
+            <p className="text-xs text-muted-foreground font-semibold">Your balance</p>
+            <p className="text-sm font-black text-foreground">{Number(p.currentUser.points || 0).toLocaleString()} pts</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground font-semibold">After</p>
+            <p className="text-sm font-black text-primary">{(Number(p.currentUser.points || 0) - Number(cost)).toLocaleString()} pts</p>
+          </div>
+        </div>
+        <div className="w-full max-w-md grid grid-cols-2 gap-3 pt-2">
+          <button type="button" onClick={p.onClose} className={`py-4 ${BTN_SECONDARY_CLS} text-base`}>Cancel</button>
+          <button type="button" onClick={p.onRedeem} className={`py-4 ${BTN_PRIMARY_CLS} text-base`}>Confirm · {cost} pts</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [screen, setScreen] = useState<MobileScreen>("splash");
   const [leaderTab, setLeaderTab] = useState<"weekly" | "monthly">("weekly");
@@ -990,11 +2199,7 @@ export default function App() {
   // AUTH GUARD: If screen is a protected route but no valid auth token, force back to login.
   // (Prevents stale state or manual state tampering from bypassing sign-in.)
   useEffect(() => {
-    const unprotected: MobileScreen[] = [
-      "splash", "onboard1", "onboard2", "onboard3",
-      "login", "register", "mfa", "profile-setup"
-    ];
-    if (!unprotected.includes(screen)) {
+    if (!UNPROTECTED_SCREENS.has(screen)) {
       const auth = Waste2GoodsAPI.getAuthState();
       if (!auth || !auth.isAuthenticated || !auth.token) {
         console.log("🔐 Mobile auth guard: no valid token — returning to login");
@@ -1027,7 +2232,10 @@ export default function App() {
       const refreshed = Waste2GoodsAPI.refreshCurrentUser ? await Waste2GoodsAPI.refreshCurrentUser() : null;
       if (cancelled) return;
       if (refreshed) setProfileUser({ ...refreshed });
-      else setProfileUser({ ...(Waste2GoodsAPI.getAuthState()?.user || {}) });
+      else {
+        const storedUser = Waste2GoodsAPI.getAuthState()?.user;
+        if (storedUser) setProfileUser({ ...storedUser });
+      }
 
       const rankPromise = Waste2GoodsAPI.getCurrentRank ? Waste2GoodsAPI.getCurrentRank() : Promise.resolve("#-");
       const rank = await rankPromise;
@@ -1066,7 +2274,8 @@ export default function App() {
         const rows = await Waste2GoodsAPI.fetchLeaderboard();
         if (cancelled) return;
         setLiveLeaderboard(Array.isArray(rows) && rows.length > 0 ? rows : null);
-      } catch (_) {
+      } catch (err) {
+        console.warn("Leaderboard fetch failed:", err);
         if (!cancelled) setLiveLeaderboard(null);
       }
     })();
@@ -1075,7 +2284,7 @@ export default function App() {
 
   // Poll backend: is this user currently linked to a kiosk?
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time
-  const [, setKioskTick] = useState(0);
+  const [kioskTick, setKioskTick] = useState(0);
   useEffect(() => {
     const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
     if (!watchScreens.includes(screen)) return;
@@ -1273,6 +2482,86 @@ export default function App() {
   const rewardCategories = ["All", "Education", "Grocery", "Lifestyle", "Garden", "Wellness"];
   const filteredRewards = rewardFilter === "All" ? rewards : rewards.filter(r => r.category === rewardFilter);
 
+
+  const onLogin = async () => {
+    setLoginError("");
+    setLoginLoading(true);
+    try {
+      const res = await Waste2GoodsAPI.login(email.trim(), password);
+      if (res?.user) setProfileUser({ ...res.user });
+      go("home");
+    } catch (err: any) {
+      setLoginError(err?.message || "Invalid email or password. Please try again.");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const onRegisterStep1Next = () => {
+    if (validateRegisterStep1({ full: regFullName, email: regEmail, phone: regPhone, pwd: regPassword, confirm: regConfirmPassword }, setRegError)) {
+      setRegStep(1);
+    }
+  };
+
+  const onRegisterStep2Next = () => {
+    if (validateRegisterAddress({ province: regProvince, city: regCity, barangay: regBarangay }, setRegError)) {
+      setRegStep(2);
+    }
+  };
+
+  const onRegisterStep3MFA = async () => {
+    await doRegisterSubmit(
+      { full: regFullName, email: regEmail, pwd: regPassword, confirm: regConfirmPassword, phone: regPhone, province: regProvince, city: regCity, barangay: regBarangay, street: regStreetAddress },
+      setRegError,
+      setRegLoading,
+      setProfileUser,
+      setRegStep,
+      go,
+      "mfa"
+    );
+  };
+
+  const onRegisterStep3Skip = async () => {
+    await doRegisterSubmit(
+      { full: regFullName, email: regEmail, pwd: regPassword, confirm: regConfirmPassword, phone: regPhone, province: regProvince, city: regCity, barangay: regBarangay, street: regStreetAddress },
+      setRegError,
+      setRegLoading,
+      setProfileUser,
+      setRegStep,
+      go,
+      "profile-setup"
+    );
+  };
+
+  const onToggleLoginServer = () => setShowLoginServer(prev => !prev);
+
+  const onRewardRedeem = async () => {
+    if (!selectedReward) return;
+    const cost = selectedReward.cost ?? selectedReward.points ?? 0;
+    const newBal = Math.max(0, Number(currentUser.points || 0) - Number(cost));
+    patchAuthBalance(newBal);
+    setProfileUser((prev: any) => ({ ...(prev || currentUser), points: newBal, pointsBalance: newBal, redeemed: Number(currentUser.redeemed || 0) + 1 }));
+    setSelectedReward(null);
+    go("redeem-history");
+  };
+
+  const onRewardClose = () => setSelectedReward(null);
+
+  const onSubmitConfirm = () => {
+    const earnedPts = Math.round(Number(weight) * 10);
+    const newBal = Number(currentUser.points || 0) + earnedPts;
+    const newTotalKg = Number(currentUser.totalKg || 0) + Number(weight);
+    patchAuthBalance(newBal);
+    setProfileUser((prev: any) => ({
+      ...(prev || currentUser),
+      points: newBal,
+      pointsBalance: newBal,
+      totalKg: newTotalKg,
+      submissions: Number(currentUser.submissions || 0) + 1,
+    }));
+    go("submit-done");
+  };
+
   return (
     <div
       className="flex flex-col w-full bg-background"
@@ -1282,1087 +2571,96 @@ export default function App() {
         height: "100dvh",
       }}
     >
-      <div className="relative flex flex-col w-full flex-1 min-h-0" style={{ background: "#f0fdf4" }}>
-
-          {/* ── Splash ── */}
-          {screen === "splash" && (
-            <div className="h-full flex flex-col items-center justify-center" style={{ background: "linear-gradient(160deg, #052e16 0%, #166534 45%, #0c4a6e 100%)" }}>
-              <div className="relative">
-                <div className="w-24 h-24 rounded-3xl bg-white/10 border border-white/20 flex items-center justify-center" style={{ boxShadow: "0 0 80px rgba(34,197,94,0.3)" }}>
-                  <Recycle className="w-12 h-12 text-white" />
-                </div>
-                <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-green-400 border-2 border-green-900 flex items-center justify-center">
-                  <Leaf className="w-4 h-4 text-green-900" />
-                </div>
-              </div>
-              <h1 className="text-4xl font-black text-white mt-6 tracking-tight">Waste2Goods</h1>
-              <p className="text-green-300 text-sm mt-1 font-semibold">Recycle · Earn · Thrive</p>
-              <div className="mt-12 flex gap-1.5">
-                {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: `${i*0.3}s` }} />)}
-              </div>
-            </div>
-          )}
-
-          {/* ── Onboard 1 ── */}
-          {screen === "onboard1" && (
-            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
-                <div className="w-48 h-48 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(22,163,74,0.15)" }}>
-                  <div className="text-8xl">♻️</div>
-                </div>
-                <div className="text-center">
-                  <h2 className="text-3xl font-black text-foreground">Recycle for Rewards</h2>
-                  <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Bring your plastic bottles, cardboard, and metal cans to any Waste2Goods kiosk and earn points instantly.</p>
-                </div>
-              </div>
-              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
-                <div className="flex justify-center gap-2">
-                  <div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" />
-                </div>
-                <button onClick={() => go("onboard2")} className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors">Next</button>
-                <button onClick={() => go("login")} className="w-full text-center text-sm text-muted-foreground font-semibold">Skip</button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Onboard 2 ── */}
-          {screen === "onboard2" && (
-            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
-                <div className="w-48 h-48 rounded-full bg-blue-100 border-4 border-blue-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(14,165,233,0.15)" }}>
-                  <div className="text-8xl">🏆</div>
-                </div>
-                <div className="text-center">
-                  <h2 className="text-3xl font-black text-foreground">Climb the Leaderboard</h2>
-                  <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Compete with neighbors and earn special recognition. Top recyclers win bonus rewards each week.</p>
-                </div>
-              </div>
-              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
-                <div className="flex justify-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" /><div className="w-2 h-2 rounded-full bg-muted" />
-                </div>
-                <button onClick={() => go("onboard3")} className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors">Next</button>
-                <button onClick={() => go("login")} className="w-full text-center text-sm text-muted-foreground font-semibold">Skip</button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Onboard 3 ── */}
-          {screen === "onboard3" && (
-            <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #fdf4ff 0%, #f3e8ff 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-              <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
-                <div className="w-48 h-48 rounded-full bg-purple-100 border-4 border-purple-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(139,92,246,0.15)" }}>
-                  <div className="text-8xl">🎁</div>
-                </div>
-                <div className="text-center">
-                  <h2 className="text-3xl font-black text-foreground">Redeem Real Rewards</h2>
-                  <p className="text-muted-foreground text-sm mt-3 leading-relaxed">Exchange your points for school supplies, groceries, seedlings, and seasonal community prizes.</p>
-                </div>
-              </div>
-              <div className="px-8 space-y-4 shrink-0" style={{ paddingBottom: "calc(3rem + var(--sab))" }}>
-                <div className="flex justify-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-muted" /><div className="w-2 h-2 rounded-full bg-muted" /><div className="w-6 h-2 rounded-full bg-primary" />
-                </div>
-                <button onClick={() => go("register")} className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors">Create Account</button>
-                <button onClick={() => go("login")} className="w-full text-center text-sm font-semibold text-muted-foreground">Already have an account? <span className="text-primary">Sign in</span></button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Register ── */}
-          {screen === "register" && (
-            <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
-                 style={{ paddingTop: "calc(0.5rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
-              <div className="px-5 py-3 flex items-center gap-3 border-b border-border bg-white sticky top-0 z-20" style={{ top: "var(--sat)" }}>
-                <button onClick={() => go("onboard3")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
-                <div>
-                  <h2 className="text-base font-black text-foreground">Create Account</h2>
-                  <div className="flex gap-1 mt-1">
-                    {[1,2,3].map(s => <div key={s} className={`h-1 rounded-full transition-all ${regStep >= s-1 ? "bg-primary w-8" : "bg-muted w-4"}`} />)}
-                  </div>
-                </div>
-              </div>
-              <div className="p-5 md:p-8 flex-1 max-w-xl w-full mx-auto">
-                {regStep === 0 && (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-3">Step 1 of 3 — Account Info</p>
-                      <div className="space-y-3">
-                        <Field label="Full Name" placeholder="Maria Santos" icon={<User className="w-4 h-4" />} value={regFullName} onChange={setRegFullName} />
-                        <Field label="Email Address" placeholder="maria@email.com" icon={<Mail className="w-4 h-4" />} value={regEmail} onChange={setRegEmail} />
-                        <Field label="Phone Number" placeholder="+63 912 345 6789" icon={<Phone className="w-4 h-4" />} value={regPhone} onChange={setRegPhone} />
-                        <Field label="Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={regPassword} onChange={setRegPassword} />
-                        <Field label="Confirm Password" placeholder="••••••••" type="password" icon={<Lock className="w-4 h-4" />} value={regConfirmPassword} onChange={setRegConfirmPassword} />
-                      </div>
-                    </div>
-                    {regError && (
-                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>{regError}</span>
-                      </div>
-                    )}
-                    <button
-                      onClick={() => {
-                        setRegError("");
-                        if (!regFullName || !regEmail || !regPassword || !regConfirmPassword) {
-                          setRegError("Please fill in all fields: name, email, phone, password, confirm password");
-                          return;
-                        }
-                        if (regPassword !== regConfirmPassword) {
-                          setRegError("Passwords do not match");
-                          return;
-                        }
-                        if (regPassword.length < 6) {
-                          setRegError("Password must be at least 6 characters");
-                          return;
-                        }
-                        setRegStep(1);
-                      }}
-                      className="w-full py-4 rounded-2xl bg-primary text-white font-black"
-                    >
-                      Continue
-                    </button>
-                  </div>
-                )}
-                {regStep === 1 && (
-                  <div className="space-y-4">
-                    <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 2 of 3 — Community Address</p>
-                    {regError && (
-                      <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>{regError}</span>
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground mb-1">
-                      Select your <strong>Province</strong> first — City and Barangay options will auto-filter based on your choice.
-                    </p>
-                    <SelectField
-                      label="Province"
-                      placeholder="Select a Province..."
-                      icon={<MapPin className="w-4 h-4" />}
-                      value={regProvince}
-                      options={PROVINCES}
-                      onChange={(v) => {
-                        setRegProvince(v);
-                        setRegCity("");
-                        setRegBarangay("");
-                      }}
-                    />
-                    <SelectField
-                      label="City / Municipality"
-                      placeholder={regProvince ? "Select a City..." : "Select a Province first"}
-                      icon={<MapPin className="w-4 h-4" />}
-                      value={regCity}
-                      options={availableCities}
-                      disabled={!regProvince}
-                      onChange={(v) => {
-                        setRegCity(v);
-                        setRegBarangay("");
-                      }}
-                    />
-                    <SelectField
-                      label="Barangay"
-                      placeholder={regCity ? "Select a Barangay..." : "Select a City first"}
-                      icon={<MapPin className="w-4 h-4" />}
-                      value={regBarangay}
-                      options={availableBarangays}
-                      disabled={!regCity}
-                      onChange={setRegBarangay}
-                    />
-                    <Field
-                      label="Street / House / Building No."
-                      placeholder="e.g. Block 12 Lot 5, Rizal Street or Purok 7"
-                      icon={<MapPin className="w-4 h-4" />}
-                      value={regStreetAddress}
-                      onChange={setRegStreetAddress}
-                    />
-                    <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
-                      <Info className="w-4 h-4 text-emerald-700 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-emerald-800 font-semibold">
-                        No Region required. Leaderboards are based on Barangay level only; the street address above is used for delivery of redeemed items.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => {
-                        setRegError("");
-                        if (!regProvince || !regCity || !regBarangay) {
-                          setRegError("Please select Province, City/Municipality, and Barangay");
-                          return;
-                        }
-                        setRegStep(2);
-                      }}
-                      className="w-full py-4 rounded-2xl bg-primary text-white font-black"
-                    >
-                      Continue
-                    </button>
-                    <button onClick={() => setRegStep(0)} className="w-full text-center text-sm text-muted-foreground font-semibold">Back</button>
-                  </div>
-                )}
-                {regStep === 2 && (
-                  <div className="space-y-4">
-                    <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 3 of 3 — Security</p>
-                    <div className="rounded-2xl bg-blue-50 border border-blue-200 p-4 flex gap-3">
-                      <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-blue-700 font-semibold leading-relaxed">Enable Multi-Factor Authentication to protect your account and points balance from unauthorized access.</p>
-                    </div>
-                    <div className="space-y-3">
-                      {[["SMS One-Time Password", "Text message to your phone", true], ["Authenticator App", "Google/Microsoft Authenticator", false]].map(([t, s, checked]) => (
-                        <label key={String(t)} className="flex items-center gap-3 p-3 rounded-xl border border-border bg-white cursor-pointer">
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${checked ? "border-primary bg-primary" : "border-muted-foreground"}`}>
-                            {checked && <Check className="w-3 h-3 text-white" />}
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-foreground">{String(t)}</p>
-                            <p className="text-xs text-muted-foreground">{String(s)}</p>
-                          </div>
-                        </label>
-                      ))}
-                    </div>
-                    <button
-                      disabled={regLoading}
-                      onClick={async () => {
-                        setRegError("");
-                        if (!regFullName || !regEmail || !regPassword) {
-                          setRegError("Please fill in all fields from Step 1");
-                          setRegStep(0);
-                          return;
-                        }
-                        if (regPassword !== regConfirmPassword) {
-                          setRegError("Passwords do not match");
-                          setRegStep(0);
-                          return;
-                        }
-                        if (!regProvince || !regCity || !regBarangay) {
-                          setRegError("Please select Province, City, and Barangay in Step 2");
-                          setRegStep(1);
-                          return;
-                        }
-                        const names = regFullName.trim().split(/\s+/);
-                        const firstName = names[0] || "User";
-                        const lastName = names.slice(1).join(" ") || "Lastname";
-                        try {
-                          setRegLoading(true);
-                          const regAuth = await Waste2GoodsAPI.register({
-                            firstName,
-                            lastName,
-                            email: regEmail,
-                            password: regPassword,
-                            phone: regPhone,
-                            province: regProvince,
-                            city: regCity,
-                            barangayName: regBarangay,
-                            streetAddress: regStreetAddress,
-                          });
-                          if (regAuth?.user) setProfileUser({ ...regAuth.user });
-                          setRegLoading(false);
-                          setRegStep(0);
-                          go("mfa");
-                        } catch (e) {
-                          setRegLoading(false);
-                          setRegError(e instanceof Error ? e.message : "Registration failed");
-                          setRegStep(0);
-                        }
-                      }}
-                      className="w-full py-4 rounded-2xl bg-primary text-white font-black disabled:opacity-60"
-                    >
-                      {regLoading ? "Creating account..." : "Enable MFA & Continue"}
-                    </button>
-                    <button
-                      disabled={regLoading}
-                      onClick={async () => {
-                        setRegError("");
-                        if (!regFullName || !regEmail || !regPassword) {
-                          setRegError("Please fill in all fields from Step 1");
-                          setRegStep(0);
-                          return;
-                        }
-                        if (regPassword !== regConfirmPassword) {
-                          setRegError("Passwords do not match");
-                          setRegStep(0);
-                          return;
-                        }
-                        if (!regProvince || !regCity || !regBarangay) {
-                          setRegError("Please select Province, City, and Barangay in Step 2");
-                          setRegStep(1);
-                          return;
-                        }
-                        const names = regFullName.trim().split(/\s+/);
-                        const firstName = names[0] || "User";
-                        const lastName = names.slice(1).join(" ") || "Lastname";
-                        try {
-                          setRegLoading(true);
-                          const regAuth = await Waste2GoodsAPI.register({
-                            firstName,
-                            lastName,
-                            email: regEmail,
-                            password: regPassword,
-                            phone: regPhone,
-                            province: regProvince,
-                            city: regCity,
-                            barangayName: regBarangay,
-                            streetAddress: regStreetAddress,
-                          });
-                          if (regAuth?.user) setProfileUser({ ...regAuth.user });
-                          setRegLoading(false);
-                          setRegStep(0);
-                          go("profile-setup");
-                        } catch (e) {
-                          setRegLoading(false);
-                          setRegError(e instanceof Error ? e.message : "Registration failed");
-                          setRegStep(0);
-                        }
-                      }}
-                      className="w-full text-center text-sm text-muted-foreground font-semibold disabled:opacity-60"
-                    >
-                      Skip for now
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── MFA ── */}
-          {screen === "mfa" && (
-            <div className="min-h-[100dvh] flex flex-col items-center justify-center px-8 gap-7 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-              <div className="w-16 h-16 rounded-2xl bg-blue-100 flex items-center justify-center">
-                <Shield className="w-8 h-8 text-blue-600" />
-              </div>
-              <div className="text-center">
-                <h2 className="text-2xl font-black text-foreground">Verify Your Phone</h2>
-                <p className="text-sm text-muted-foreground mt-2 leading-relaxed">We sent a 6-digit code to <strong>+63 912 *** 6789</strong>. Enter it below.</p>
-              </div>
-              <div className="flex gap-2">
-                {mfaCode.map((d, i) => (
-                  <input key={i}
-                    ref={el => { mfaRefs.current[i] = el; }}
-                    maxLength={1} value={d}
-                    onChange={e => {
-                      const v = e.target.value.replace(/\D/g, "");
-                      const next = [...mfaCode]; next[i] = v;
-                      setMfaCode(next);
-                      if (v && i < 5) mfaRefs.current[i + 1]?.focus();
-                    }}
-                    className="w-11 h-14 rounded-xl border-2 border-border bg-white text-center text-xl font-black focus:outline-none focus:border-primary transition-colors"
-                  />
-                ))}
-              </div>
-              <button onClick={() => { setMfaCode(["","","","","",""]); go("profile-setup"); }} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Verify Code</button>
-              <p className="text-xs text-muted-foreground text-center">Didn't receive it? <span className="text-primary font-bold cursor-pointer">Resend in 0:48</span></p>
-            </div>
-          )}
-
-          {/* ── Profile Setup ── */}
-          {screen === "profile-setup" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-6 py-4 border-b border-border bg-white" style={{ paddingTop: "calc(1rem + var(--sat))" }}>
-                <h2 className="text-base font-black text-foreground">Set Up Your Profile</h2>
-                <p className="text-xs text-muted-foreground">Almost there!</p>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-24">
-                <div className="flex flex-col items-center gap-3">
-                  <div className="relative">
-                    <div className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/20 flex items-center justify-center">
-                      <User className="w-10 h-10 text-primary/40" />
-                    </div>
-                    <button className="absolute bottom-0 right-0 w-7 h-7 rounded-full bg-primary flex items-center justify-center border-2 border-white">
-                      <Camera className="w-3.5 h-3.5 text-white" />
-                    </button>
-                  </div>
-                  <p className="text-xs text-muted-foreground font-semibold">Upload a profile photo (optional)</p>
-                </div>
-                <Field label="Display Name" placeholder="Your display name" icon={<User className="w-4 h-4" />} defaultVal={currentUser.name && currentUser.name !== "Guest User" ? currentUser.name : ""} />
-                <div>
-                  <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Bio (optional)</label>
-                  <textarea className="w-full px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none" rows={3} placeholder="I recycle because I care about my community..." />
-                </div>
-                <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
-                  <Zap className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-700 font-semibold">Complete your profile to earn a <strong>50 bonus points</strong> welcome gift!</p>
-                </div>
-                <button onClick={() => go("home")} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Start Recycling!</button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Login ── */}
-          {screen === "login" && (
-            <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
-                 style={{ paddingTop: "calc(0.75rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
-              <div className="flex flex-col items-center gap-2 px-8 pt-4 pb-3 shrink-0">
-                <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-                  <Recycle className="w-7 h-7 text-primary" />
-                </div>
-                <h2 className="text-2xl font-black text-foreground">Welcome back!</h2>
-                <p className="text-muted-foreground text-sm text-center">Sign in to your Waste2Goods account</p>
-              </div>
-              <div className="px-6 flex flex-1 flex-col w-full max-w-xl mx-auto space-y-3">
-                <Field
-                  label="Email Address"
-                  placeholder="maria@email.com"
-                  icon={<Mail className="w-4 h-4" />}
-                  value={email}
-                  onChange={setEmail}
-                />
-                <Field
-                  label="Password"
-                  placeholder="••••••••"
-                  type="password"
-                  icon={<Lock className="w-4 h-4" />}
-                  value={password}
-                  onChange={setPassword}
-                />
-                <p className="text-right text-xs text-primary font-bold cursor-pointer shrink-0">Forgot Password?</p>
-                {loginError && (
-                  <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-2.5 rounded-xl text-xs font-semibold shrink-0">
-                    <AlertCircle className="w-4 h-4 flex-shrink-0 text-red-600" />
-                    <span>{loginError}</span>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { setShowLoginServer(v => !v); setLoginServerBanner(null); setApiHostState(getApiHost()); }}
-                  className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0"
-                >
-                  <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
-                  <ChevronRight className={`w-4 h-4 transition-transform ${showLoginServer ? "rotate-90" : ""}`} />
-                </button>
-                {showLoginServer && (
-                  <div className="space-y-2 shrink-0">
-                    {loginServerBanner && (
-                      <div className={`rounded-xl px-3 py-2 text-xs font-bold ${loginServerBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{loginServerBanner.text}</div>
-                    )}
-                    <ServerIpPanel
-                      apiHost={apiHost}
-                      setApiHostState={setApiHostState}
-                      onSaved={setLoginServerBanner}
-                      compact
-                    />
-                  </div>
-                )}
-                <div className="mt-auto space-y-3 pt-3 shrink-0">
-                  <button
-                    disabled={loginLoading}
-                    onClick={async () => {
-                      setLoginError("");
-                      setLoginLoading(true);
-                      try {
-                        const authResult = await Waste2GoodsAPI.login(email, password);
-                        if (authResult?.user) setProfileUser({ ...authResult.user });
-                        go("home");
-                      } catch (e) {
-                        setLoginError(e instanceof Error ? e.message : "Invalid credentials. Please check your email and password.");
-                      } finally {
-                        setLoginLoading(false);
-                      }
-                    }}
-                    className="w-full py-4 rounded-2xl bg-primary text-white font-black text-base hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-                  >
-                    {loginLoading ? "Signing in..." : "Sign In"}
-                  </button>
-                  <div className="flex items-center gap-3"><div className="flex-1 h-px bg-border" /><span className="text-xs text-muted-foreground">or</span><div className="flex-1 h-px bg-border" /></div>
-                  <button className="w-full py-3 rounded-2xl border border-border text-sm font-semibold text-foreground flex items-center justify-center gap-2 hover:bg-secondary transition-colors">
-                    🇵🇭 Continue with Barangay ID
-                  </button>
-                </div>
-              </div>
-              <p className="text-center text-xs text-muted-foreground pt-5 shrink-0">New resident? <button onClick={() => go("register")} className="text-primary font-bold">Create account</button></p>
-            </div>
-          )}
-
-          {/* ── HOME ── */}
-          {screen === "home" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <div>
-                  <p className="text-xs text-muted-foreground font-semibold">Good morning,</p>
-                  <h2 className="text-xl font-black text-foreground">{(currentUser.name && currentUser.name.trim() !== "") ? `${currentUser.name.split(" ")[0]} 👋` : "👋"}</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button onClick={() => go("notifications")} className="relative p-2.5 rounded-xl border border-border bg-white hover:bg-secondary transition-colors">
-                    <Bell className="w-5 h-5 text-muted-foreground" />
-                    {notifUnread > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center border-2 border-white">{notifUnread <= 9 ? notifUnread : "9+"}</span>
-                    )}
-                  </button>
-                  <button onClick={() => go("profile")} className="w-10 h-10 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{currentUser.initials}</button>
-                </div>
-              </div>
-
-              {/* Scrollable content — everything scrolls together so user never misses content on short screens */}
-              <div className="flex-1 overflow-y-auto">
-                <div className="px-5 pt-4 pb-24 space-y-4">
-                  {/* Points hero */}
-                  <div className="rounded-3xl p-5 text-white relative overflow-hidden" style={{ background: "linear-gradient(135deg, #15803d, #0ea5e9)" }}>
-                    <div className="absolute -top-32 -right-32 w-96 h-96 rounded-full opacity-20" style={{ background: "radial-gradient(circle, #16a34a, transparent)" }} />
-                    <div className="absolute -bottom-4 -right-4 w-20 h-20 rounded-full bg-white/5" />
-                    <div className="relative z-10">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold opacity-75 uppercase tracking-wide">Your Balance</span>
-                        <Leaf className="w-4 h-4 opacity-60" />
-                      </div>
-                      <div className="flex items-end gap-2 mb-2">
-                        <span className="text-5xl font-black tracking-tight">{currentUser.points.toLocaleString()}</span>
-                        <span className="text-base font-bold opacity-75 mb-1">pts</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-bold">#3 Weekly</span>
-                        <span className="text-xs opacity-70">·</span>
-                        <span className="text-xs opacity-70">+320 pts today</span>
-                        <span className="text-xs opacity-70">·</span>
-                        <Flame className="w-3 h-3 text-orange-300" />
-                        <span className="text-xs font-bold text-orange-200">7-day streak</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
-
-                  {/* Quick actions */}
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {[
-                      { icon: "♻️", label: "Submit", screen: "submit" as MobileScreen, bg: "bg-green-50", border: "border-green-200", text: "text-green-700" },
-                      { icon: "🎁", label: "Rewards", screen: "rewards" as MobileScreen, bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-                      { icon: "⚡", label: "Tasks", screen: "tasks" as MobileScreen, bg: "bg-amber-50", border: "border-amber-200", text: "text-amber-700" },
-                    ].map(a => (
-                      <button key={a.label} onClick={() => go(a.screen)} className={`flex flex-col items-center gap-2 p-3 rounded-2xl ${a.bg} border ${a.border} hover:shadow-md transition-all`}>
-                        <span className="text-2xl">{a.icon}</span>
-                        <span className={`text-xs font-black ${a.text}`}>{a.label}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Leaderboard */}
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-black text-foreground">Community Leaderboard</h3>
-                      <div className="flex rounded-xl overflow-hidden border border-border text-xs">
-                        {(["weekly","monthly"] as const).map(t => (
-                          <button key={t} onClick={() => setLeaderTab(t)} className={`px-3 py-1.5 font-bold capitalize transition-colors ${leaderTab === t ? "bg-primary text-white" : "bg-white text-muted-foreground"}`}>{t}</button>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      {mergedLeaderboard.map(u => (
-                        <div key={`${u.rank}-${u.userId || u.name}`} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${u.isMe ? "border-primary/30 bg-green-50" : "border-border bg-white"}`}>
-                          <div className="w-7 flex items-center justify-center flex-shrink-0"><RankIcon rank={u.rank} /></div>
-                          <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-black text-white flex-shrink-0 ${u.isMe ? "bg-primary" : "bg-slate-400"}`}>{u.avatar}</div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-black text-foreground truncate">{u.name}{u.isMe ? " (You)" : ""}</p>
-                            <div className="flex items-center gap-1.5 mt-0.5">
-                              <Flame className="w-2.5 h-2.5 text-orange-400" />
-                              <span className="text-xs text-muted-foreground">{u.streak}d streak</span>
-                            </div>
-                          </div>
-                          <span className="text-xs font-black text-primary">{u.points.toLocaleString()} pts</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <MobileBottomNav screen={screen} go={go} />
-            </div>
-          )}
-
-          {/* ── SUBMIT: Entry ── */}
-          {screen === "submit" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-base font-black">Submit Recyclables</h2>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-5 pb-24">
-                <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
-                <div className="rounded-2xl border-2 border-dashed border-primary/30 bg-green-50 p-8 flex flex-col items-center gap-4">
-                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-                    <QrCode className="w-8 h-8 text-primary" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-black text-foreground">Scan Kiosk QR Code</p>
-                    <p className="text-xs text-muted-foreground mt-1">Open your camera and point it at the kiosk QR code to begin</p>
-                  </div>
-                  <button onClick={() => go("submit-scan")} className="px-6 py-3 rounded-xl bg-primary text-white font-bold text-sm hover:bg-green-700 transition-colors flex items-center gap-2">
-                    <Camera className="w-4 h-4" /> Open Camera
-                  </button>
-                </div>
-                <div className="rounded-2xl bg-white border border-border p-4">
-                  <h3 className="text-sm font-black mb-3 flex items-center gap-2"><Star className="w-4 h-4 text-amber-600" /> Point Rates</h3>
-                  <div className="space-y-2">
-                    {[["♻️ PET Plastic","50 pts/kg","bg-green-100 text-green-700"]].map(([t,p,cls]) => (
-                      <div key={String(t)} className="flex justify-between items-center text-xs">
-                        <span className="text-foreground font-semibold">{t}</span>
-                        <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{p}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-2xl bg-white border border-border p-4">
-                  <h3 className="text-sm font-black mb-1">Nearby Kiosks</h3>
-                  <p className="text-[11px] text-muted-foreground mb-3 leading-snug">
-                    Each kiosk shows its <strong>total submissions TODAY</strong> (how many residents already dropped off PET plastic at that location today).
-                  </p>
-                  {kiosks.filter(k => k.status === "online").slice(0,3).map(k => (
-                    <div key={k.id} className="flex items-center gap-2 py-1.5 border-b border-border last:border-0">
-                      <div className="w-2 h-2 rounded-full bg-emerald-400 flex-shrink-0" />
-                      <div className="flex-1">
-                        <p className="text-xs font-bold text-foreground">{k.id}</p>
-                        <p className="text-xs text-muted-foreground">{k.location}</p>
-                      </div>
-                      <div className="text-right flex flex-col items-end">
-                        <span className="text-xs text-primary font-black">{k.submissions} today</span>
-                        <span className="text-[10px] text-muted-foreground">submissions</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <MobileBottomNav screen={screen} go={go} />
-            </div>
-          )}
-
-          {/* ── SUBMIT: Scanning ── */}
-          {screen === "submit-scan" && (
-            <div className="min-h-[100dvh] flex flex-col" style={{ background: "#000" }}>
-              <div className="px-5 pb-4 flex items-center justify-between shrink-0" style={{ paddingTop: "calc(1rem + var(--sat))" }}>
-                <button onClick={() => go("submit")}><ArrowLeft className="w-5 h-5 text-white" /></button>
-                <p className="text-white font-black text-sm">Scanning...</p>
-                <div />
-              </div>
-              <div className="flex-1 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
-                <div id="qr-reader" className="w-80 max-w-[85vw] aspect-square rounded-xl overflow-hidden" />
-                <p className="text-white/70 text-sm text-center px-8">Point your camera at the QR code on the Waste2Goods kiosk</p>
-              </div>
-            </div>
-          )}
-
-          {/* ── SUBMIT: Confirm/Weighing ── */}
-          {screen === "submit-confirm" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <button onClick={() => go("submit")}><ArrowLeft className="w-5 h-5" /></button>
-                <div>
-                  <h2 className="text-base font-black">Confirm Submission</h2>
-                  <p className="text-xs text-muted-foreground">K-01 · Bagong Pag-asa Hall</p>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-24">
-                <div className="rounded-2xl bg-green-50 border border-primary/20 p-3 flex items-center gap-3">
-                  <CheckCircle className="w-5 h-5 text-primary flex-shrink-0" />
-                  <p className="text-sm font-bold text-foreground">Kiosk connected successfully!</p>
-                </div>
-                <div className="rounded-2xl bg-white border border-border p-4 space-y-3">
-                  <h3 className="text-sm font-black">Select Recyclable Type</h3>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[["♻️","PET Plastic",true]].map(([e,l,sel]) => (
-                      <button key={String(l)} className={`flex items-center gap-2 p-3 rounded-xl border-2 text-xs font-bold transition-colors ${sel ? "border-primary bg-green-50 text-primary" : "border-border bg-white text-muted-foreground"}`}>
-                        <span className="text-lg">{String(e)}</span>{String(l)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Live weight gauge */}
-                <div className="rounded-2xl bg-white border border-border p-5">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-sm font-black flex items-center gap-2"><Scale className="w-4 h-4 text-primary" /> Live Weight</h3>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${weighing ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{weighing ? "Measuring..." : "Place items"}</span>
-                  </div>
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <span className="text-5xl font-black text-foreground">{weight.toFixed(1)}</span>
-                      <span className="text-lg font-bold text-muted-foreground ml-1">kg</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Points to earn</p>
-                      <p className="text-3xl font-black text-primary">+{Math.round(weight * 50)}</p>
-                    </div>
-                  </div>
-                  <div className="mt-3 w-full h-2 rounded-full bg-muted overflow-hidden">
-                    <div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${Math.min(100, (weight / 5) * 100)}%` }} />
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1.5 text-right">{weight.toFixed(2)} / 5.00 kg max</p>
-                </div>
-
-                <div className="rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Type</span><span className="font-bold">PET Plastic</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Weight</span><span className="font-bold">{weight.toFixed(2)} kg</span></div>
-                  <div className="flex justify-between"><span className="text-muted-foreground">Rate</span><span className="font-bold">50 pts/kg</span></div>
-                  <div className="h-px bg-border" />
-                  <div className="flex justify-between"><span className="font-black">Points Earned</span><span className="font-black text-primary">+{Math.round(weight * 50)} pts</span></div>
-                </div>
-                <button onClick={() => go("submit-done")} className="w-full py-4 rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors">
-                  Confirm & Submit
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── SUBMIT: Done ── */}
-          {screen === "submit-done" && (
-            <div className="min-h-[100dvh] flex flex-col items-center justify-center p-8 gap-6 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-              <div className="relative">
-                <div className="w-32 h-32 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center">
-                  <Check className="w-16 h-16 text-primary" />
-                </div>
-                <div className="absolute -top-2 -right-2 text-3xl animate-bounce">🎉</div>
-              </div>
-              <div className="text-center">
-                <h2 className="text-3xl font-black text-foreground">Awesome{ (currentUser.name && currentUser.name.trim() !== "") ? `, ${currentUser.name.split(" ")[0]}` : "" }!</h2>
-                <p className="text-muted-foreground text-sm mt-1">Submission recorded successfully</p>
-              </div>
-              <div className="w-full rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">Previous balance</span><span className="font-bold">{Math.max(0, currentUser.points).toLocaleString()} pts</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Points earned</span><span className="font-bold text-primary">+{Math.round(weight * 50)} pts</span></div>
-                <div className="h-px bg-border" />
-                <div className="flex justify-between"><span className="font-black text-base">New balance</span><span className="font-black text-primary text-base">{(Math.max(0, currentUser.points) + Math.round(weight * 50)).toLocaleString()} pts</span></div>
-              </div>
-              <div className="w-full rounded-2xl bg-blue-50 border border-blue-200 p-3 flex items-center gap-3">
-                <Trophy className="w-5 h-5 text-blue-600 flex-shrink-0" />
-                <p className="text-xs text-blue-700 font-semibold">You rose to <strong>#3</strong> on the weekly leaderboard! 🏆</p>
-              </div>
-              <div className="w-full rounded-2xl bg-amber-50 border border-amber-200 p-3 flex items-center gap-3">
-                <Flame className="w-4 h-4 text-amber-600 flex-shrink-0" />
-                <p className="text-xs text-amber-700 font-semibold">7-day streak maintained! Keep it up!</p>
-              </div>
-              <button onClick={() => go("home")} className="w-full py-4 rounded-2xl bg-primary text-white font-black">Back to Home</button>
-            </div>
-          )}
-
-          {/* ── REWARDS ── */}
-          {screen === "rewards" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-black">Rewards Catalog</h2>
-                  <button onClick={() => go("redeem-history")} className="text-xs text-primary font-bold flex items-center gap-1"><Clock className="w-3 h-3" />History</button>
-                </div>
-                <p className="text-xs text-muted-foreground mt-0.5">Balance: <span className="font-black text-primary">{currentUser.points.toLocaleString()} pts</span></p>
-                <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
-                  {rewardCategories.map(c => (
-                    <button key={c} onClick={() => setRewardFilter(c)} className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
-                  ))}
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4 pb-24">
-                <div className="grid grid-cols-2 gap-3">
-                  {filteredRewards.map(r => (
-                    <div key={r.id} className="rounded-2xl bg-white border border-border p-3 flex flex-col gap-2 relative">
-                      {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
-                      <div className="text-3xl mt-1">{r.icon}</div>
-                      <div>
-                        <p className="text-xs font-black text-foreground leading-snug pr-12">{r.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{r.category}</p>
-                      </div>
-                      {r.stock < 10 && <p className="text-xs text-red-600 font-bold">Only {r.stock} left!</p>}
-                      <div className="flex items-center justify-between mt-auto pt-1">
-                        <span className="text-sm font-black text-primary">{r.points} pts</span>
-                        <button onClick={() => { setSelectedReward(r); go("redeem-confirm"); }} className={`text-xs px-2.5 py-1.5 rounded-xl font-bold transition-colors ${r.points <= currentUser.points ? "bg-primary text-white hover:bg-green-700" : "bg-muted text-muted-foreground cursor-not-allowed"}`}>
-                          {r.points <= currentUser.points ? "Redeem" : "Need more"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <MobileBottomNav screen={screen} go={go} />
-            </div>
-          )}
-
-          {/* ── REDEEM CONFIRM ── */}
-          {screen === "redeem-confirm" && selectedReward && (
-            <RedeemConfirmScreen
-              reward={selectedReward}
-              currentUser={currentUser}
-              onCancel={() => { setSelectedReward(null); go("rewards"); }}
-              onBack={() => go("rewards")}
-            />
-          )}
-
-          {/* ── REDEEM HISTORY ── */}
-          {screen === "redeem-history" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <button onClick={() => go("rewards")}><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-base font-black">Redemption History</h2>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-3 pb-24">
-                {[
-                  { date: "Jun 15, 2026", item: "Eco Water Bottle", pts: 350, status: "ready" },
-                  { date: "May 28, 2026", item: "School Supplies Kit", pts: 500, status: "claimed" },
-                  { date: "Apr 10, 2026", item: "Grocery Voucher ₱100", pts: 800, status: "claimed" },
-                ].map((h, i) => (
-                  <div key={i} className="rounded-2xl bg-white border border-border p-4 flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center text-xl">🎁</div>
-                    <div className="flex-1">
-                      <p className="text-sm font-black text-foreground">{h.item}</p>
-                      <p className="text-xs text-muted-foreground">{h.date} · {h.pts} pts</p>
-                    </div>
-                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${h.status === "ready" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{h.status === "ready" ? "Ready to pick up" : "Claimed"}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── TASKS ── */}
-          {screen === "tasks" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <h2 className="text-base font-black">Tasks & Challenges</h2>
-                <p className="text-xs text-muted-foreground">Complete tasks to earn bonus points</p>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 pb-24 space-y-3">
-                <div className="rounded-2xl p-3 text-white flex items-center gap-3" style={{ background: "linear-gradient(135deg, #d97706, #f59e0b)" }}>
-                  <Flame className="w-6 h-6 text-white flex-shrink-0" />
-                  <div>
-                    <p className="font-black text-sm">7-Day Streak Active!</p>
-                    <p className="text-xs opacity-80">Keep submitting daily to earn the streak bonus</p>
-                  </div>
-                </div>
-                {tasks.map(t => (
-                  <div key={t.id} className={`rounded-2xl bg-white border p-4 ${t.done ? "border-primary/30 bg-green-50" : "border-border"}`}>
-                    <div className="flex items-start justify-between gap-2 mb-3">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${t.type==="daily"?"bg-blue-100 text-blue-700":t.type==="weekly"?"bg-purple-100 text-purple-700":"bg-amber-100 text-amber-700"}`}>{t.type}</span>
-                          {t.done && <span className="text-xs font-bold text-green-700 flex items-center gap-0.5"><Check className="w-3 h-3" />Complete</span>}
-                        </div>
-                        <p className="text-sm font-bold text-foreground">{t.title}</p>
-                      </div>
-                      <div className="flex-shrink-0 flex flex-col items-center bg-amber-50 rounded-xl p-2 min-w-[48px]">
-                        <Zap className="w-3.5 h-3.5 text-amber-600" />
-                        <span className="text-xs font-black text-amber-700 mt-0.5">+{t.reward}</span>
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-muted-foreground">Progress</span>
-                        <span className="font-bold">{t.progress} / {t.goal} {t.unit}</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.min(100,(t.progress/t.goal)*100)}%`, background: t.done ? "#16a34a" : undefined }} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <MobileBottomNav screen={screen} go={go} />
-            </div>
-          )}
-
-          {/* ── PROFILE ── */}
-          {screen === "profile" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="flex-1 overflow-y-auto">
-                <div className="pb-24">
-                  <div className="px-5 pt-5 pb-6 flex flex-col items-center gap-3" style={{ paddingTop: "calc(1.5rem + var(--sat))", background: "linear-gradient(160deg, #052e16, #15803d)" }}>
-                    <div className="relative">
-                      <div className="w-16 h-16 rounded-full border-3 border-white/30 bg-white/10 flex items-center justify-center text-2xl font-black text-white">{currentUser.initials}</div>
-                      <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-400 border-2 border-green-900 flex items-center justify-center"><Check className="w-2.5 h-2.5 text-white" /></div>
-                    </div>
-                    <div className="text-center">
-                      <h2 className="text-lg font-black text-white">{currentUser.name}</h2>
-                      <p className="text-xs text-green-300 flex items-center gap-1 justify-center"><MapPin className="w-3 h-3" />{currentUser.barangay} · {profileSinceLabel}</p>
-                      {currentUser.id && (
-                        <p className="text-[10px] text-green-400/80 mt-0.5 font-mono">{currentUser.id}{currentUser.email ? ` · ${currentUser.email}` : ""}</p>
-                      )}
-                    </div>
-                    <div className="flex gap-6 mt-1 bg-white/10 rounded-2xl px-6 py-3 border border-white/10">
-                      {[
-                        [currentUser.points.toLocaleString(), "Points"],
-                        [String(currentUser.submissions), "Submissions"],
-                        [profileRank, "Weekly Rank"],
-                      ].map(([v, l]) => (
-                        <div key={l as string} className="text-center">
-                          <p className="text-base font-black text-white">{v}</p>
-                          <p className="text-xs text-green-300">{l}</p>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="w-full mt-1">
-                      <KioskLinkBadge connected={kioskSession.connected} kioskId={kioskSession.kioskId} checking={kioskChecking} connectedAt={kioskSession.connectedAt} onDisconnect={handleDisconnectKiosk} />
-                    </div>
-                  </div>
-                  <div className="p-5 space-y-2">
-                    {[
-                      { icon: <Activity className="w-4 h-4" />, label: "Transaction History", action: () => go("history"), color: "bg-blue-100 text-blue-600", sub: `${currentUser.submissions + Number(currentUser.redeemed || 0)} activities` },
-                      { icon: <ShoppingCart className="w-4 h-4" />, label: "Rewards Redeemed", action: () => go("redeem-history"), color: "bg-indigo-100 text-indigo-600", sub: `${currentUser.redeemed || 0} items` },
-                      { icon: <Settings className="w-4 h-4" />, label: "Account Settings", action: () => go("settings"), color: "bg-purple-100 text-purple-600", sub: "Name, email, barangay, phone" },
-                      { icon: <Shield className="w-4 h-4" />, label: "Security & MFA", action: () => {}, color: "bg-green-100 text-green-700" },
-                      { icon: <Bell className="w-4 h-4" />, label: "Notifications", action: () => go("notifications"), color: "bg-amber-100 text-amber-600", sub: `${notifItems.length} total${notifUnread > 0 ? ` · ${notifUnread} unread` : ""}` },
-                      { icon: <Globe className="w-4 h-4" />, label: "Language & Region", action: () => {}, color: "bg-cyan-100 text-cyan-600" },
-                      { icon: <HelpCircle className="w-4 h-4" />, label: "Help & FAQ", action: () => {}, color: "bg-slate-100 text-slate-600" },
-                      { icon: <LogOut className="w-4 h-4 text-red-600" />, label: "Sign Out", action: () => { Waste2GoodsAPI.logout(); go("login"); }, color: "bg-red-100 text-red-600" },
-                    ].map(item => (
-                      <button key={item.label} onClick={item.action} className="w-full flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-border hover:bg-secondary transition-colors">
-                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${item.color}`}>{item.icon}</div>
-                        <div className="flex-1 min-w-0 text-left">
-                          <span className="text-sm font-bold text-foreground block">{item.label}</span>
-                          {item.sub && <span className="text-[10px] text-muted-foreground">{item.sub}</span>}
-                        </div>
-                        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <MobileBottomNav screen={screen} go={go} />
-            </div>
-          )}
-
-          {/* ── HISTORY ── */}
-          {screen === "history" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <button onClick={() => go("profile")}><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-base font-black">Transaction History</h2>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-3 pb-24">
-                {transactions.map(t => (
-                  <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white border border-border">
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${t.type==="earn"?"bg-green-100":t.type==="redeem"?"bg-blue-100":"bg-amber-100"}`}>
-                      {t.type==="earn"?<Recycle className="w-4 h-4 text-green-700" />:t.type==="redeem"?<Gift className="w-4 h-4 text-blue-700" />:<Zap className="w-4 h-4 text-amber-700" />}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-foreground truncate">{t.desc}</p>
-                      <p className="text-xs text-muted-foreground">{t.date} · {t.id}</p>
-                    </div>
-                    <span className={`text-sm font-black flex-shrink-0 ${t.pts > 0 ? "text-primary" : "text-red-600"}`}>{t.pts > 0 ? "+" : ""}{t.pts}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* ── SETTINGS ── */}
-          {screen === "settings" && (
-            <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-              <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                <button onClick={() => go("profile")}><ArrowLeft className="w-5 h-5" /></button>
-                <h2 className="text-base font-black">Account Settings</h2>
-              </div>
-              <div className="flex-1 overflow-y-auto p-5 space-y-4 pb-24">
-                {profileBanner && (
-                  <div className={`rounded-xl px-3 py-2 text-xs font-bold ${profileBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{profileBanner.text}</div>
-                )}
-                <ServerIpPanel
-                  apiHost={apiHost}
-                  setApiHostState={setApiHostState}
-                  onSaved={setProfileBanner}
-                />
-                {[
-                  { l: "First Name", val: setFName, setter: setSetFName, placeholder: "Juan" },
-                  { l: "Last Name", val: setLName, setter: setSetLName, placeholder: "Reyes" },
-                  { l: "Email", val: setFormEmail, setter: setSetFormEmail, placeholder: "juan@email.com", inputType: "email" },
-                  { l: "Phone", val: setPhone, setter: setSetPhone, placeholder: "+63 9xx xxx xxxx", inputType: "tel" },
-                  { l: "Barangay", val: setBrgy, setter: setSetBrgy, placeholder: "Cabantian" },
-                  { l: "City", val: setCity, setter: setSetCity, placeholder: "Davao City" },
-                  { l: "Province", val: setProvince, setter: setSetProvince, placeholder: "Davao del Sur" },
-                ].map(f => (
-                  <div key={f.l}>
-                    <label className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">{f.l}</label>
-                    <input
-                      type={(f as any).inputType || "text"}
-                      value={f.val}
-                      onChange={e => f.setter(e.target.value)}
-                      placeholder={f.placeholder}
-                      className="w-full px-4 py-3 rounded-xl border border-border bg-white text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                    />
-                  </div>
-                ))}
-                <button
-                  onClick={handleSaveProfile}
-                  disabled={profileSaving}
-                  className="w-full py-4 rounded-2xl bg-primary text-white font-black mt-4 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity"
-                >{profileSaving ? "Saving…" : "Save Changes"}</button>
-                {currentUser.id && (
-                  <p className="text-[10px] text-center text-muted-foreground font-mono pt-2">User ID: {currentUser.id}</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* ── NOTIFICATIONS (mobile bell 🔔) ── */}
-          {screen === "notifications" && (() => {
-            // Time formatter helper (relative: "5m ago", "3h ago", "Mar 12")
-            const timeAgo = (t: string) => {
-              try {
-                const ms = new Date(t).getTime();
-                if (!ms) return "";
-                const diff = Date.now() - ms;
-                const mins = Math.floor(diff / 60000);
-                if (mins < 1) return "Just now";
-                if (mins < 60) return `${mins}m ago`;
-                const hrs = Math.floor(mins / 60);
-                if (hrs < 24) return `${hrs}h ago`;
-                const days = Math.floor(hrs / 24);
-                if (days < 7) return `${days}d ago`;
-                return new Date(ms).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-              } catch { return ""; }
-            };
-            // Icon by notification type
-            const notifIcon = (type: string, severity: string) => {
-              if (type === "redemption") return <Gift className={`w-4 h-4 ${severity === "danger" ? "text-red-600" : "text-indigo-600"}`} />;
-              if (type === "milestone") return <Trophy className="w-4 h-4 text-amber-600" />;
-              if (type === "task") return <Target className="w-4 h-4 text-primary" />;
-              if (type === "welcome") return <Leaf className="w-4 h-4 text-green-600" />;
-              if (type === "submission") return <Recycle className="w-4 h-4 text-green-700" />;
-              return <Bell className="w-4 h-4 text-muted-foreground" />;
-            };
-            const notifIconBg = (type: string) => {
-              if (type === "redemption") return "bg-indigo-100";
-              if (type === "milestone") return "bg-amber-100";
-              if (type === "task") return "bg-green-100";
-              if (type === "welcome") return "bg-emerald-100";
-              if (type === "submission") return "bg-lime-100";
-              return "bg-slate-100";
-            };
-            return (
-              <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-                <div className="sticky top-0 z-10 px-5 pb-3 pt-3 flex items-center gap-3 border-b border-border bg-background" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-                  <button onClick={() => go("home")}><ArrowLeft className="w-5 h-5" /></button>
-                  <div className="flex-1 min-w-0">
-                    <h2 className="text-base font-black leading-tight">Notifications</h2>
-                    <p className="text-[10px] text-muted-foreground">{notifItems.length} total{notifUnread > 0 ? ` · ${notifUnread} unread` : " · All read ✓"}</p>
-                  </div>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-[10px] font-black text-primary">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary" />
-                    LIVE · {currentUser.id || "U-000"}
-                  </span>
-                </div>
-                <div className="flex-1 overflow-y-auto p-5 space-y-2 pb-24">
-                  {notifItems.length === 0 && (
-                    <div className="py-16 flex flex-col items-center gap-3 text-center px-5">
-                      <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center">
-                        <Bell className="w-7 h-7 text-slate-400" />
-                      </div>
-                      <h3 className="font-black text-foreground">No notifications yet</h3>
-                      <p className="text-xs text-muted-foreground">When you submit waste, redeem rewards, or unlock badges — you'll see them here.</p>
-                      <button onClick={() => go("home")} className="mt-2 px-4 py-2 rounded-xl bg-primary text-white text-xs font-black">Return to Home</button>
-                    </div>
-                  )}
-                  {notifItems.map(n => (
-                    <div key={n.id} className={`flex gap-3 p-3.5 rounded-2xl border ${n.read === false ? "bg-primary/5 border-primary/20" : "bg-white border-border"}`}>
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${notifIconBg(n.type)}`}>
-                        {notifIcon(n.type, n.severity || "info")}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className={`text-sm font-bold text-foreground leading-snug ${n.read === false ? "" : "opacity-90"}`}>{n.title}</p>
-                          <span className="flex-shrink-0 text-[10px] text-muted-foreground font-semibold whitespace-nowrap">{timeAgo(n.time)}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
-                        {n.read === false && <span className="inline-block mt-1.5 w-1.5 h-1.5 rounded-full bg-primary" title="Unread" />}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <MobileBottomNav screen={screen} go={go} />
-              </div>
-            );
-          })()}
-      </div>
+      <MobileScreens
+        screen={screen}
+        leaderTab={leaderTab}
+        regStep={regStep}
+        selectedReward={selectedReward}
+        rewardFilter={rewardFilter}
+        mfaCode={mfaCode}
+        weighing={weighing}
+        email={email}
+        password={password}
+        loginError={loginError}
+        loginLoading={loginLoading}
+        regFullName={regFullName}
+        regEmail={regEmail}
+        regPassword={regPassword}
+        regConfirmPassword={regConfirmPassword}
+        regPhone={regPhone}
+        regProvince={regProvince}
+        regCity={regCity}
+        regBarangay={regBarangay}
+        regStreetAddress={regStreetAddress}
+        regLoading={regLoading}
+        regError={regError}
+        profileUser={profileUser}
+        profileRank={profileRank}
+        profileSaving={profileSaving}
+        profileBanner={profileBanner}
+        setFName={setFName}
+        setLName={setLName}
+        setFormEmail={setFormEmail}
+        setPhone={setPhone}
+        setProvince={setProvince}
+        setCity={setCity}
+        setBrgy={setBrgy}
+        showLoginServer={showLoginServer}
+        loginServerBanner={loginServerBanner}
+        apiHost={apiHost}
+        weight={weight}
+        kioskSession={kioskSession}
+        kioskChecking={kioskChecking}
+        mergedLeaderboard={mergedLeaderboard}
+        currentUser={currentUser}
+        notifItems={notifItems}
+        notifUnread={notifUnread}
+        rewardCategories={rewardCategories}
+        filteredRewards={filteredRewards}
+        profileSinceLabel={profileSinceLabel}
+        availableCities={availableCities}
+        availableBarangays={availableBarangays}
+        mfaRefs={mfaRefs}
+        setLeaderTab={setLeaderTab}
+        setRegStep={setRegStep}
+        setSelectedReward={setSelectedReward}
+        setRewardFilter={setRewardFilter}
+        setMfaCode={setMfaCode}
+        setEmail={setEmail}
+        setPassword={setPassword}
+        setRegFullName={setRegFullName}
+        setRegEmail={setRegEmail}
+        setRegPassword={setRegPassword}
+        setRegConfirmPassword={setRegConfirmPassword}
+        setRegPhone={setRegPhone}
+        setRegProvince={setRegProvince}
+        setRegCity={setRegCity}
+        setRegBarangay={setRegBarangay}
+        setRegStreetAddress={setRegStreetAddress}
+        setRegError={setRegError}
+        setProfileBanner={setProfileBanner}
+        setSetFName={setSetFName}
+        setSetLName={setSetLName}
+        setSetFormEmail={setSetFormEmail}
+        setSetPhone={setSetPhone}
+        setSetProvince={setSetProvince}
+        setSetCity={setSetCity}
+        setSetBrgy={setSetBrgy}
+        setLoginServerBanner={setLoginServerBanner}
+        setApiHostState={setApiHostState}
+        handleSaveProfile={handleSaveProfile}
+        handleDisconnectKiosk={handleDisconnectKiosk}
+        onLogin={onLogin}
+        onRegisterStep1Next={onRegisterStep1Next}
+        onRegisterStep2Next={onRegisterStep2Next}
+        onRegisterStep3MFA={onRegisterStep3MFA}
+        onRegisterStep3Skip={onRegisterStep3Skip}
+        onToggleLoginServer={onToggleLoginServer}
+        onRewardRedeem={onRewardRedeem}
+        onRewardClose={onRewardClose}
+        onSubmitConfirm={onSubmitConfirm}
+        go={go}
+      />
     </div>
   );
 }

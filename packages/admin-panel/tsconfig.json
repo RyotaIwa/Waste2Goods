@@ -15,9 +15,12 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": false,
+    "ignoreDeprecations": "6.0",
     "typeRoots": ["../../node_modules/@types", "node_modules/@types"],
-    "baseUrl": ".",
-    "paths": {}
+    "baseUrl": "./src",
+    "paths": {
+      "@/*": ["./*"]
+    },
   },
   "include": ["src"]
 }
