@@ -710,7 +710,7 @@ function formatDashboardTransactions(liveTx: any[] | null) {
   if (!liveTx || liveTx.length === 0) {
     return transactions.slice(0, 5);
   }
-  return liveTx.slice(0, 5).map(mapSingleTxRow);
+  return liveTx.slice(0, 5).map((tx, i) => mapSingleTxRow(tx, i));
 }
 
 function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) {
@@ -928,12 +928,43 @@ function doesUserMatchSearch(u: any, q: string): boolean {
 
 function getMergedAndFilteredUsers(liveUsers: any[] | null, searchQuery: string) {
   const mergedUsers: any[] = liveUsers && liveUsers.length > 0
-    ? liveUsers.map(mapSingleLiveUser)
+    ? liveUsers.map((u, i) => mapSingleLiveUser(u, i))
     : adminUsers.slice();
 
   if (!searchQuery?.trim()) return mergedUsers;
   const q = searchQuery.trim().toLowerCase();
   return mergedUsers.filter(u => doesUserMatchSearch(u, q));
+}
+
+function mapSingleRewardRow(r: any, i: number) {
+  const rid = Number(r.rewardId ?? r.id ?? i + 1);
+  const displayName = r.rewardName || r.name || `Reward ${i + 1}`;
+  const pts = Number(r.pointsCost || r.points || 0);
+  const stock = Number(r.stockQuantity ?? r.stock ?? r.stockCount ?? 0);
+  const seasonal = Boolean(r.isSeasonal ?? r.seasonal ?? false);
+  return {
+    id: rid,
+    rewardId: rid,
+    icon: r.icon || "🎁",
+    rewardName: displayName,
+    name: displayName,
+    description: r.description || "",
+    category: r.category || "Essentials",
+    points: pts,
+    pointsCost: pts,
+    stock,
+    stockQuantity: stock,
+    seasonal,
+    isSeasonal: seasonal,
+    status: r.status || "active",
+  };
+}
+
+function doesRewardMatchSearch(r: any, q: string): boolean {
+  return (r.name || "").toLowerCase().includes(q) ||
+    (r.category || "").toLowerCase().includes(q) ||
+    (r.description || "").toLowerCase().includes(q) ||
+    String(r.rewardId || r.id || "").includes(q);
 }
 
 function validatePasswordPair(pw: string, pw2: string): string | null {
@@ -1355,36 +1386,12 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
   };
 
   let mergedRewards: any[] = liveRewards && liveRewards.length > 0
-    ? liveRewards.map((r, i) => {
-        const rid = Number(r.rewardId ?? r.id ?? i + 1);
-        return {
-          id: rid,
-          rewardId: rid,
-          icon: r.icon || "🎁",
-          rewardName: r.rewardName || r.name || `Reward ${i + 1}`,
-          name: r.rewardName || r.name || `Reward ${i + 1}`,
-          description: r.description || "",
-          category: r.category || "Essentials",
-          points: Number(r.pointsCost || r.points || 0),
-          pointsCost: Number(r.pointsCost || r.points || 0),
-          stock: Number(r.stockQuantity ?? r.stock ?? r.stockCount ?? 0),
-          stockQuantity: Number(r.stockQuantity ?? r.stock ?? r.stockCount ?? 0),
-          seasonal: Boolean(r.isSeasonal ?? r.seasonal ?? false),
-          isSeasonal: Boolean(r.isSeasonal ?? r.seasonal ?? false),
-          status: r.status || 'active',
-        };
-      })
+    ? liveRewards.map((r, i) => mapSingleRewardRow(r, i))
     : rewards.slice();
 
-  // Apply search filter (name, desc, category, icon)
   if (searchQuery?.trim()) {
     const q = searchQuery.trim().toLowerCase();
-    mergedRewards = mergedRewards.filter((r: any) =>
-      (r.name || "").toLowerCase().includes(q) ||
-      (r.category || "").toLowerCase().includes(q) ||
-      (r.description || "").toLowerCase().includes(q) ||
-      String(r.rewardId || r.id || "").includes(q)
-    );
+    mergedRewards = mergedRewards.filter(r => doesRewardMatchSearch(r, q));
   }
 
   const redeemedCounts: Record<string, number> = {};

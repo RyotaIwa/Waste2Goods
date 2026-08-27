@@ -14,7 +14,12 @@ import {
 import { signToken, authenticateJWT, requireRole, hashPassword, comparePassword } from './security/auth-jwt.js';
 import { globalLimiter, authLimiter, writeLimiter } from './security/rate-limit.js';
 import { cacheRoute, CacheBust } from './security/cache.js';
-import { validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema, RewardCRUDSchema } from './security/validate.js';
+import {
+  validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema,
+  RewardCRUDSchema, RewardUpdateSchema, AdminCreateSchema, UserCreateSchema,
+  UserUpdateSchema, PointsAdjustSchema, RedemptionStatusSchema,
+  KioskSessionSchema, KioskPingSchema,
+} from './security/validate.js';
 import { gatewayLogger, apiNotFound, errorHandler } from './security/gateway.js';
 
 const app = express();
@@ -86,20 +91,50 @@ app.get('/', (req, res) => {
   res.json({ 
     message: 'Waste2Goods API Server is running (with MySQL/XAMPP)!',
     status: 'success',
+    d2p1DevSecOps: [
+      'JWT 24h + bcrypt 10-round auth',
+      'Rate limiting: global 1000/ip/min, auth 10/15min, writes 30/user/min',
+      'API Gateway: X-Request-ID, structured access logs, error handler, 404 handler',
+      'Response caching: TTL-based with CacheBust invalidation groups',
+      'Zod input validation on all public write routes',
+      'RBAC: requireRole(admin) on admin-only endpoints, ownership checks',
+      'Helmet CSP/HSTS, CORS LAN-whitelist, 100kb body limit',
+      'SonarCloud static analysis workflow',
+    ],
     availableEndpoints: [
       'POST /api/auth/login',
       'POST /api/auth/register',
       'POST /api/auth/kiosk-login',
       'GET /api/users',
       'GET /api/users/:id',
+      'GET /api/users/:id/notifications',
+      'POST /api/users (admin)',
+      'PUT /api/users/:id (admin)',
+      'PUT /api/users/:id/points (admin)',
       'GET /api/kiosks',
+      'POST /api/kiosks/:id/calibrate (admin)',
+      'POST /api/kiosk/session/connect',
+      'POST /api/kiosk/session/ping',
+      'POST /api/kiosk/session/disconnect',
+      'GET /api/kiosk/session/:userId',
       'GET /api/rewards',
+      'POST /api/rewards (admin)',
+      'PUT /api/rewards/:id (admin)',
+      'DELETE /api/rewards/:id (admin)',
+      'POST /api/rewards/redeem',
+      'GET /api/redemptions',
+      'PUT /api/redemptions/:id/status (admin)',
       'GET /api/transactions',
       'POST /api/transactions',
       'GET /api/analytics/weekly',
       'GET /api/analytics/monthly',
+      'GET /api/analytics/summary',
       'GET /api/leaderboard',
-      'GET /api/tasks'
+      'GET /api/tasks',
+      'GET /api/notifications',
+      'GET /api/admin/admins (admin)',
+      'POST /api/admin/admins (admin)',
+      'DELETE /api/admin/admins/:id (admin)',
     ]
   });
 });
@@ -958,7 +993,7 @@ app.get('/api/tasks', authenticate, (req, res) => {
 // ──────────────────────────────────────────────────────
 // ADMIN MANAGEMENT: List + Create (authenticated admins only)
 // ──────────────────────────────────────────────────────
-app.get('/api/admin/admins', authenticate, cacheRoute(60), async (req, res) => {
+app.get('/api/admin/admins', authenticate, requireRole('admin'), cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT adminId, adminIdentifier, firstName, lastName, roleId, barangayId, createdAt FROM administrators ORDER BY createdAt ASC');
     res.json(rows.map(a => ({
@@ -976,15 +1011,9 @@ app.get('/api/admin/admins', authenticate, cacheRoute(60), async (req, res) => {
   }
 });
 
-app.post('/api/admin/admins', authenticate, writeLimiter, async (req, res) => {
+app.post('/api/admin/admins', authenticate, requireRole('admin'), writeLimiter, validateBody(AdminCreateSchema), async (req, res) => {
   try {
     const { firstName, lastName, email, password, barangayId = 1, roleId = 1 } = req.body;
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ error: 'First name, last name, email, and password are required' });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Password must be at least 6 characters' });
-    }
     const [existing] = await db.query('SELECT * FROM administrators WHERE adminIdentifier = ?', [email.toLowerCase().trim()]);
     if (existing.length > 0) {
       return res.status(400).json({ error: 'An admin with this email already exists' });
@@ -1021,7 +1050,7 @@ app.post('/api/admin/admins', authenticate, writeLimiter, async (req, res) => {
 });
 
 // Delete Admin Account
-app.delete('/api/admin/admins/:id', authenticate, writeLimiter, async (req, res) => {
+app.delete('/api/admin/admins/:id', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
   try {
     const adminId = String(req.params.id).trim();
     if (adminId === 'A-001' || adminId.toLowerCase() === 'admin@waste2goods.ph') {
@@ -1042,7 +1071,7 @@ app.delete('/api/admin/admins/:id', authenticate, writeLimiter, async (req, res)
 // ─────────────────────────────────────────────────────────
 // REWARDS CRUD (Admin: Create / Update / Delete reward)
 // ─────────────────────────────────────────────────────────
-app.post('/api/rewards', authenticate, writeLimiter, validateBody(RewardCRUDSchema), async (req, res) => {
+app.post('/api/rewards', authenticate, requireRole('admin'), writeLimiter, validateBody(RewardCRUDSchema), async (req, res) => {
   try {
     const { rewardName, pointsCost, stockQuantity = 0, description = '', category = 'Eco Essentials', icon = '🎁', isSeasonal = 0, status = 'active' } = req.body;
     await db.query(
@@ -1068,7 +1097,7 @@ app.post('/api/rewards', authenticate, writeLimiter, validateBody(RewardCRUDSche
   }
 });
 
-app.put('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
+app.put('/api/rewards/:id', authenticate, requireRole('admin'), writeLimiter, validateBody(RewardUpdateSchema), async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status } = req.body;
@@ -1106,7 +1135,7 @@ app.put('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
   }
 });
 
-app.delete('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
+app.delete('/api/rewards/:id', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const [exists] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
@@ -1127,12 +1156,9 @@ app.delete('/api/rewards/:id', authenticate, writeLimiter, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // USERS — Admin Create / Update / Adjust Points
 // ─────────────────────────────────────────────────────────
-app.post('/api/users', authenticate, writeLimiter, async (req, res) => {
+app.post('/api/users', authenticate, requireRole('admin'), writeLimiter, validateBody(UserCreateSchema), async (req, res) => {
   try {
     const { firstName, lastName, email, password, barangayId = 1, pointsBalance = 0, phone = '', province = '', city = '', barangayName = 'Cabantian', streetAddress = '' } = req.body;
-    if (!firstName || !lastName || !email || !password) {
-      return res.status(400).json({ error: 'firstName, lastName, email, password are required' });
-    }
     const [existing] = await db.query('SELECT userId FROM users WHERE email = ?', [String(email).toLowerCase().trim()]);
     if (existing.length) return res.status(400).json({ error: 'A user with this email already exists' });
     // Admin Create User endpoint: use MAX-based ID generation (same fix as register)
@@ -1163,7 +1189,7 @@ app.post('/api/users', authenticate, writeLimiter, async (req, res) => {
   }
 });
 
-app.put('/api/users/:id', authenticate, writeLimiter, async (req, res) => {
+app.put('/api/users/:id', authenticate, requireRole('admin'), writeLimiter, validateBody(UserUpdateSchema), async (req, res) => {
   try {
     const userId = String(req.params.id).toUpperCase();
     const { firstName, lastName, email, barangayId, pointsBalance, phone, province, city, barangayName, streetAddress, status, passwordHash } = req.body;
@@ -1203,11 +1229,10 @@ app.put('/api/users/:id', authenticate, writeLimiter, async (req, res) => {
   }
 });
 
-app.put('/api/users/:id/points', authenticate, writeLimiter, async (req, res) => {
+app.put('/api/users/:id/points', authenticate, requireRole('admin'), writeLimiter, validateBody(PointsAdjustSchema), async (req, res) => {
   try {
     const userId = String(req.params.id).toUpperCase();
     const { delta, reason = 'Admin adjustment', adminId = 'A-001' } = req.body;
-    if (delta == null) return res.status(400).json({ error: 'delta is required (+/- integer points)' });
     const [exists] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
     if (!exists.length) return res.status(404).json({ error: 'User not found' });
     const current = Number(exists[0].pointsBalance || 0);
@@ -1265,7 +1290,13 @@ app.get('/api/notifications', authenticate, cacheRoute(15), async (req, res) => 
 //  tasks completed, milestone badges, tier changes)
 // ─────────────────────────────────────────────────────────
 app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
-  const userId = String(req.params.id).toUpperCase();
+  const targetId = String(req.params.id).toUpperCase();
+  const requesterRole = req.user?.role || 'resident';
+  const requesterId = req.user?.userId || null;
+  if (requesterRole !== 'admin' && requesterId !== targetId) {
+    return res.status(403).json({ error: 'Forbidden — you may only view your own notifications' });
+  }
+  const userId = targetId;
   const notifications = [];
   const limit = 25;
   try {
@@ -1308,7 +1339,7 @@ app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
 // ─────────────────────────────────────────────────────────
 // KIOSK OPS — Admin actions (Calibrate / View Logs / Restart)
 // ─────────────────────────────────────────────────────────
-app.post('/api/kiosks/:id/calibrate', authenticate, writeLimiter, async (req, res) => {
+app.post('/api/kiosks/:id/calibrate', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
   try {
     const kioskId = String(req.params.id).toUpperCase();
     const lastPing = 'just now';
@@ -1352,9 +1383,22 @@ function getActiveKioskSession(userId) {
   return s;
 }
 
-app.post('/api/kiosk/session/connect', (req, res) => {
-  const { userId, userName, kioskId } = req.body || {};
-  if (!userId) return res.status(400).json({ error: 'userId required' });
+function isPrivilegedRole(role) {
+  return role === 'admin' || role === 'kiosk';
+}
+
+function canAccessKioskSession(req, targetUserId) {
+  const role = req.user?.role || 'resident';
+  if (isPrivilegedRole(role)) return true;
+  const sessionUserId = req.user?.userId || null;
+  return sessionUserId && String(sessionUserId).toUpperCase() === String(targetUserId).toUpperCase();
+}
+
+app.post('/api/kiosk/session/connect', authenticate, writeLimiter, validateBody(KioskSessionSchema), (req, res) => {
+  const { userId, userName, kioskId } = req.body;
+  if (!canAccessKioskSession(req, userId)) {
+    return res.status(403).json({ error: 'Forbidden — you cannot connect a session for another user' });
+  }
   const session = {
     userId,
     userName: userName || 'User',
@@ -1366,24 +1410,48 @@ app.post('/api/kiosk/session/connect', (req, res) => {
   res.json({ ok: true, connected: true, ...session });
 });
 
-app.post('/api/kiosk/session/ping', (req, res) => {
-  const { userId } = req.body || {};
+app.post('/api/kiosk/session/ping', authenticate, validateBody(KioskPingSchema), (req, res) => {
+  const { userId } = req.body;
+  if (!canAccessKioskSession(req, userId)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
   const s = getActiveKioskSession(userId);
   if (!s) return res.json({ connected: false });
   s.lastPing = Date.now();
   res.json({ connected: true, ...s });
 });
 
-app.post('/api/kiosk/session/disconnect', (req, res) => {
-  const { userId } = req.body || {};
+app.post('/api/kiosk/session/disconnect', authenticate, validateBody(KioskPingSchema), (req, res) => {
+  const { userId } = req.body;
+  if (!canAccessKioskSession(req, userId)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
   if (userId) kioskSessions.delete(userId);
   res.json({ ok: true, connected: false });
 });
 
-app.get('/api/kiosk/session/:userId', (req, res) => {
-  const s = getActiveKioskSession(req.params.userId);
+app.get('/api/kiosk/session/:userId', authenticate, (req, res) => {
+  const targetUserId = req.params.userId;
+  if (!canAccessKioskSession(req, targetUserId)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const s = getActiveKioskSession(targetUserId);
   if (!s) return res.json({ connected: false });
   res.json({ connected: true, kioskId: s.kioskId, userName: s.userName, connectedAt: s.connectedAt, lastPing: s.lastPing });
+});
+
+app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), writeLimiter, validateBody(RedemptionStatusSchema), async (req, res) => {
+  try {
+    const redemptionId = String(req.params.id).trim();
+    const { status, adminId = 'A-001' } = req.body;
+    const [existing] = await db.query('SELECT * FROM reward_redemptions WHERE redemptionId = ?', [redemptionId]);
+    if (!existing.length) return res.status(404).json({ error: 'Redemption not found' });
+    await db.query('UPDATE reward_redemptions SET status = ?, approvedBy = ? WHERE redemptionId = ?', [status, adminId, redemptionId]);
+    CacheBust.redemptions();
+    res.json({ ok: true, redemptionId, status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ── D2 P1: API Gateway fallbacks ─────────────────────────────────────

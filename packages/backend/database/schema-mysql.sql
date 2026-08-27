@@ -113,7 +113,7 @@ INSERT INTO `barangays` (`barangayId`, `barangayName`, `contact_number`, `street
 CREATE TABLE `kiosks` (
   `kioskId` varchar(50) NOT NULL,
   `location` varchar(255) NOT NULL,
-  `status` varchar(50) DEFAULT 'offline',
+  `status` varchar(50) DEFAULT 'offline', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `battery` int(11) DEFAULT 0,
   `lastPing` varchar(50) DEFAULT NULL,
   `temp` varchar(20) DEFAULT NULL,
@@ -146,7 +146,7 @@ CREATE TABLE `recyclable_materials` (
   `pointsPerKg` decimal(10,2) NOT NULL DEFAULT 50.00,
   `kgPerUnit` decimal(10,2) DEFAULT NULL,
   `description` text DEFAULT NULL,
-  `status` varchar(50) DEFAULT 'active'
+  `status` varchar(50) DEFAULT 'active' -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
 ) ENGINE=InnoDB;
 
 --
@@ -177,10 +177,10 @@ CREATE TABLE `recycling_tasks` (
   `endDate` date DEFAULT NULL,
   `progress` int(11) DEFAULT 0,
   `target` int(11) DEFAULT 1,
-  `frequency` varchar(50) DEFAULT 'weekly',
+  `frequency` varchar(50) DEFAULT 'weekly', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `barangayId` int(11) DEFAULT NULL,
   `materialId` int(11) DEFAULT NULL,
-  `status` varchar(50) DEFAULT 'active'
+  `status` varchar(50) DEFAULT 'active' -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
 ) ENGINE=InnoDB;
 
 --
@@ -228,7 +228,7 @@ CREATE TABLE `rewards` (
   `category` varchar(100) DEFAULT NULL,
   `icon` varchar(255) DEFAULT NULL,
   `isSeasonal` tinyint(1) DEFAULT 0,
-  `status` varchar(50) DEFAULT 'active',
+  `status` varchar(50) DEFAULT 'active', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `createdAt` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB;
@@ -277,7 +277,7 @@ CREATE TABLE `reward_redemptions` (
   `pointsUsed` int(11) NOT NULL,
   `quantity` int(11) DEFAULT 1,
   `totalPoints` int(11) NOT NULL,
-  `status` varchar(50) DEFAULT 'pending',
+  `status` varchar(50) DEFAULT 'pending', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `approvedBy` varchar(50) DEFAULT NULL,
   `redemptionDate` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB;
@@ -321,9 +321,9 @@ CREATE TABLE `users` (
   `total_points` int(11) DEFAULT 0,
   `pointsBalance` int(11) DEFAULT 0,
   `totalSubmissions` int(11) DEFAULT 0,
-  `tier` varchar(30) DEFAULT 'Bronze',
+  `tier` varchar(30) DEFAULT 'Bronze', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `createdAt` timestamp NOT NULL DEFAULT current_timestamp(),
-  `status` varchar(50) DEFAULT 'active',
+  `status` varchar(50) DEFAULT 'active', -- NOSONAR: MySQL disallows session vars in column DEFAULT expressions
   `phone` varchar(50) DEFAULT NULL,
   `province` varchar(100) DEFAULT NULL,
   `city` varchar(100) DEFAULT NULL,

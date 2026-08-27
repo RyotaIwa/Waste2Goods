@@ -206,6 +206,95 @@ function getMockData(endpoint: string) {
   return null;
 }
 
+// ——— refreshCurrentUser helpers (extracted to reduce Cognitive Complexity ≤ 15) ———
+
+function buildDisplayFullName(obj: any): string {
+  if (!obj) return "";
+  if (obj.name) return String(obj.name);
+  const first = obj.firstName || "";
+  const last = obj.lastName || "";
+  return `${first} ${last}`.trim();
+}
+
+function findAdminMatch(admins: any, userId: string, storedAdminId?: string): any | null {
+  if (!Array.isArray(admins)) return null;
+  return admins.find(a =>
+    a.adminId === userId || a.id === userId || a.adminId === storedAdminId
+  ) || null;
+}
+
+function mergeFreshAdminData(authUser: AuthUser, match: any, userId: string): AuthUser {
+  const fullName = buildDisplayFullName(match) || authUser.name;
+  const a = authUser as any;
+  return {
+    ...authUser,
+    id: match.adminId || userId,
+    adminId: match.adminId || a.adminId,
+    name: fullName,
+    firstName: match.firstName || a.firstName,
+    lastName: match.lastName || a.lastName,
+    email: match.email || match.adminIdentifier || authUser.email,
+    roleId: match.roleId ?? a.roleId ?? 1,
+    barangayId: match.barangayId ?? a.barangayId,
+  } as AuthUser;
+}
+
+function pickSubmissionCount(r: any): number {
+  const direct = typeof r.submissions === "number" ? r.submissions : 0;
+  if (direct) return direct;
+  return typeof r.totalSubmissions === "number" ? r.totalSubmissions : 0;
+}
+
+function formatJoinedDate(createdAt: any, fallback: string | undefined): string | undefined {
+  if (!createdAt) return fallback;
+  return new Date(createdAt).toLocaleDateString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+  });
+}
+
+function mergeFreshResidentData(authUser: AuthUser, resident: any, userId: string): AuthUser {
+  const r = resident as any;
+  const fullName = buildDisplayFullName(r);
+  const submissions = pickSubmissionCount(r);
+  const pointsRaw = typeof r.points === "number" ? r.points : r.pointsBalance;
+  const a = authUser as any;
+  const points = pointsRaw ?? a.points;
+  const redeemed = typeof r.redeemed === "number" ? r.redeemed : 0;
+  const joined = formatJoinedDate(r.createdAt, a.joined);
+  const uid = r.userId || r.id || userId;
+  return {
+    ...authUser,
+    id: uid,
+    userId: uid,
+    name: fullName,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    email: r.email || authUser.email,
+    phone: r.phone,
+    barangay: r.barangayName || r.barangay || a.barangay,
+    barangayName: r.barangayName || r.barangay,
+    province: r.province,
+    city: r.city,
+    streetAddress: r.streetAddress,
+    points,
+    pointsBalance: r.pointsBalance,
+    submissions,
+    totalSubmissions: submissions,
+    redeemed,
+    createdAt: r.createdAt,
+    joined,
+    status: r.status,
+    tier: r.tier,
+  } as AuthUser;
+}
+
+function persistFreshUser(auth: AuthState, fresh: AuthUser | null): AuthUser {
+  if (!fresh) return auth.user;
+  const next: AuthState = { ...auth, user: fresh };
+  setStoredAuth(next);
+  return next.user;
+}
+
 // API Methods
 export const Waste2GoodsAPI = {
   // Auth
@@ -306,74 +395,20 @@ export const Waste2GoodsAPI = {
     const auth = getStoredAuth();
     if (!auth?.isAuthenticated || !auth?.user) return null;
     const userId = (auth.user as any).id || (auth.user as any).userId;
-    const isAdmin = auth.user.role === "admin" || (auth.user as any).adminId;
     if (!userId) return auth.user;
+    const isAdmin = auth.user.role === "admin" || (auth.user as any).adminId;
 
-    let fresh: any = null;
+    let fresh: AuthUser | null = null;
     if (isAdmin) {
       const admins = await fetchApi<any[]>("/admin/admins");
-      if (Array.isArray(admins)) {
-        const match = admins.find(a =>
-          a.adminId === userId || a.id === userId || a.adminId === (auth.user as any).adminId
-        );
-        if (match) {
-          const fullName = match.name || `${match.firstName || ""} ${match.lastName || ""}`.trim();
-          fresh = {
-            ...auth.user,
-            id: match.adminId || userId,
-            adminId: match.adminId || (auth.user as any).adminId,
-            name: fullName || auth.user.name,
-            firstName: match.firstName || (auth.user as any).firstName,
-            lastName: match.lastName || (auth.user as any).lastName,
-            email: match.email || match.adminIdentifier || auth.user.email,
-            roleId: match.roleId ?? (auth.user as any).roleId ?? 1,
-            barangayId: match.barangayId ?? (auth.user as any).barangayId,
-          };
-        }
-      }
+      const match = findAdminMatch(admins, userId, (auth.user as any).adminId);
+      if (match) fresh = mergeFreshAdminData(auth.user, match, userId);
     } else {
       const resident = await fetchApi<User>(`/users/${userId}`);
-      if (resident) {
-        const r = resident as any;
-        const fullName = r.name || `${r.firstName || ""} ${r.lastName || ""}`.trim();
-        const submissions =
-          (typeof r.submissions === "number" ? r.submissions : 0) ||
-          (typeof r.totalSubmissions === "number" ? r.totalSubmissions : 0);
-        fresh = {
-          ...(auth.user as any),
-          id: r.userId || r.id || userId,
-          userId: r.userId || r.id || userId,
-          name: fullName,
-          firstName: r.firstName,
-          lastName: r.lastName,
-          email: r.email || auth.user.email,
-          phone: r.phone,
-          barangay: r.barangayName || r.barangay || (auth.user as any).barangay,
-          barangayName: r.barangayName || r.barangay,
-          province: r.province,
-          city: r.city,
-          streetAddress: r.streetAddress,
-          points: (typeof r.points === "number" ? r.points : r.pointsBalance) ?? (auth.user as any).points,
-          pointsBalance: r.pointsBalance,
-          submissions,
-          totalSubmissions: submissions,
-          redeemed: typeof r.redeemed === "number" ? r.redeemed : 0,
-          createdAt: r.createdAt,
-          joined: r.createdAt
-            ? new Date(r.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-            : (auth.user as any).joined,
-          status: r.status,
-          tier: r.tier,
-        };
-      }
+      if (resident) fresh = mergeFreshResidentData(auth.user, resident, userId);
     }
 
-    if (fresh) {
-      const next: AuthState = { ...auth, user: fresh };
-      setStoredAuth(next);
-      return next.user;
-    }
-    return auth.user;
+    return persistFreshUser(auth, fresh);
   },
 
   // For residents: save edits to profile, call refreshCurrentUser to sync UI,
