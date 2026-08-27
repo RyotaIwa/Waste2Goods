@@ -10,7 +10,8 @@ import {
   Bell, LogOut,
   ChevronRight, Shield, Mail, Phone, Leaf,
   Settings, Lock, Info, Flame, Camera, Globe,
-  ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package
+  ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
+  Copy, Check
 } from "lucide-react";
 
 type MobileScreen =
@@ -1029,7 +1030,7 @@ function MobileScreenContent(p: MobileAppRouterProps) {
     case "mfa": return <ScreenMFA mfaCode={p.mfaCode} setMfaCode={p.setMfaCode} mfaRefs={p.mfaRefs} go={p.go} />;
     case "home": return <ScreenHome {...p} />;
     case "rewards": return <ScreenRewards {...p} />;
-    case "submit": return <ScreenSubmit go={p.go} screen={s} />;
+    case "submit": return <ScreenSubmit go={p.go} screen={s} currentUser={p.currentUser} />;
     case "submit-scan": return <ScreenSubmitScan />;
     case "submit-confirm": return <ScreenSubmitConfirm weight={p.weight} weighing={p.weighing} onConfirm={p.onSubmitConfirm} />;
     case "submit-done": return <ScreenSubmitDone go={p.go} currentUser={p.currentUser} />;
@@ -1383,39 +1384,118 @@ function ScreenMFA({ mfaCode, setMfaCode, mfaRefs, go }: ScreenMFAProps) {
   );
 }
 
-function ScreenSubmit({ go, screen }: Readonly<{ go: (s: MobileScreen) => void; screen: MobileScreen }>) {
+function ScreenSubmit({
+  go,
+  screen,
+  currentUser,
+}: Readonly<{
+  go: (s: MobileScreen) => void;
+  screen: MobileScreen;
+  currentUser: MobileUserShape;
+}>) {
+  const [manualCode, setManualCode] = useState("K-01");
+  const [connecting, setConnecting] = useState(false);
+
+  const handleConnectKiosk = (code: string) => {
+    const kId = code.trim().toUpperCase() || "K-01";
+    setConnecting(true);
+    publishQrBridge(kId, currentUser);
+    setTimeout(() => {
+      setConnecting(false);
+      go("submit-confirm");
+    }, 600);
+  };
+
+  const nearbyKiosks = [
+    { id: "K-01", name: "Cabantian Barangay Hall Kiosk", status: "Online", dist: "50m away" },
+    { id: "K-02", name: "Cabantian Elementary School", status: "Online", dist: "320m away" },
+    { id: "K-04", name: "Cabantian Covered Court", status: "Online", dist: "650m away" },
+  ];
+
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ top: "var(--sat)" }}>
         <button type="button" onClick={() => go("home")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
         <div>
           <h2 className="text-base font-black text-foreground">Submit Recycling</h2>
-          <p className="text-xs text-muted-foreground">Link to a kiosk, scan QR, or enter manually</p>
+          <p className="text-xs text-muted-foreground">Select a kiosk, enter code, or scan QR</p>
         </div>
       </div>
-      <div className="p-5 space-y-5 overflow-y-auto flex-1 pb-28">
-        <button type="button" onClick={() => go("submit-scan")} className="w-full text-left p-5 rounded-2xl border-2 border-dashed border-primary bg-primary/5 hover:bg-primary/10 transition-colors">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-primary text-white flex items-center justify-center"><ScanLine className="w-6 h-6" /></div>
-            <div>
-              <p className="font-black text-foreground">Scan Kiosk QR Code</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Fastest — point your camera at the kiosk screen</p>
-            </div>
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-28">
+        {/* Quick Kiosk Selection */}
+        <div className="bg-white p-4 rounded-2xl border border-border space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black text-foreground uppercase tracking-wide">Quick Connect: Nearby Kiosks</p>
+            <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Ready</span>
           </div>
-        </button>
-        <div className="p-5 rounded-2xl border border-border bg-white">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-muted text-muted-foreground flex items-center justify-center"><Keyboard className="w-6 h-6" /></div>
-            <div className="flex-1">
-              <p className="font-black text-foreground">Enter Kiosk Code</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Type the 4-digit K- code shown on kiosk display</p>
-            </div>
-            <Field label="" placeholder="K-001" icon={<Hash className="w-4 h-4" />} containerClassName="!mb-0" inputClassName="text-center font-mono font-black text-foreground" />
+          <div className="space-y-2">
+            {nearbyKiosks.map(k => (
+              <button
+                key={k.id}
+                type="button"
+                onClick={() => handleConnectKiosk(k.id)}
+                className="w-full p-3 rounded-xl border border-border hover:border-primary hover:bg-green-50/50 transition-all flex items-center justify-between text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center font-mono font-black text-xs text-green-800">
+                    {k.id}
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-foreground">{k.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{k.dist} • {k.status}</p>
+                  </div>
+                </div>
+                <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors">
+                  Connect
+                </span>
+              </button>
+            ))}
           </div>
         </div>
-        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex gap-2">
+
+        {/* Manual Kiosk Code Input */}
+        <div className="p-5 rounded-2xl border border-border bg-white space-y-3">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center"><Keyboard className="w-5 h-5" /></div>
+            <div>
+              <p className="font-black text-sm text-foreground">Enter Kiosk Code Manually</p>
+              <p className="text-xs text-muted-foreground">Type the kiosk ID (e.g., K-01, K-02) shown on screen</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={manualCode}
+                onChange={e => setManualCode(e.target.value.toUpperCase())}
+                placeholder="K-01"
+                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border font-mono font-black text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+            <button
+              type="button"
+              disabled={connecting || !manualCode.trim()}
+              onClick={() => handleConnectKiosk(manualCode)}
+              className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50"
+            >
+              {connecting ? "Linking..." : "Link & Weigh"}
+            </button>
+          </div>
+        </div>
+
+        {/* Camera QR Alternative */}
+        <button type="button" onClick={() => go("submit-scan")} className="w-full text-left p-4 rounded-2xl border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><ScanLine className="w-5 h-5" /></div>
+          <div className="flex-1">
+            <p className="font-black text-xs text-foreground">Or Scan Kiosk QR Code</p>
+            <p className="text-[10px] text-muted-foreground">Optional: Point camera at kiosk screen to connect</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </button>
+
+        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex gap-2.5">
           <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-700 font-semibold">Visit any partner barangay kiosk with your items. Drop into the weigh bin — points appear here automatically.</p>
+          <p className="text-xs text-blue-700 font-semibold leading-relaxed">Once connected, drop items into the weighing receptacle on the kiosk. Points will calculate and deposit directly to your wallet.</p>
         </div>
       </div>
       <MobileBottomNav screen={screen} go={go} />
@@ -2039,30 +2119,223 @@ function ScreenHistory(p: MobileAppRouterProps) {
 }
 
 function ScreenRedeemHistory(p: MobileAppRouterProps) {
-  const items = [
-    { n: "P50 GCash Load", pts: "500 pts", i: "📱", status: "ready", t: "Arrives in 24 hours", code: "GC-2G-XXXX" },
-    { n: "5kg Rice Voucher", pts: "1,200 pts", i: "🍚", status: "claimed", t: "Redeemed at K-01", code: "RICE-88-XXXX" },
-    { n: "School Supplies Kit", pts: "800 pts", i: "🎒", status: "ready", t: "Pick up at Barangay Hall", code: "EDU-44-XXXX" },
-  ];
+  const [items, setItems] = useState([
+    {
+      id: "RD-101",
+      n: "P50 GCash Load",
+      pts: "500 pts",
+      i: "📱",
+      status: "ready",
+      t: "Arrives in 24 hours",
+      code: "GC-2G-9841",
+      pickupLocation: "GCash Digital Distribution",
+      pickupHours: "Processed within 24 Hours",
+      instructions: "Credits will be transferred to your registered mobile number automatically upon verification.",
+      date: "Aug 26, 2026"
+    },
+    {
+      id: "RD-102",
+      n: "5kg Rice Voucher",
+      pts: "1,200 pts",
+      i: "🍚",
+      status: "claimed",
+      t: "Redeemed at K-01",
+      code: "RICE-88-1204",
+      pickupLocation: "Cabantian Barangay Hall (Resource Desk)",
+      pickupHours: "Mon-Fri: 8:00 AM – 5:00 PM",
+      instructions: "Present this voucher code to the desk officer to collect your 5kg Premium Rice pack.",
+      date: "Aug 20, 2026"
+    },
+    {
+      id: "RD-103",
+      n: "School Supplies Kit",
+      pts: "800 pts",
+      i: "🎒",
+      status: "ready",
+      t: "Pick up at Barangay Hall",
+      code: "EDU-44-5920",
+      pickupLocation: "Cabantian Barangay Hall (Ecology Desk)",
+      pickupHours: "Mon-Fri: 8:00 AM – 5:00 PM",
+      instructions: "Present your Claim Code or Resident ID (Maria Santos) at the barangay hall to claim your kit.",
+      date: "Aug 25, 2026"
+    },
+  ]);
+
+  const [selectedClaim, setSelectedClaim] = useState<any | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const copyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const markAsClaimed = (id: string) => {
+    setItems(prev => prev.map(item => item.id === id ? { ...item, status: "claimed" } : item));
+    if (selectedClaim && selectedClaim.id === id) {
+      setSelectedClaim((prev: any) => prev ? { ...prev, status: "claimed" } : null);
+    }
+  };
+
   return (
-    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
+    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto relative">
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
         <button type="button" onClick={() => p.go("profile")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
         <h2 className="text-xl font-black text-foreground flex-1">My Redemptions</h2>
       </div>
       <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-20">
-        {items.map(h => (
-          <div key={h.n} className="rounded-2xl border border-border bg-white p-4 flex items-start gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{h.i}</div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-foreground">{h.n}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{h.t} · {h.code}</p>
-              <p className="text-xs font-black text-primary mt-0.5">{h.pts} spent</p>
-            </div>
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${h.status === "ready" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{h.status === "ready" ? "Ready to pick up" : "Claimed"}</span>
-          </div>
-        ))}
+        <p className="text-xs text-muted-foreground font-semibold">Tap on any item to view claim details, pickup instructions, and voucher codes.</p>
+        {items.map(h => {
+          const isReady = h.status === "ready";
+          return (
+            <button
+              key={h.id}
+              type="button"
+              onClick={() => setSelectedClaim(h)}
+              className={`w-full text-left rounded-2xl border transition-all p-4 flex items-start gap-4 ${
+                isReady
+                  ? "bg-white border-green-300 hover:border-primary hover:shadow-md cursor-pointer ring-1 ring-green-100"
+                  : "bg-white/80 border-border hover:border-muted-foreground/40 cursor-pointer"
+              }`}
+            >
+              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{h.i}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-black text-foreground">{h.n}</p>
+                  {isReady && <span className="text-[10px] bg-green-50 text-green-700 font-black px-1.5 py-0.5 rounded border border-green-200">Tap to view</span>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">{h.t} · <span className="font-mono font-bold text-foreground">{h.code}</span></p>
+                <p className="text-xs font-black text-primary mt-0.5">{h.pts} spent</p>
+              </div>
+              <div className="flex flex-col items-end gap-1">
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700 font-black" : "bg-muted text-muted-foreground"}`}>
+                  {isReady ? "Ready to pick up" : "Claimed"}
+                </span>
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+              </div>
+            </button>
+          );
+        })}
       </div>
+
+      {/* Interactive Claim Details Modal */}
+      {selectedClaim && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto space-y-5">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-border">
+              <div className="flex items-center gap-3">
+                <span className="text-4xl">{selectedClaim.i}</span>
+                <div>
+                  <h3 className="font-black text-lg text-foreground leading-tight">{selectedClaim.n}</h3>
+                  <p className="text-xs text-muted-foreground">Redeemed on {selectedClaim.date} • {selectedClaim.pts}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedClaim(null)}
+                className="w-8 h-8 rounded-full bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Status Progress Stepper */}
+            <div className="p-4 rounded-2xl bg-muted/40 border border-border">
+              <p className="text-[11px] font-black text-muted-foreground uppercase tracking-wide mb-3">Redemption Progress</p>
+              <div className="flex items-center justify-between relative px-2">
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className="w-7 h-7 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold"><Check className="w-4 h-4" /></div>
+                  <span className="text-[10px] font-bold text-foreground">Redeemed</span>
+                </div>
+                <div className={`h-1 flex-1 ${selectedClaim.status === "claimed" || selectedClaim.status === "ready" ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "claimed" ? "bg-green-500 text-white" : "bg-primary text-white ring-4 ring-primary/20"}`}>
+                    {selectedClaim.status === "claimed" ? <Check className="w-4 h-4" /> : <Package className="w-4 h-4" />}
+                  </div>
+                  <span className="text-[10px] font-bold text-foreground">Ready to Pick</span>
+                </div>
+                <div className={`h-1 flex-1 ${selectedClaim.status === "claimed" ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
+                <div className="flex flex-col items-center gap-1 z-10">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "claimed" ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
+                    {selectedClaim.status === "claimed" ? <Check className="w-4 h-4" /> : <Circle className="w-3 h-3" />}
+                  </div>
+                  <span className="text-[10px] font-bold text-muted-foreground">Claimed</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Claim Code Box */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 flex items-center justify-between">
+              <div>
+                <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Claim / Voucher Code</p>
+                <p className="text-xl font-mono font-black text-green-900 tracking-wider mt-0.5">{selectedClaim.code}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => copyCode(selectedClaim.code)}
+                className="px-3.5 py-2 rounded-xl bg-white border border-green-300 text-green-800 text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-green-50 transition-all"
+              >
+                {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-green-700" />}
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+
+            {/* Pickup Location & Hours */}
+            <div className="p-4 rounded-2xl border border-border bg-white space-y-2">
+              <div className="flex items-start gap-2.5">
+                <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-black text-foreground">Pickup Location</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.pickupLocation}</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5 pt-2 border-t border-border">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-black text-foreground">Operating Schedule</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.pickupHours}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Step-by-Step Claim Instructions */}
+            <div className="p-4 rounded-2xl bg-muted/20 border border-border">
+              <p className="text-xs font-black text-foreground mb-2">How to Claim Your Reward</p>
+              <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
+                <li>Visit the pickup location during official hours.</li>
+                <li>Present your <strong>Claim Code</strong> or Resident ID to the desk officer.</li>
+                <li>Verify your item and receive your reward package.</li>
+              </ul>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
+              {selectedClaim.status === "ready" ? (
+                <button
+                  type="button"
+                  onClick={() => markAsClaimed(selectedClaim.id)}
+                  className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  Mark as Claimed (Simulate)
+                </button>
+              ) : (
+                <div className="flex-1 py-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center flex items-center justify-center gap-2">
+                  <Check className="w-4 h-4" /> Reward Successfully Claimed
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setSelectedClaim(null)}
+                className="px-5 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

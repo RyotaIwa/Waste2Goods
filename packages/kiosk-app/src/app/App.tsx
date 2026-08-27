@@ -455,11 +455,19 @@ export default function App() {
         </button>
         <button
           type="button"
+          onClick={() => go("manual-login")}
+          className="px-6 py-2.5 rounded-2xl bg-blue-600/80 hover:bg-blue-600 text-white font-bold text-sm transition-all flex items-center gap-2"
+        >
+          <LogIn className="w-4 h-4" />
+          Sign In with Email / ID
+        </button>
+        <button
+          type="button"
           onClick={handleSimulateScan}
-          className="px-8 py-3 rounded-2xl bg-green-500 text-white font-black text-base hover:bg-green-400 transition-all flex-shrink-0"
+          className="px-7 py-2.5 rounded-2xl bg-green-500 text-white font-black text-sm hover:bg-green-400 transition-all flex-shrink-0"
           style={{ boxShadow: "0 0 40px rgba(74,222,128,0.3)" }}
         >
-          Demo: Simulate Scan
+          Demo: Quick Connect
         </button>
       </div>
     </div>

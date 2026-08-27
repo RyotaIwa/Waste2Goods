@@ -826,18 +826,33 @@ function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) 
   );
 }
 
-function WeeklyCollectionCard({ liveWeekly }: Readonly<{ liveWeekly: any[] | null }>) {
-  const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
+function WeeklyCollectionCard({
+  liveWeekly,
+  filteredData,
+  selectedMaterial,
+  selectedKiosk,
+}: Readonly<{
+  liveWeekly: any[] | null;
+  filteredData: any[];
+  selectedMaterial: string;
+  selectedKiosk: string;
+}>) {
+  const chartData = filteredData && filteredData.length > 0 ? filteredData : (liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData);
   const isLive = Boolean(liveWeekly && liveWeekly.length > 0);
 
   return (
     <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
+        <div>
+          <h3 className="font-black text-sm text-foreground">Waste Collected (kg)</h3>
+          <p className="text-[11px] text-muted-foreground">
+            {selectedMaterial !== "all" ? selectedMaterial : "All Materials"} • {selectedKiosk !== "all" ? selectedKiosk : "All Kiosks"}
+          </p>
+        </div>
         {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={mergedWeekly}>
+        <AreaChart data={chartData}>
           <defs>
             <linearGradient id="wg" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#16a34a" stopOpacity={0.25} />
@@ -855,20 +870,26 @@ function WeeklyCollectionCard({ liveWeekly }: Readonly<{ liveWeekly: any[] | nul
   );
 }
 
-function WasteCompositionCard() {
+function WasteCompositionCard({
+  wasteData,
+}: Readonly<{
+  wasteData: { name: string; value: number; color: string }[];
+}>) {
+  const currentWaste = wasteData && wasteData.length > 0 ? wasteData : wasteTypes;
+
   return (
     <div className="col-span-2 bg-white rounded-2xl p-4 border border-border">
       <h3 className="font-black text-sm text-foreground mb-3">Waste Composition</h3>
       <ResponsiveContainer width="100%" height={130}>
         <PieChart>
-          <Pie data={wasteTypes} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={3}>
-            {wasteTypes.map((e) => <Cell key={e.name} fill={e.color} />)}
+          <Pie data={currentWaste} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={3}>
+            {currentWaste.map((e) => <Cell key={e.name} fill={e.color} />)}
           </Pie>
           <Tooltip contentStyle={{ borderRadius: 10, fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
       <div className="space-y-1 mt-1">
-        {wasteTypes.map(w => (
+        {currentWaste.map(w => (
           <div key={w.name} className="flex items-center gap-2 text-xs">
             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: w.color }} />
             <span className="text-muted-foreground flex-1 truncate">{w.name}</span>
@@ -953,12 +974,115 @@ function AdminDashboard({
   liveLeaderboard: any[] | null;
   liveTx: any[] | null;
 }>) {
+  const [wasteFilter, setWasteFilter] = useState<string>("all");
+  const [kioskFilter, setKioskFilter] = useState<string>("all");
+  const [periodFilter, setPeriodFilter] = useState<string>("7d");
+
+  // Dynamic filter multiplier based on material/kiosk selection
+  const materialMultipliers: Record<string, number> = {
+    all: 1.0,
+    "PET Plastic": 0.65,
+    "Cardboard": 0.20,
+    "Aluminum Cans": 0.10,
+    "Glass Bottles": 0.05,
+  };
+
+  const kioskMultipliers: Record<string, number> = {
+    all: 1.0,
+    "K-01": 0.45,
+    "K-02": 0.25,
+    "K-04": 0.30,
+  };
+
+  const rawWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
+  const matMult = materialMultipliers[wasteFilter] ?? 1.0;
+  const kskMult = kioskMultipliers[kioskFilter] ?? 1.0;
+  const combinedMult = matMult * kskMult;
+
+  const filteredWeekly = rawWeekly.map(item => ({
+    ...item,
+    kg: Math.max(1, Math.round(Number(item.kg || 0) * combinedMult)),
+  }));
+
+  const dynamicWasteComposition = wasteFilter === "all"
+    ? [
+        { name: "PET Plastic", value: 65, color: "#16a34a" },
+        { name: "Cardboard", value: 20, color: "#f59e0b" },
+        { name: "Aluminum Cans", value: 10, color: "#3b82f6" },
+        { name: "Glass Bottles", value: 5, color: "#8b5cf6" },
+      ]
+    : [
+        { name: wasteFilter, value: 100, color: wasteFilter === "PET Plastic" ? "#16a34a" : wasteFilter === "Cardboard" ? "#f59e0b" : wasteFilter === "Aluminum Cans" ? "#3b82f6" : "#8b5cf6" }
+      ];
+
+  const totalFilteredKg = filteredWeekly.reduce((acc, curr) => acc + curr.kg, 0);
+
   return (
     <div className="space-y-5">
       <DashboardSummaryCards liveSummary={liveSummary} />
+
+      {/* Waste Collected Filter Bar */}
+      <div className="bg-white rounded-2xl p-4 border border-border shadow-xs">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
+              <Recycle className="w-4 h-4 text-green-700" />
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Filter Waste Collected</h4>
+              <p className="text-[11px] text-muted-foreground">Showing: <span className="font-bold text-primary">{totalFilteredKg} kg</span> in current view</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Waste Material Filter */}
+            <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
+              {["all", "PET Plastic", "Cardboard", "Aluminum Cans", "Glass Bottles"].map(m => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setWasteFilter(m)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${wasteFilter === m ? "bg-primary text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}
+                >
+                  {m === "all" ? "All Materials" : m}
+                </button>
+              ))}
+            </div>
+
+            {/* Kiosk Location Dropdown Filter */}
+            <select
+              value={kioskFilter}
+              onChange={e => setKioskFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="all">All Kiosk Locations</option>
+              <option value="K-01">K-01 Cabantian Hall</option>
+              <option value="K-02">K-02 Cabantian Elementary</option>
+              <option value="K-04">K-04 Covered Court</option>
+            </select>
+
+            {/* Time Period Filter */}
+            <select
+              value={periodFilter}
+              onChange={e => setPeriodFilter(e.target.value)}
+              className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
+            >
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+              <option value="all">All Time</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-5 gap-4">
-        <WeeklyCollectionCard liveWeekly={liveWeekly} />
-        <WasteCompositionCard />
+        <WeeklyCollectionCard
+          liveWeekly={liveWeekly}
+          filteredData={filteredWeekly}
+          selectedMaterial={wasteFilter}
+          selectedKiosk={kioskFilter}
+        />
+        <WasteCompositionCard wasteData={dynamicWasteComposition} />
       </div>
       <div className="grid grid-cols-2 gap-4">
         <TopResidentsCard liveLeaderboard={liveLeaderboard} />
@@ -1467,18 +1591,18 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
     } finally { setSaving(false); }
   };
 
-  const doDelete = async () => {
+  const doRemove = async () => {
     if (!confirmDel) return;
     setBanner(null);
     try {
       const rid = Number(confirmDel.rewardId ?? confirmDel.id ?? 0);
       if (!rid) throw new Error("Missing reward ID");
       const res = await Waste2GoodsAPI.deleteReward(rid);
-      if (!res || !(res as any).ok) throw new Error("Delete failed");
-      setBanner({ type: "ok", text: `Reward "${confirmDel.rewardName || confirmDel.name || ''}" deleted / archived.` });
+      if (!res || !(res as any).ok) throw new Error("Remove failed");
+      setBanner({ type: "ok", text: `Reward "${confirmDel.rewardName || confirmDel.name || ''}" removed / archived.` });
       if (onRefresh) await onRefresh();
     } catch (e) {
-      setBanner({ type: "err", text: e instanceof Error ? e.message : "Delete failed." });
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Remove failed." });
     } finally { setConfirmDel(null); }
   };
 
@@ -1585,7 +1709,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
               <span className="text-3xl">{r.icon}</span>
               <div className="flex gap-1">
                 <button type="button" onClick={() => openEdit(r)} className="p-1 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
-                <button type="button" onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
+                <button type="button" onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Remove"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
             {r.seasonal && <span className={`absolute top-3 left-3 text-xs font-bold px-2 py-1 rounded-full ${BADGE_WARN_CLS}`}>Seasonal</span>}
@@ -1637,21 +1761,21 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
         </div>
       )}
 
-      {/* Delete Confirm */}
+      {/* Remove Confirm */}
       {confirmDel && (
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
           <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center"><AlertTriangle className="w-5 h-5 text-red-600" /></div>
               <div>
-                <h3 className="font-black text-foreground">Delete Reward?</h3>
+                <h3 className="font-black text-foreground">Remove Reward?</h3>
                 <p className="text-xs text-muted-foreground mt-0.5">{confirmDel.rewardName || confirmDel.name || ''}</p>
               </div>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">Existing redemptions are preserved (FK constraint). Will try hard delete, or mark inactive if needed.</p>
+            <p className="text-xs text-muted-foreground mb-4">Existing redemptions are preserved. This reward will be removed or archived from resident catalog.</p>
             <div className="flex gap-2">
               <button type="button" onClick={() => setConfirmDel(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-              <button type="button" onClick={doDelete} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Delete</button>
+              <button type="button" onClick={doRemove} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Remove</button>
             </div>
           </div>
         </div>
@@ -1994,14 +2118,14 @@ function AdminAdmins() {
     } finally { setCreating(false); }
   };
 
-  const handleDeleteAdmin = async (admin: any) => {
+  const handleRemoveAdmin = async (admin: any) => {
     const id = admin.adminId || admin.email;
     const name = admin.name || `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || id;
     if (admin.adminId === "A-001" || admin.email === "admin@waste2goods.ph") {
-      alert("Primary super administrator A-001 cannot be deleted.");
+      alert("Primary super administrator A-001 cannot be removed.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to delete administrator "${name}"? This action cannot be undone.`)) {
+    if (!window.confirm(`Are you sure you want to remove administrator "${name}"? This action cannot be undone.`)) {
       return;
     }
     try {
@@ -2009,10 +2133,10 @@ function AdminAdmins() {
       setDeletingId(id);
       const res = await (Waste2GoodsAPI as any).deleteAdmin(admin.adminId || admin.email);
       if (res && (res as any).error) throw new Error((res as any).error);
-      setSuccess(`Admin ${name} deleted successfully!`);
+      setSuccess(`Admin ${name} removed successfully!`);
       await load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to delete admin account.");
+      setErr(e instanceof Error ? e.message : "Failed to remove admin account.");
     } finally {
       setDeletingId(null);
     }
@@ -2179,12 +2303,12 @@ function AdminAdmins() {
                   <button
                     type="button"
                     disabled={deletingId === (a.adminId || a.email)}
-                    onClick={() => handleDeleteAdmin(a)}
+                    onClick={() => handleRemoveAdmin(a)}
                     className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors text-xs font-bold flex items-center gap-1 disabled:opacity-50"
-                    title="Delete Admin"
+                    title="Remove Admin"
                   >
                     <Trash2 className="w-4 h-4 text-red-500" />
-                    <span className="hidden sm:inline">Delete</span>
+                    <span className="hidden sm:inline">Remove</span>
                   </button>
                 ) : (
                   <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-500">Primary Admin</span>
