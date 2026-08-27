@@ -510,28 +510,79 @@ function currentUserIdForLeaderboard() {
 
 function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: MobileUserShape) {
   const myId = currentUserIdForLeaderboard() || String(currentUser.id || currentUser.userId || "").toUpperCase();
-  if (liveLeaderboard && liveLeaderboard.length > 0) {
-    return liveLeaderboard.slice(0, 10).map((u: any, i: number) => {
-      const rank = Number(u.rank) || i + 1;
-      const firstName = u.firstName || "";
-      const lastName = u.lastName || "";
-      const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
-      const pts = Number(u.points ?? u.pointsBalance ?? 0);
-      const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
-      const uid = String(u.userId ?? u.id ?? "").toUpperCase();
-      const isMe = !!myId && !!uid && uid === myId;
-      const avatarChars = initialsFromName(name, "RU");
-      return {
-        rank, name,
-        barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
-        points: pts, submissions: subs,
-        avatar: avatarChars || "RU",
-        streak: Number(u.streak) || subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
-        isMe, userId: uid,
-      };
+  const myEmail = String(currentUser.email || "").toLowerCase();
+  const myName = currentUser.name || "You";
+
+  let list = (liveLeaderboard && liveLeaderboard.length > 0)
+    ? liveLeaderboard.map((u: any, i: number) => {
+        const firstName = u.firstName || "";
+        const lastName = u.lastName || "";
+        const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
+        const pts = Number(u.points ?? u.pointsBalance ?? 0);
+        const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
+        const uid = String(u.userId ?? u.id ?? "").toUpperCase();
+        const uEmail = String(u.email || "").toLowerCase();
+        const isMe = (!!myId && !!uid && uid === myId) || (!!myEmail && !!uEmail && uEmail === myEmail) || (name.toLowerCase() === myName.toLowerCase());
+        const avatarChars = initialsFromName(name, "RU");
+        return {
+          id: uid || `u-${i}`,
+          userId: uid,
+          name,
+          displayName: name,
+          _initials: avatarChars || "RU",
+          avatar: avatarChars || "RU",
+          barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
+          points: pts,
+          submissions: subs,
+          totalKg: Number(u.totalKg || (subs * 2.3)),
+          streak: Number(u.streak) || (subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1),
+          isMe,
+          _isYou: isMe,
+        };
+      })
+    : DEMO_LEADERBOARD_FALLBACK.map((u, i) => {
+        const isMe = (u.name.toLowerCase() === myName.toLowerCase()) || (u.id === currentUser.id);
+        return {
+          id: u.id || `demo-${i}`,
+          userId: u.id || `demo-${i}`,
+          name: u.name,
+          displayName: u.name,
+          _initials: u.avatar || "RU",
+          avatar: u.avatar || "RU",
+          barangay: u.barangay || "Cabantian",
+          points: u.points,
+          submissions: 10,
+          totalKg: 23.0,
+          streak: u.streak || 5,
+          isMe,
+          _isYou: isMe,
+        };
+      });
+
+  // Ensure logged-in user is present in leaderboard
+  const hasMe = list.some(u => u.isMe);
+  if (!hasMe && currentUser.name && currentUser.name !== "Guest User") {
+    const userInitials = currentUser.initials || initialsFromName(currentUser.name, "RU");
+    list.push({
+      id: currentUser.id || "my-user",
+      userId: currentUser.id || "my-user",
+      name: currentUser.name,
+      displayName: currentUser.name,
+      _initials: userInitials,
+      avatar: userInitials,
+      barangay: currentUser.barangay || "Cabantian",
+      points: Number(currentUser.points || 0),
+      submissions: Number(currentUser.submissions || 0),
+      totalKg: Number(currentUser.totalKg || 0),
+      streak: 7,
+      isMe: true,
+      _isYou: true,
     });
   }
-  return DEMO_LEADERBOARD_FALLBACK.map((u, i) => ({ ...u, rank: i + 1, isMe: false }));
+
+  // Sort by points descending and calculate ranks
+  list.sort((a, b) => b.points - a.points);
+  return list.map((u, idx) => ({ ...u, rank: idx + 1 }));
 }
 
 function MobileBottomNav({ screen, go }: Readonly<{ screen: MobileScreen; go: (s: MobileScreen) => void }>) {
@@ -1688,24 +1739,66 @@ function ScreenHome(p: MobileAppRouterProps) {
         )}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <p className="text-sm font-black text-foreground">Community Leaderboard</p>
-            <button type="button" onClick={() => p.go("leaderboard")} className="text-xs font-bold text-primary">View all →</button>
+            <div>
+              <p className="text-sm font-black text-foreground">Community Leaderboard</p>
+              <p className="text-[10px] text-muted-foreground font-semibold">Top residents &amp; your barangay rank</p>
+            </div>
+            <button type="button" onClick={() => p.go("leaderboard")} className="text-xs font-bold text-primary hover:underline">
+              View all ({p.mergedLeaderboard.length}) →
+            </button>
           </div>
-          <div className="rounded-2xl border border-border bg-white overflow-hidden">
-            {p.mergedLeaderboard.slice(0, 3).map((u: any, i: number) => (
-              <div key={u.id} className={`flex items-center gap-3 px-4 py-3 ${i !== 2 ? "border-b border-border" : ""}`}>
-                <RankIcon rank={i + 1} />
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-emerald-600 flex items-center justify-center text-white font-black text-sm border-2 border-white shadow-sm">{u._initials}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-black text-foreground truncate">{u._isYou ? `${u.displayName} (You)` : u.displayName}</p>
-                  <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Barangay · Level " + (u.level || 1)}</p>
+
+          <div className="rounded-2xl border border-border bg-white overflow-hidden shadow-xs divide-y divide-border">
+            {/* Top 3 Residents */}
+            {p.mergedLeaderboard.slice(0, 3).map((u: any, i: number) => {
+              const isYou = u._isYou || u.isMe;
+              return (
+                <div key={u.id || u.userId || `top-${i}`} className={`flex items-center gap-3 px-4 py-3 ${isYou ? "bg-green-50/70" : ""}`}>
+                  <RankIcon rank={i + 1} />
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white shadow-sm ${isYou ? "bg-primary text-white ring-2 ring-primary/30" : "bg-gradient-to-br from-primary to-emerald-600 text-white"}`}>
+                    {u._initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
+                      {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {Math.floor(Number(u.points || 0) / 500) + 1}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
+                    <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
-                  <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
+
+            {/* If current user is not in top 3, show their row pinned below */}
+            {(() => {
+              const myEntry = p.mergedLeaderboard.find((u: any) => u._isYou || u.isMe);
+              if (myEntry && myEntry.rank > 3) {
+                return (
+                  <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-emerald-50 to-green-50 border-t-2 border-primary/20">
+                    <span className="w-6 text-center text-xs font-black text-primary font-mono">#{myEntry.rank}</span>
+                    <div className="w-10 h-10 rounded-full bg-primary text-white flex items-center justify-center font-black text-sm border-2 border-white shadow-sm ring-2 ring-primary/30">
+                      {myEntry._initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-sm font-black text-foreground truncate">{myEntry.displayName}</p>
+                        <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>
+                      </div>
+                      <p className="text-[10px] text-primary font-semibold">{myEntry.barangay || "Cabantian"} · Your Current Standing</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-black text-primary">{Number(myEntry.points || 0).toLocaleString()} pts</p>
+                      <p className="text-[10px] text-muted-foreground">{(myEntry.totalKg || 0).toFixed(1)} kg</p>
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
           </div>
         </div>
       </div>
@@ -1861,55 +1954,124 @@ function ScreenTasks(p: MobileAppRouterProps) {
 }
 
 function ScreenLeaderboard(p: MobileAppRouterProps) {
+  const [viewMode, setViewMode] = useState<"top" | "all">("top");
+  const myUserInLeaderboard = p.mergedLeaderboard.find((u: any) => u._isYou || u.isMe) || {
+    rank: p.profileRank || "#-",
+    displayName: p.currentUser.name || "You",
+    points: p.currentUser.points || 0,
+    barangay: p.currentUser.barangay || "Cabantian",
+    _initials: p.currentUser.initials || "U",
+  };
+
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-      <div className="sticky top-0 z-10 bg-background border-b border-border z-10" style={{ paddingTop: "calc(0.5rem + var(--sat))" }}>
-        <div className="px-5 py-3">
-          <h2 className="text-xl font-black text-foreground">🏆 Community Leaderboard</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">Top recyclers in <strong>{p.currentUser.barangay || "Barangay"}</strong></p>
+      <div className="sticky top-0 z-10 bg-background border-b border-border" style={{ paddingTop: "calc(0.5rem + var(--sat))" }}>
+        <div className="px-5 py-3 flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-black text-foreground">🏆 Community Leaderboard</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">Top residents &amp; community recyclers in <strong>{p.currentUser.barangay || "Cabantian"}</strong></p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setViewMode(v => v === "top" ? "all" : "top")}
+            className="px-3 py-1.5 rounded-xl border border-primary/30 bg-primary/10 text-primary text-xs font-bold hover:bg-primary hover:text-white transition-colors"
+          >
+            {viewMode === "top" ? "Show Full Community" : "Show Top Podium"}
+          </button>
         </div>
         <div className="flex border-b border-border px-5">
           {(["weekly","monthly"] as const).map(t => (
-            <button type="button" key={t} onClick={() => p.setLeaderTab(t)} className={`px-4 py-2.5 text-xs font-black capitalize transition-colors relative ${p.leaderTab === t ? "text-primary" : "text-muted-foreground"}`}>
-              {t}
+            <button type="button" key={t} onClick={() => p.setLeaderTab(t)} className={`px-4 py-2 text-xs font-black capitalize transition-colors relative ${p.leaderTab === t ? "text-primary" : "text-muted-foreground"}`}>
+              {t} Ranking
               {p.leaderTab === t && <div className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary rounded-full" />}
             </button>
           ))}
         </div>
       </div>
-      <div className="p-5 space-y-5 overflow-y-auto flex-1 pb-32">
-        <div className="grid grid-cols-3 gap-2 items-end">
-          {[
-            { r: 2, u: p.mergedLeaderboard[1], c: "from-slate-100 to-slate-200", h: "h-28", pl: "🥈", pr: true },
-            { r: 1, u: p.mergedLeaderboard[0], c: "from-amber-100 to-amber-200", h: "h-36", pl: "🏆", pr: false },
-            { r: 3, u: p.mergedLeaderboard[2], c: "from-orange-100 to-orange-200", h: "h-24", pl: "🥉", pr: true },
-          ].map(pod => (
-            <div key={pod.r} className={`rounded-2xl bg-gradient-to-b ${pod.c} p-3 flex flex-col items-center justify-end ${pod.h} relative`}>
-              {pod.u && (
-                <>
-                  <div className="absolute -top-4 text-3xl">{pod.pl}</div>
-                  <div className="w-12 h-12 rounded-full bg-white flex items-center justify-center font-black text-sm border-2 border-white shadow-sm mb-2">{pod.u._initials}</div>
-                  <p className="text-xs font-black text-foreground text-center truncate w-full">{pod.u._isYou ? "You" : pod.u.displayName}</p>
-                  <p className="text-[10px] font-bold text-primary mt-0.5">{Number(pod.u.points || 0).toLocaleString()}</p>
-                </>
-              )}
+
+      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32">
+        {/* Pinned Your Standing Card */}
+        <div className="bg-gradient-to-r from-green-700 to-emerald-800 text-white rounded-2xl p-4 flex items-center justify-between shadow-md">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full bg-white text-green-800 font-black flex items-center justify-center text-sm shadow-xs border-2 border-green-200">
+              {myUserInLeaderboard._initials}
             </div>
-          ))}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-green-200">Your Current Standing</p>
+              <p className="text-sm font-black text-white">{myUserInLeaderboard.displayName} (You)</p>
+              <p className="text-[11px] text-green-200">{myUserInLeaderboard.barangay || "Cabantian"} · Level {Math.floor(Number(myUserInLeaderboard.points || 0) / 500) + 1}</p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-black">Rank #{myUserInLeaderboard.rank}</span>
+            <p className="text-base font-black text-green-100 mt-1">{Number(myUserInLeaderboard.points || 0).toLocaleString()} pts</p>
+          </div>
         </div>
-        <div className="rounded-2xl border border-border bg-white overflow-hidden">
-          {p.mergedLeaderboard.slice(3).map((u: any, i: number) => (
-            <div key={u.id} className={`flex items-center gap-3 px-4 py-3 ${i !== p.mergedLeaderboard.length - 4 ? "border-b border-border" : ""}`}>
-              <RankIcon rank={i + 4} />
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-emerald-600 flex items-center justify-center text-white font-black text-sm border-2 border-white shadow-sm">{u._initials}</div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-black text-foreground truncate">{u._isYou ? `${u.displayName} (You)` : u.displayName}</p>
-                <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Barangay"}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
-              </div>
+
+        {/* Top 3 Podium (when in Top mode) */}
+        {viewMode === "top" && p.mergedLeaderboard.length >= 3 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Top Residents</p>
+              <span className="text-[10px] font-bold text-primary">🥇 Podium Highlights</span>
             </div>
-          ))}
+            <div className="grid grid-cols-3 gap-2 items-end">
+              {[
+                { r: 2, u: p.mergedLeaderboard[1], c: "from-slate-100 to-slate-200 border-slate-300", h: "h-32", pl: "🥈" },
+                { r: 1, u: p.mergedLeaderboard[0], c: "from-amber-100 to-amber-200 border-amber-300", h: "h-40", pl: "🏆" },
+                { r: 3, u: p.mergedLeaderboard[2], c: "from-orange-100 to-orange-200 border-orange-300", h: "h-28", pl: "🥉" },
+              ].map(pod => (
+                <div key={pod.r} className={`rounded-2xl border bg-gradient-to-b ${pod.c} p-3 flex flex-col items-center justify-end ${pod.h} relative shadow-xs`}>
+                  {pod.u && (
+                    <>
+                      <div className="absolute -top-4 text-3xl">{pod.pl}</div>
+                      <div className="w-11 h-11 rounded-full bg-white flex items-center justify-center font-black text-sm border-2 border-white shadow-sm mb-1.5">{pod.u._initials}</div>
+                      <p className="text-xs font-black text-foreground text-center truncate w-full">{pod.u._isYou ? `${pod.u.displayName} (You)` : pod.u.displayName}</p>
+                      <p className="text-[10px] font-black text-primary mt-0.5">{Number(pod.u.points || 0).toLocaleString()} pts</p>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full Community List */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Community Rankings</p>
+            <span className="text-[10px] text-muted-foreground font-semibold">{p.mergedLeaderboard.length} Residents</span>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-white overflow-hidden shadow-xs">
+            {p.mergedLeaderboard.map((u: any, i: number) => {
+              const isYou = u._isYou || u.isMe;
+              return (
+                <div
+                  key={u.id || u.userId || `leader-${i}`}
+                  className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                    i !== p.mergedLeaderboard.length - 1 ? "border-b border-border" : ""
+                  } ${isYou ? "bg-green-50/80 ring-1 ring-inset ring-green-200" : ""}`}
+                >
+                  <RankIcon rank={u.rank || i + 1} />
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white shadow-sm ${isYou ? "bg-primary text-white ring-2 ring-primary/30" : "bg-gradient-to-br from-emerald-500 to-teal-600 text-white"}`}>
+                    {u._initials}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
+                      {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {Math.floor(Number(u.points || 0) / 500) + 1}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
+                    <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
       <MobileBottomNav screen={p.screen} go={p.go} />
