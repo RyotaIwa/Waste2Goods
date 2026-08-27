@@ -87,7 +87,7 @@ function KioskWeighingRing({ weight, selectedType }: Readonly<{ weight: number; 
         </div>
       </div>
       <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-white/8 border border-white/10">
-        <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+        <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
         <span className="text-green-300 text-xs font-semibold">
           Measuring {selectedType}...
         </span>

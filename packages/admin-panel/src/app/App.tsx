@@ -618,7 +618,7 @@ export default function App() {
               <LogOut className="w-4 h-4 text-green-400 cursor-pointer hover:text-white transition-colors" onClick={handleLogout} />
             </div>
             <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-white/5 border border-white/10">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-green-300 font-semibold">System Online</span>
             </div>
           </div>
@@ -813,7 +813,7 @@ function WeeklyCollectionCard({ liveWeekly }: Readonly<{ liveWeekly: any[] | nul
     <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-black text-sm text-foreground">Weekly Collection (kg)</h3>
-        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+        {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <ResponsiveContainer width="100%" height={180}>
         <AreaChart data={mergedWeekly}>
@@ -849,7 +849,7 @@ function WasteCompositionCard() {
       <div className="space-y-1 mt-1">
         {wasteTypes.map(w => (
           <div key={w.name} className="flex items-center gap-2 text-xs">
-            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: w.color }} />
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: w.color }} />
             <span className="text-muted-foreground flex-1 truncate">{w.name}</span>
             <span className="font-bold">{w.value}%</span>
           </div>
@@ -867,7 +867,7 @@ function TopResidentsCard({ liveLeaderboard }: Readonly<{ liveLeaderboard: any[]
     <div className="bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-black text-sm text-foreground">Top Residents</h3>
-        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+        {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <div className="space-y-2">
         {mergedLeaderboard.map(u => (
@@ -904,7 +904,7 @@ function RecentActivityCard({ liveTx }: Readonly<{ liveTx: any[] | null }>) {
     <div className="bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-black text-sm text-foreground">Recent Activity</h3>
-        {isLive ? <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
+        {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <div className="space-y-2">
         {mergedTx.map(t => (
@@ -1100,7 +1100,7 @@ function AdminUserProfileDetail({
             <p className="text-xs text-muted-foreground">{selectedUser.barangay}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Joined {selectedUser.joined}</p>
           </div>
-          <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
+          <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
             <StatusPip status={selectedUser.status} />{selectedUser.status}
           </span>
           <div className="w-full space-y-1.5 text-xs">
@@ -1239,7 +1239,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
+          <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
           <p className="text-xs text-muted-foreground">Cabantian Barangay — real MySQL users table (users sign up via Mobile App){searchQuery ? ` · filtered for "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
@@ -1339,7 +1339,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
                 <td className="px-4 py-3 font-semibold">{u.submissions}</td>
                 <td className="px-4 py-3 text-muted-foreground">{u.joined}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold ${u.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold ${u.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
                     <StatusPip status={u.status} />{u.status}
                   </span>
                 </td>
@@ -1483,7 +1483,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
     <div className="space-y-4 relative">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
+          <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
           <p className="text-xs text-muted-foreground">{mergedRewards.filter((r: any) => !!r.seasonal).length} seasonal · {mergedRewards.filter((r: any) => Number(r.stock) < 10).length} low stock · {totalLiveRedemptions} redemptions{searchQuery ? ` · filter "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
@@ -1567,7 +1567,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                 <button type="button" onClick={() => setConfirmDel(r)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Delete"><Trash2 className="w-4 h-4" /></button>
               </div>
             </div>
-            {r.seasonal && <span className={`absolute top-3 left-3 text-xs font-bold px-1.5 py-0.5 rounded-full ${BADGE_WARN_CLS}`}>Seasonal</span>}
+            {r.seasonal && <span className={`absolute top-3 left-3 text-xs font-bold px-2 py-1 rounded-full ${BADGE_WARN_CLS}`}>Seasonal</span>}
             <div className="mt-1">
               <p className="text-xs font-black text-foreground leading-tight">{r.name}</p>
               <p className="text-xs text-muted-foreground mt-0.5">{r.category}{r.description && <span> · {r.description.slice(0, 30)}{r.description.length > 30 ? "…" : ""}</span>}</p>
@@ -1698,7 +1698,7 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: Readonly<{
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-black text-sm text-foreground">Monthly Collection &amp; Redemption</h3>
             <div className="flex items-center gap-2">
-              <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${isLiveMonthly ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{isLiveMonthly ? "● LIVE" : "DEMO"}</span>
+              <span className={`text-[10px] px-2.5 py-1 rounded-full font-bold ${isLiveMonthly ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{isLiveMonthly ? "● LIVE" : "DEMO"}</span>
               <button type="button" onClick={() => exportAnalyticsDataCSV(mergedMonthly, mergedWeekly, liveRedemptions)} className="text-xs text-primary font-semibold flex items-center gap-1 hover:underline"><Download className="w-3 h-3" />CSV</button>
             </div>
           </div>
@@ -1839,9 +1839,9 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
       </div>
       <div className="flex items-center justify-between mb-1 px-1">
         <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2 py-0.5 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
+          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
           {calibrateMsg && (
-            <p className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${calibrateMsg.ok ? BADGE_SUCCESS_CLS : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
+            <p className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${calibrateMsg.ok ? BADGE_SUCCESS_CLS : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
           )}
         </div>
         {onRefresh && <button type="button" onClick={() => onRefresh()} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline"><RefreshCw className="w-3 h-3" />Refresh all</button>}
@@ -1856,7 +1856,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-black text-sm text-foreground">{k.id}</p>
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize flex items-center gap-1 ${getKioskBadgeClass(k.status)}`}>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize flex items-center gap-1 ${getKioskBadgeClass(k.status)}`}>
                   <StatusPip status={k.status} />{k.status}
                 </span>
               </div>
@@ -1906,7 +1906,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
               )}
               {!logsLoading && logs.map((l: any, i: number) => (
                 <div key={l.id || l.logId || `log-${i}`} className="px-4 py-2 flex items-start gap-2">
-                  <span className={`text-[10px] font-black uppercase px-1.5 py-0.5 rounded flex-shrink-0 ${getLogLevelBadgeClass(l.level)}`}>{l.level || 'info'}</span>
+                  <span className={`text-[10px] font-black uppercase px-2 py-1 rounded flex-shrink-0 ${getLogLevelBadgeClass(l.level)}`}>{l.level || 'info'}</span>
                   <span className="text-[10px] text-muted-foreground w-32 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleString()}</span>
                   <span className="text-xs font-semibold text-foreground flex-1 min-w-0 break-words">{l.message || l.msg || String(l)}</span>
                 </div>
@@ -2141,10 +2141,10 @@ function AdminAdmins() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="font-black text-sm text-foreground truncate">{fullName || "Unnamed Admin"}</p>
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-primary/10 text-primary uppercase tracking-wide">
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary uppercase tracking-wide">
                       {a.roleId === 1 ? "Full" : "Admin"}
                     </span>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${BADGE_SUCCESS_CLS}`}>Active</span>
+                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS}`}>Active</span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
                     <span><Mail className="w-3 h-3 inline -mt-0.5 mr-1" />{a.email}</span>

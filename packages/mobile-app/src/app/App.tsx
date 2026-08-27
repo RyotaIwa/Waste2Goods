@@ -88,19 +88,19 @@ const INPUT_BASE_CLS = "w-full px-4 py-3 rounded-xl border border-border bg-whit
 const BTN_PRIMARY_CLS = "rounded-2xl bg-primary text-white font-black hover:bg-green-700 transition-colors";
 const BTN_SECONDARY_CLS = "rounded-2xl border border-border font-bold text-foreground hover:bg-secondary transition-colors";
 
-function RankIcon({ rank }: { rank: number }) {
-  if (rank === 1) return <Trophy className="w-4 h-4 text-yellow-400" />;
-  if (rank === 2) return <Medal className="w-4 h-4 text-slate-400" />;
-  if (rank === 3) return <Medal className="w-4 h-4 text-amber-500" />;
+function RankIcon({ rank }: Readonly<{ rank: number }>) {
+  if (rank === 1) return <Trophy className="w-5 h-5 text-yellow-400" />;
+  if (rank === 2) return <Medal className="w-5 h-5 text-slate-400" />;
+  if (rank === 3) return <Medal className="w-5 h-5 text-amber-500" />;
   return <span className="text-xs text-muted-foreground font-mono font-bold">#{rank}</span>;
 }
 
-function StatusPip({ status }: { status: string }) {
+function StatusPip({ status }: Readonly<{ status: string }>) {
   const c: Record<string, string> = { online: "bg-emerald-400", offline: "bg-red-400", maintenance: "bg-amber-400", active: "bg-emerald-400", inactive: "bg-gray-300" };
-  return <span className={`inline-block w-2 h-2 rounded-full ${c[status] ?? "bg-gray-300"}`} />;
+  return <span className={`inline-block w-3 h-3 rounded-full ${c[status] ?? "bg-gray-300"}`} />;
 }
 
-function SignalIcon({ className }: { className?: string }) {
+function SignalIcon({ className }: Readonly<{ className?: string }>) {
   return (
     <svg className={className} viewBox="0 0 16 16" fill="currentColor">
       <rect x="0" y="9" width="3" height="7" rx="1" /><rect x="4.5" y="6" width="3" height="10" rx="1" />
@@ -615,9 +615,9 @@ function MobileBottomNav({ screen, go }: { screen: MobileScreen; go: (s: MobileS
     { icon: <User className="w-5 h-5" />, label: "Profile", s: "profile" as MobileScreen },
   ];
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-2 pt-2 flex justify-around z-20" style={{ paddingBottom: "calc(0.5rem + var(--sab))" }}>
+    <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-3 pt-3 flex justify-around z-20" style={{ paddingBottom: "calc(0.75rem + var(--sab))" }}>
       {items.map(i => (
-        <button key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
+        <button key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
           {i.icon}
           <span className="text-xs font-bold">{i.label}</span>
         </button>
@@ -1779,13 +1779,13 @@ export default function App() {
                   <h2 className="text-xl font-black text-foreground">{(currentUser.name && currentUser.name.trim() !== "") ? `${currentUser.name.split(" ")[0]} 👋` : "👋"}</h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => go("notifications")} className="relative p-2 rounded-xl border border-border bg-white hover:bg-secondary transition-colors">
-                    <Bell className="w-4 h-4 text-muted-foreground" />
+                  <button onClick={() => go("notifications")} className="relative p-2.5 rounded-xl border border-border bg-white hover:bg-secondary transition-colors">
+                    <Bell className="w-5 h-5 text-muted-foreground" />
                     {notifUnread > 0 && (
-                      <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-black flex items-center justify-center border-2 border-white">{notifUnread <= 9 ? notifUnread : "9+"}</span>
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black flex items-center justify-center border-2 border-white">{notifUnread <= 9 ? notifUnread : "9+"}</span>
                     )}
                   </button>
-                  <button onClick={() => go("profile")} className="w-9 h-9 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{currentUser.initials}</button>
+                  <button onClick={() => go("profile")} className="w-10 h-10 rounded-full bg-primary text-white font-black text-sm flex items-center justify-center">{currentUser.initials}</button>
                 </div>
               </div>
 
@@ -1806,7 +1806,7 @@ export default function App() {
                         <span className="text-base font-bold opacity-75 mb-1">pts</span>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-bold">#3 Weekly</span>
+                        <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full font-bold">#3 Weekly</span>
                         <span className="text-xs opacity-70">·</span>
                         <span className="text-xs opacity-70">+320 pts today</span>
                         <span className="text-xs opacity-70">·</span>
@@ -1892,7 +1892,7 @@ export default function App() {
                     {[["♻️ PET Plastic","50 pts/kg","bg-green-100 text-green-700"]].map(([t,p,cls]) => (
                       <div key={String(t)} className="flex justify-between items-center text-xs">
                         <span className="text-foreground font-semibold">{t}</span>
-                        <span className={`font-black px-2 py-0.5 rounded-full ${cls}`}>{p}</span>
+                        <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{p}</span>
                       </div>
                     ))}
                   </div>
@@ -1966,7 +1966,7 @@ export default function App() {
                 <div className="rounded-2xl bg-white border border-border p-5">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-black flex items-center gap-2"><Scale className="w-4 h-4 text-primary" /> Live Weight</h3>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${weighing ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{weighing ? "Measuring..." : "Place items"}</span>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${weighing ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{weighing ? "Measuring..." : "Place items"}</span>
                   </div>
                   <div className="flex items-end justify-between">
                     <div>
@@ -2040,7 +2040,7 @@ export default function App() {
                 <p className="text-xs text-muted-foreground mt-0.5">Balance: <span className="font-black text-primary">{currentUser.points.toLocaleString()} pts</span></p>
                 <div className="flex gap-2 mt-3 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
                   {rewardCategories.map(c => (
-                    <button key={c} onClick={() => setRewardFilter(c)} className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-bold transition-colors ${rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
+                    <button key={c} onClick={() => setRewardFilter(c)} className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
                   ))}
                 </div>
               </div>
@@ -2048,7 +2048,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-3">
                   {filteredRewards.map(r => (
                     <div key={r.id} className="rounded-2xl bg-white border border-border p-3 flex flex-col gap-2 relative">
-                      {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
+                      {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
                       <div className="text-3xl mt-1">{r.icon}</div>
                       <div>
                         <p className="text-xs font-black text-foreground leading-snug pr-12">{r.name}</p>
@@ -2098,7 +2098,7 @@ export default function App() {
                       <p className="text-sm font-black text-foreground">{h.item}</p>
                       <p className="text-xs text-muted-foreground">{h.date} · {h.pts} pts</p>
                     </div>
-                    <span className={`text-xs font-bold px-2 py-1 rounded-full ${h.status === "ready" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{h.status === "ready" ? "Ready to pick up" : "Claimed"}</span>
+                    <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${h.status === "ready" ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{h.status === "ready" ? "Ready to pick up" : "Claimed"}</span>
                   </div>
                 ))}
               </div>
@@ -2125,7 +2125,7 @@ export default function App() {
                     <div className="flex items-start justify-between gap-2 mb-3">
                       <div>
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <span className={`text-xs font-bold px-2 py-0.5 rounded-full capitalize ${t.type==="daily"?"bg-blue-100 text-blue-700":t.type==="weekly"?"bg-purple-100 text-purple-700":"bg-amber-100 text-amber-700"}`}>{t.type}</span>
+                          <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${t.type==="daily"?"bg-blue-100 text-blue-700":t.type==="weekly"?"bg-purple-100 text-purple-700":"bg-amber-100 text-amber-700"}`}>{t.type}</span>
                           {t.done && <span className="text-xs font-bold text-green-700 flex items-center gap-0.5"><Check className="w-3 h-3" />Complete</span>}
                         </div>
                         <p className="text-sm font-bold text-foreground">{t.title}</p>
