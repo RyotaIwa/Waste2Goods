@@ -666,7 +666,12 @@ const PH_LOCATIONS: Record<string, Record<string, string[]>> = {
   },
 };
 
-const alphabeticalCompare = (a: string, b: string) => a.localeCompare(b, "en");
+const ALPHABETICAL_COLLATOR = new Intl.Collator("en", {
+  sensitivity: "base",
+  caseFirst: "false",
+  numeric: true,
+});
+const alphabeticalCompare = (a: string, b: string) => ALPHABETICAL_COLLATOR.compare(a, b);
 const PROVINCES = Object.keys(PH_LOCATIONS).sort(alphabeticalCompare);
 
 const UNPROTECTED_SCREENS: MobileScreen[] = [

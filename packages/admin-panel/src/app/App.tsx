@@ -687,25 +687,30 @@ function formatDashboardLeaderboard(liveLeaderboard: any[] | null) {
   }));
 }
 
+function mapSingleTxRow(t: any, i: number) {
+  const kg = Number(t.weightKg || t.kg || 0);
+  const material = t.materialName || t.materialId || "PET Plastic";
+  const kiosk = t.kioskId || "K-01";
+  const pts = Number(t.pointsEarned || t.points || 0);
+  const desc = pts > 0
+    ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}`
+    : t.desc || "Reward redemption";
+  const hasEarnMarker = pts > 0 && t.pointsEarned !== undefined;
+  const isEarn = hasEarnMarker || t.type === "earn";
+  return {
+    id: t.transactionId || t.id || `tx-${i}`,
+    date: t.timestamp || t.date || "Today",
+    type: isEarn ? "earn" : t.type || "earn",
+    desc,
+    pts: pts || 0,
+  };
+}
+
 function formatDashboardTransactions(liveTx: any[] | null) {
   if (!liveTx || liveTx.length === 0) {
     return transactions.slice(0, 5);
   }
-  return liveTx.slice(0, 5).map((t, i) => {
-    const kg = Number(t.weightKg || t.kg || 0);
-    const material = t.materialName || t.materialId || "PET Plastic";
-    const kiosk = t.kioskId || "K-01";
-    const pts = Number(t.pointsEarned || t.points || 0);
-    const desc = pts > 0 ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}` : t.desc || `Reward redemption`;
-    const isEarn = pts > 0 && t.pointsEarned !== undefined ? true : (t.type === "earn");
-    return {
-      id: t.transactionId || t.id || `tx-${i}`,
-      date: t.timestamp || t.date || "Today",
-      type: isEarn ? "earn" : (t.type || "earn"),
-      desc,
-      pts: pts || 0,
-    };
-  });
+  return liveTx.slice(0, 5).map(mapSingleTxRow);
 }
 
 function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) {
@@ -877,44 +882,79 @@ function formatUserJoinedDate(rawJoined: any): string {
   return rawJoined;
 }
 
+function normalizeUserStatus(rawStatus: any, points: number, submissions: number): string {
+  const fallback = points > 0 || submissions > 0 ? "active" : "inactive";
+  const statusBase = String(rawStatus || fallback).toLowerCase();
+  return statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
+}
+
+function mapSingleLiveUser(u: any, i: number) {
+  const firstNamePart = u.firstName || "Resident";
+  const lastNamePart = u.lastName || String(i + 1);
+  const name = u.name || `${firstNamePart} ${lastNamePart}`.trim();
+  const points = Number(u.pointsBalance || u.points || 0);
+  const submissions = Number(u.totalSubmissions || u.submissions || 0);
+  const redeemed = Number(u.redeemed || 0);
+  const rawJoined = u.createdAt || u.joined || u.registrationDate;
+  const joined = formatUserJoinedDate(rawJoined);
+  const status = normalizeUserStatus(u.status, points, submissions);
+  const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
+  const firstSpace = name.indexOf(" ");
+  return {
+    id,
+    userId: id,
+    email: u.email || "",
+    phone: u.contactInfo || u.phone || "",
+    firstName: u.firstName || (firstSpace >= 0 ? name.slice(0, firstSpace) : name) || "",
+    lastName: u.lastName || (firstSpace >= 0 ? name.slice(firstSpace + 1) : "") || "",
+    name,
+    barangay: u.barangayName || u.barangay || "Cabantian",
+    points,
+    submissions,
+    redeemed,
+    joined,
+    status,
+  };
+}
+
+function doesUserMatchSearch(u: any, q: string): boolean {
+  return (u.name || "").toLowerCase().includes(q) ||
+    (u.email || "").toLowerCase().includes(q) ||
+    (u.id || "").toLowerCase().includes(q) ||
+    (u.userId || "").toLowerCase().includes(q) ||
+    (u.barangay || "").toLowerCase().includes(q) ||
+    (u.phone || "").toLowerCase().includes(q);
+}
+
 function getMergedAndFilteredUsers(liveUsers: any[] | null, searchQuery: string) {
-  let mergedUsers: any[] = liveUsers && liveUsers.length > 0
-    ? liveUsers.map((u: any, i: number) => {
-        const name = u.name || `${u.firstName || "Resident"} ${u.lastName || String(i + 1)}`.trim();
-        const barangay = u.barangayName || u.barangay || "Cabantian";
-        const points = Number(u.pointsBalance || u.points || 0);
-        const submissions = Number(u.totalSubmissions || u.submissions || 0);
-        const redeemed = Number(u.redeemed || 0);
-        const rawJoined = u.createdAt || u.joined || u.registrationDate;
-        const joined = formatUserJoinedDate(rawJoined);
-        const statusBase = String(u.status || (points > 0 || submissions > 0 ? "active" : "inactive")).toLowerCase();
-        const status = statusBase === "active" || statusBase === "inactive" ? statusBase : "active";
-        const id = u.userId || u.id || `U-${String(1000 + i).padStart(4, "0")}`;
-        const email = u.email || "";
-        const phone = u.contactInfo || u.phone || "";
-        return {
-          id, userId: id, email, phone,
-          firstName: u.firstName || name.split(" ")[0] || "",
-          lastName: u.lastName || name.split(" ").slice(1).join(" ") || "",
-          name, barangay, points, submissions, redeemed,
-          joined, status,
-        };
-      })
+  const mergedUsers: any[] = liveUsers && liveUsers.length > 0
+    ? liveUsers.map(mapSingleLiveUser)
     : adminUsers.slice();
 
-  if (searchQuery?.trim()) {
-    const q = searchQuery.trim().toLowerCase();
-    return mergedUsers.filter((u: any) =>
-      (u.name || "").toLowerCase().includes(q) ||
-      (u.email || "").toLowerCase().includes(q) ||
-      (u.id || "").toLowerCase().includes(q) ||
-      (u.userId || "").toLowerCase().includes(q) ||
-      (u.barangay || "").toLowerCase().includes(q) ||
-      (u.phone || "").toLowerCase().includes(q)
-    );
-  }
+  if (!searchQuery?.trim()) return mergedUsers;
+  const q = searchQuery.trim().toLowerCase();
+  return mergedUsers.filter(u => doesUserMatchSearch(u, q));
+}
 
-  return mergedUsers;
+function validatePasswordPair(pw: string, pw2: string): string | null {
+  if (pw.length < 6) return "Password must be at least 6 characters.";
+  if (pw !== pw2) return "Passwords do not match.";
+  return null;
+}
+
+function buildUserEditPayload(
+  first: string, last: string, email: string,
+  phone: string, pointsStr: string, pw: string,
+) {
+  const payload: any = {
+    firstName: first.trim(),
+    lastName: last.trim(),
+    email: email.trim(),
+    phone: phone.trim(),
+    pointsBalance: Number(pointsStr) || 0,
+  };
+  if (pw) payload.passwordHash = `hashed_${pw}`;
+  return payload;
 }
 
 function AdminUserProfileDetail({
@@ -1030,16 +1070,16 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
   const submitEdit = async () => {
     setBanner(null);
     if (!editUser) return;
-    if (!uFirst.trim() || !uLast.trim() || !uEmail.trim()) { setBanner({ type: "err", text: "First name, last name, and email are required." }); return; }
+    if (!uFirst.trim() || !uLast.trim() || !uEmail.trim()) {
+      setBanner({ type: "err", text: "First name, last name, and email are required." });
+      return;
+    }
     const uid = String(editUser.userId || editUser.id);
+    const pwError = uPass ? validatePasswordPair(uPass, uPass2) : null;
+    if (pwError) { setBanner({ type: "err", text: pwError }); return; }
+    const payload = buildUserEditPayload(uFirst, uLast, uEmail, uPhone, uPoints, uPass);
     try {
       setSaving(true);
-      const payload: any = { firstName: uFirst.trim(), lastName: uLast.trim(), email: uEmail.trim(), phone: uPhone.trim(), pointsBalance: Number(uPoints) || 0 };
-      if (uPass) {
-        if (uPass.length < 6) { setBanner({ type: "err", text: "Password must be at least 6 characters." }); return; }
-        if (uPass !== uPass2) { setBanner({ type: "err", text: "Passwords do not match." }); return; }
-        payload.passwordHash = `hashed_${uPass}`;
-      }
       const res = await Waste2GoodsAPI.updateUser(uid, payload);
       if (!res || !(res as any).ok) throw new Error("User update failed");
       setBanner({ type: "ok", text: `User ${uFirst} ${uLast} updated successfully!` });

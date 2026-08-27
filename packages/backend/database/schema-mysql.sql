@@ -72,6 +72,30 @@ SET @PROVINCE_DAVAO_SUR := 'Davao del Sur';
 SET @CITY_DAVAO := 'Davao City';
 SET @BRGY_CABANTIAN := 'Cabantian';
 SET @STATUS_ACTIVE := 'active';
+SET @STATUS_INACTIVE := 'inactive';
+SET @STATUS_PENDING := 'pending';
+SET @KIOSK_ONLINE := 'online';
+SET @KIOSK_OFFLINE := 'offline';
+SET @KIOSK_MAINT := 'maintenance';
+SET @MATERIAL_PET := 'PET Plastic';
+SET @FREQ_DAILY := 'daily';
+SET @FREQ_WEEKLY := 'weekly';
+SET @FREQ_MONTHLY := 'monthly';
+SET @CAT_ECO_ESSENTIALS := 'Eco Essentials';
+SET @CAT_SCHOOL_SUPPLIES := 'School Supplies';
+SET @CAT_GROCERIES := 'Groceries';
+SET @CAT_HOUSEHOLD := 'Household';
+SET @CAT_KIDS := 'Kids';
+SET @CAT_COMMUNITY := 'Community';
+SET @CAT_SEASONAL := 'Seasonal';
+SET @PASSWORD_LEGACY_PREFIX := 'hashed_';
+SET @DEFAULT_CREATED_AT := '2026-07-26 19:13:21';
+SET @CABANTIAN_HALL := 'Cabantian Hall';
+SET @CABANTIAN_ELEM_SCHOOL := 'Cabantian Elementary School';
+SET @CABANTIAN_MARKET := 'Cabantian Market';
+SET @CABANTIAN_COVERED_COURT := 'Cabantian Covered Court';
+SET @CABANTIAN_GYM := 'Cabantian Gym';
+SET @TEMP_DASH := '—';
 
 --
 -- Dumping data for table `barangays`
@@ -103,11 +127,11 @@ CREATE TABLE `kiosks` (
 --
 
 INSERT INTO `kiosks` (`kioskId`, `location`, `status`, `battery`, `lastPing`, `temp`, `barcode`, `lastMaintenance`, `barangayId`) VALUES
-('K-01', 'Cabantian Hall', 'online', 94, '2 min ago', '28°C', NULL, NULL, NULL),
-('K-02', 'Cabantian Elementary School', 'online', 78, '1 min ago', '27°C', NULL, NULL, NULL),
-('K-03', 'Cabantian Market', 'offline', 0, '3 hrs ago', '—', NULL, NULL, NULL),
-('K-04', 'Cabantian Covered Court', 'online', 61, 'just now', '30°C', NULL, NULL, NULL),
-('K-05', 'Cabantian Gym', 'maintenance', 45, '45 min ago', '—', NULL, NULL, NULL);
+('K-01', @CABANTIAN_HALL, @KIOSK_ONLINE, 94, '2 min ago', '28°C', NULL, NULL, NULL),
+('K-02', @CABANTIAN_ELEM_SCHOOL, @KIOSK_ONLINE, 78, '1 min ago', '27°C', NULL, NULL, NULL),
+('K-03', @CABANTIAN_MARKET, @KIOSK_OFFLINE, 0, '3 hrs ago', @TEMP_DASH, NULL, NULL, NULL),
+('K-04', @CABANTIAN_COVERED_COURT, @KIOSK_ONLINE, 61, 'just now', '30°C', NULL, NULL, NULL),
+('K-05', @CABANTIAN_GYM, @KIOSK_MAINT, 45, '45 min ago', @TEMP_DASH, NULL, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -130,11 +154,11 @@ CREATE TABLE `recyclable_materials` (
 --
 
 INSERT INTO `recyclable_materials` (`materialId`, `materialName`, `materialType`, `pointsPerKg`, `kgPerUnit`, `description`, `status`) VALUES
-(1, 'PET Plastic Bottle (500ml)', 'PET Plastic', 50.00, 0.01, 'Clean 500ml clear PET bottle with cap removed', 'active'),
-(2, 'PET Plastic Bottle (1L)', 'PET Plastic', 50.00, 0.02, 'Clean 1L clear PET beverage bottle', 'active'),
-(3, 'PET Plastic Bottle (1.5L)', 'PET Plastic', 50.00, 0.03, 'Clean 1.5L clear PET soda/water bottle', 'active'),
-(4, 'PET Plastic Container', 'PET Plastic', 50.00, 0.02, 'Clean food-grade PET container (tupperware-style)', 'active'),
-(5, 'Bulk PET Plastic (by weight)', 'PET Plastic', 50.00, 1.00, 'Any clean PET plastic weighed directly on kiosk scale', 'active');
+(1, 'PET Plastic Bottle (500ml)', @MATERIAL_PET, 50.00, 0.01, 'Clean 500ml clear PET bottle with cap removed', @STATUS_ACTIVE),
+(2, 'PET Plastic Bottle (1L)', @MATERIAL_PET, 50.00, 0.02, 'Clean 1L clear PET beverage bottle', @STATUS_ACTIVE),
+(3, 'PET Plastic Bottle (1.5L)', @MATERIAL_PET, 50.00, 0.03, 'Clean 1.5L clear PET soda/water bottle', @STATUS_ACTIVE),
+(4, 'PET Plastic Container', @MATERIAL_PET, 50.00, 0.02, 'Clean food-grade PET container (tupperware-style)', @STATUS_ACTIVE),
+(5, 'Bulk PET Plastic (by weight)', @MATERIAL_PET, 50.00, 1.00, 'Any clean PET plastic weighed directly on kiosk scale', @STATUS_ACTIVE);
 
 -- --------------------------------------------------------
 
@@ -164,11 +188,11 @@ CREATE TABLE `recycling_tasks` (
 --
 
 INSERT INTO `recycling_tasks` (`taskId`, `taskName`, `description`, `bonusPoints`, `targetKg`, `startDate`, `endDate`, `progress`, `target`, `frequency`, `barangayId`, `materialId`, `status`) VALUES
-(1, 'Daily Recycling', 'Submit any amount of PET plastic today', 25, 0.50, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-(2, 'Streak Bonus - 3 Days', '3 days in a row! Keep it up', 100, 1.00, NULL, NULL, 0, 3, 'daily', NULL, NULL, 'active'),
-(3, '5 kg Weekly Challenge', 'Collect and submit 5 kg total this week', 300, 5.00, NULL, NULL, 0, 1, 'weekly', NULL, NULL, 'active'),
-(4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 150, 0.20, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-(5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 20kg target', 1000, 20.00, NULL, NULL, 0, 1, 'monthly', NULL, NULL, 'active');
+(1, 'Daily Recycling', 'Submit any amount of PET plastic today', 25, 0.50, NULL, NULL, 0, 1, @FREQ_DAILY, NULL, NULL, @STATUS_ACTIVE),
+(2, 'Streak Bonus - 3 Days', '3 days in a row! Keep it up', 100, 1.00, NULL, NULL, 0, 3, @FREQ_DAILY, NULL, NULL, @STATUS_ACTIVE),
+(3, '5 kg Weekly Challenge', 'Collect and submit 5 kg total this week', 300, 5.00, NULL, NULL, 0, 1, @FREQ_WEEKLY, NULL, NULL, @STATUS_ACTIVE),
+(4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 150, 0.20, NULL, NULL, 0, 1, @FREQ_DAILY, NULL, NULL, @STATUS_ACTIVE),
+(5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 20kg target', 1000, 20.00, NULL, NULL, 0, 1, @FREQ_MONTHLY, NULL, NULL, @STATUS_ACTIVE);
 
 -- --------------------------------------------------------
 
@@ -214,31 +238,31 @@ CREATE TABLE `rewards` (
 --
 
 INSERT INTO `rewards` (`rewardId`, `rewardName`, `points_required`, `pointsCost`, `stock_quantity`, `stockQuantity`, `image_url`, `description`, `category`, `icon`, `isSeasonal`, `status`, `created_at`, `createdAt`) VALUES
-(1, 'Eco Water Bottle', 350, 350, 120, 120, NULL, 'Reusable stainless steel 500ml water bottle with Waste2Goods logo', 'Eco Essentials', '🥤', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(2, 'Bamboo Utensil Set', 280, 280, 95, 95, NULL, 'Fork, spoon, chopsticks, straw with canvas pouch', 'Eco Essentials', '🥢', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(3, 'Raffia Tote Bag', 220, 220, 150, 150, NULL, 'Hand-woven natural raffia shopping bag', 'Eco Essentials', '👜', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(4, 'Cotton Tote Bag', 150, 150, 200, 200, NULL, 'Heavy-duty canvas grocery bag with print', 'Eco Essentials', '🛍️', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(5, 'Notebook (Set of 3)', 180, 180, 180, 180, NULL, 'Recycled paper notebooks with Barangay Cabantian design', 'School Supplies', '📓', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(6, 'Pencil Case Set', 160, 160, 110, 110, NULL, 'Eco-friendly pencil case with pencils and eraser', 'School Supplies', '✏️', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(7, 'Pencil (Pack of 12)', 90, 90, 250, 250, NULL, '100% recycled newspaper pencils with seeds', 'School Supplies', '🖊️', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(8, 'Rice (2kg)', 550, 550, 75, 75, NULL, 'Premium well-milled rice 2kg pack', 'Groceries', '🍚', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(9, 'Pancit Canton (Pack of 6)', 240, 240, 130, 130, NULL, 'Assorted flavor instant pancit canton', 'Groceries', '🍜', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(10, 'Canned Sardines (Pack of 3)', 195, 195, 100, 100, NULL, 'Premium sardines in tomato sauce', 'Groceries', '🐟', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(11, 'Coffee (10 sachets)', 180, 180, 90, 90, NULL, '3-in-1 coffee mix', 'Groceries', '☕', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(12, 'Sugar (1kg)', 150, 150, 60, 60, NULL, 'Washed refined sugar 1kg pack', 'Groceries', '🧂', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(13, 'Laundry Detergent (1kg)', 260, 260, 80, 80, NULL, 'Eco-friendly biodegradable detergent powder', 'Household', '🧺', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(14, 'Dishwashing Liquid (500ml)', 210, 210, 70, 70, NULL, 'Plant-based concentrated dish soap', 'Household', '🧽', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(15, 'Toilet Soap (Set of 3)', 150, 150, 100, 100, NULL, 'Natural herbal bath soap trio', 'Household', '🧼', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(16, 'Toothbrush + Toothpaste', 130, 130, 140, 140, NULL, 'Bamboo toothbrush with fluoride toothpaste', 'Household', '🪥', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(17, 'Plastic Toy Set', 220, 220, 50, 50, NULL, 'Upcycled plastic educational block set (30 pcs)', 'Kids', '🧸', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(18, 'Sticker Sheet Pack', 65, 65, 300, 300, NULL, 'Recycling-themed eco sticker sheets (5 pcs)', 'Kids', '🌟', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(19, 'Coloring Book', 120, 120, 180, 180, NULL, '100% recycled paper eco-hero coloring book', 'Kids', '🎨', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(20, 'Vegetable Seedlings Kit', 290, 290, 60, 60, NULL, 'Pechay, kangkong, tomato seeds + starter pots', 'Community', '🌱', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(21, 'Community T-Shirt', 330, 330, 75, 75, NULL, 'Limited Waste2Goods barangay shirt (sizes M/L/XL)', 'Community', '👕', 0, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(22, 'Sinulog Gift Pack', 420, 420, 30, 30, NULL, 'Seasonal: Sinulog-themed mug + keychain + tote', 'Seasonal', '🎊', 1, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(23, 'Kadayawan Durian Treats', 520, 520, 25, 25, NULL, 'Seasonal: Local durian candies, yema, pasalubong box', 'Seasonal', '🎁', 1, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(24, 'Pasko Ham & Cheese Pack', 750, 750, 40, 40, NULL, 'Seasonal Christmas: Premium ham + cheese loaf', 'Seasonal', '🎄', 1, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21'),
-(25, 'Bagsakan Fresh Veggies Box', 450, 450, 50, 50, NULL, 'Farm fresh seasonal veggies from Bagsakan (weekly only)', 'Seasonal', '🥬', 1, 'active', '2026-07-26 19:13:21', '2026-07-26 19:13:21');
+(1, 'Eco Water Bottle', 350, 350, 120, 120, NULL, 'Reusable stainless steel 500ml water bottle with Waste2Goods logo', @CAT_ECO_ESSENTIALS, '🥤', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(2, 'Bamboo Utensil Set', 280, 280, 95, 95, NULL, 'Fork, spoon, chopsticks, straw with canvas pouch', @CAT_ECO_ESSENTIALS, '🥢', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(3, 'Raffia Tote Bag', 220, 220, 150, 150, NULL, 'Hand-woven natural raffia shopping bag', @CAT_ECO_ESSENTIALS, '👜', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(4, 'Cotton Tote Bag', 150, 150, 200, 200, NULL, 'Heavy-duty canvas grocery bag with print', @CAT_ECO_ESSENTIALS, '🛍️', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(5, 'Notebook (Set of 3)', 180, 180, 180, 180, NULL, 'Recycled paper notebooks with Barangay Cabantian design', @CAT_SCHOOL_SUPPLIES, '📓', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(6, 'Pencil Case Set', 160, 160, 110, 110, NULL, 'Eco-friendly pencil case with pencils and eraser', @CAT_SCHOOL_SUPPLIES, '✏️', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(7, 'Pencil (Pack of 12)', 90, 90, 250, 250, NULL, '100% recycled newspaper pencils with seeds', @CAT_SCHOOL_SUPPLIES, '🖊️', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(8, 'Rice (2kg)', 550, 550, 75, 75, NULL, 'Premium well-milled rice 2kg pack', @CAT_GROCERIES, '🍚', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(9, 'Pancit Canton (Pack of 6)', 240, 240, 130, 130, NULL, 'Assorted flavor instant pancit canton', @CAT_GROCERIES, '🍜', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(10, 'Canned Sardines (Pack of 3)', 195, 195, 100, 100, NULL, 'Premium sardines in tomato sauce', @CAT_GROCERIES, '🐟', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(11, 'Coffee (10 sachets)', 180, 180, 90, 90, NULL, '3-in-1 coffee mix', @CAT_GROCERIES, '☕', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(12, 'Sugar (1kg)', 150, 150, 60, 60, NULL, 'Washed refined sugar 1kg pack', @CAT_GROCERIES, '🧂', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(13, 'Laundry Detergent (1kg)', 260, 260, 80, 80, NULL, 'Eco-friendly biodegradable detergent powder', @CAT_HOUSEHOLD, '🧺', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(14, 'Dishwashing Liquid (500ml)', 210, 210, 70, 70, NULL, 'Plant-based concentrated dish soap', @CAT_HOUSEHOLD, '🧽', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(15, 'Toilet Soap (Set of 3)', 150, 150, 100, 100, NULL, 'Natural herbal bath soap trio', @CAT_HOUSEHOLD, '🧼', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(16, 'Toothbrush + Toothpaste', 130, 130, 140, 140, NULL, 'Bamboo toothbrush with fluoride toothpaste', @CAT_HOUSEHOLD, '🪥', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(17, 'Plastic Toy Set', 220, 220, 50, 50, NULL, 'Upcycled plastic educational block set (30 pcs)', @CAT_KIDS, '🧸', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(18, 'Sticker Sheet Pack', 65, 65, 300, 300, NULL, 'Recycling-themed eco sticker sheets (5 pcs)', @CAT_KIDS, '🌟', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(19, 'Coloring Book', 120, 120, 180, 180, NULL, '100% recycled paper eco-hero coloring book', @CAT_KIDS, '🎨', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(20, 'Vegetable Seedlings Kit', 290, 290, 60, 60, NULL, 'Pechay, kangkong, tomato seeds + starter pots', @CAT_COMMUNITY, '🌱', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(21, 'Community T-Shirt', 330, 330, 75, 75, NULL, 'Limited Waste2Goods barangay shirt (sizes M/L/XL)', @CAT_COMMUNITY, '👕', 0, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(22, 'Sinulog Gift Pack', 420, 420, 30, 30, NULL, 'Seasonal: Sinulog-themed mug + keychain + tote', @CAT_SEASONAL, '🎊', 1, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(23, 'Kadayawan Durian Treats', 520, 520, 25, 25, NULL, 'Seasonal: Local durian candies, yema, pasalubong box', @CAT_SEASONAL, '🎁', 1, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(24, 'Pasko Ham & Cheese Pack', 750, 750, 40, 40, NULL, 'Seasonal Christmas: Premium ham + cheese loaf', @CAT_SEASONAL, '🎄', 1, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT),
+(25, 'Bagsakan Fresh Veggies Box', 450, 450, 50, 50, NULL, 'Farm fresh seasonal veggies from Bagsakan (weekly only)', @CAT_SEASONAL, '🥬', 1, @STATUS_ACTIVE, @DEFAULT_CREATED_AT, @DEFAULT_CREATED_AT);
 
 -- --------------------------------------------------------
 
