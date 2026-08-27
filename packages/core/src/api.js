@@ -20,38 +20,82 @@ import {
 const API_HOST_STORAGE_KEY = "w2g_api_host";
 const DEFAULT_API_HOST = "localhost";
 
+function parseHostAndPort(rawInput) {
+  let str = (rawInput || "").trim();
+  let proto = (typeof window !== "undefined" && window.location.protocol === "https:") ? "https" : "http";
+  if (str.startsWith("https://")) {
+    proto = "https";
+    str = str.replace(/^https:\/\//i, "");
+  } else if (str.startsWith("http://")) {
+    proto = "http";
+    str = str.replace(/^http:\/\//i, "");
+  }
+  str = str.replace(/\/.*$/, "").trim();
+
+  let host = str || "localhost";
+  let port = "3001";
+
+  if (str.includes(":")) {
+    const parts = str.split(":").filter(Boolean);
+    host = parts[0] || "localhost";
+    const lastPort = parts[parts.length - 1];
+    if (lastPort === "5173" || lastPort === "5174") {
+      port = "3001";
+    } else if (lastPort && /^\d+$/.test(lastPort)) {
+      port = lastPort;
+    }
+  }
+  return { host, port, proto };
+}
+
 export function getApiHost() {
   try {
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
-    return (stored && stored.trim()) || DEFAULT_API_HOST;
+    if (stored && stored.trim()) {
+      return parseHostAndPort(stored).host;
+    }
+    return "localhost";
   } catch {
-    return DEFAULT_API_HOST;
+    return "localhost";
   }
 }
 
-export function setApiHost(host) {
+export function setApiHost(rawHost) {
   try {
-    localStorage.setItem(API_HOST_STORAGE_KEY, host.trim());
+    const { host, port } = parseHostAndPort(rawHost);
+    localStorage.setItem(API_HOST_STORAGE_KEY, host);
+    if (port) localStorage.setItem("w2g_api_port", port);
   } catch {
     console.warn("Failed to save API host");
   }
 }
 
 export function getApiBaseUrl() {
-  return `http://${getApiHost()}:3001/api`;
+  const host = getApiHost();
+  let port = "3001";
+  try {
+    const storedPort = localStorage.getItem("w2g_api_port");
+    if (storedPort && storedPort !== "5173") port = storedPort;
+  } catch {}
+  return `http://${host}:${port}/api`;
 }
 
 export async function testApiConnection() {
   const host = getApiHost();
+  let port = "3001";
   try {
-    const res = await fetch(`http://${host}:3001/`, {
+    const storedPort = localStorage.getItem("w2g_api_port");
+    if (storedPort && storedPort !== "5173") port = storedPort;
+  } catch {}
+  try {
+    const res = await fetch(`http://${host}:${port}/`, {
       method: "GET",
       signal: AbortSignal.timeout(5000),
     });
-    if (res.ok) return { ok: true, message: `Connected to http://${host}:3001` };
+    if (res.ok) return { ok: true, message: `Connected to http://${host}:${port}` };
     return { ok: false, message: `Server responded with HTTP ${res.status}` };
   } catch {
-    return { ok: false, message: `Cannot reach http://${host}:3001 — check IP and that the backend is running` };
+    return { ok: false, message: `Cannot reach http://${host}:${port} — check IP and that the backend is running` };
   }
 }
 

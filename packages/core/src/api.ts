@@ -51,18 +51,56 @@ const DEFAULT_API_HOST =
   (typeof (import.meta as any)?.env?.VITE_API_HOST === "string" && (import.meta as any).env.VITE_API_HOST) ||
   "localhost";
 
+function parseHostAndPort(rawInput: string): { host: string; port: string; proto: "http" | "https" } {
+  let str = (rawInput || "").trim();
+  let proto: "http" | "https" = (typeof window !== "undefined" && window.location.protocol === "https:") ? "https" : "http";
+  if (str.startsWith("https://")) {
+    proto = "https";
+    str = str.replace(/^https:\/\//i, "");
+  } else if (str.startsWith("http://")) {
+    proto = "http";
+    str = str.replace(/^http:\/\//i, "");
+  }
+  // Strip trailing slashes and paths like /api
+  str = str.replace(/\/.*$/, "").trim();
+
+  let host = str || "localhost";
+  let port = String(DEFAULT_PORT || "3001");
+
+  // Check if string contains port (e.g. 192.168.1.164:3001 or 192.168.1.164:5173:3001)
+  if (str.includes(":")) {
+    const parts = str.split(":").filter(Boolean);
+    host = parts[0] || "localhost";
+    const lastPort = parts[parts.length - 1];
+    // If user passed Vite dev server port 5173, change to backend port 3001
+    if (lastPort === "5173" || lastPort === "5174") {
+      port = "3001";
+    } else if (lastPort && /^\d+$/.test(lastPort)) {
+      port = lastPort;
+    }
+  }
+
+  return { host, port, proto };
+}
+
 export function getApiHost(): string {
   try {
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
-    return (stored && stored.trim()) || DEFAULT_API_HOST;
+    if (stored && stored.trim()) {
+      return parseHostAndPort(stored).host;
+    }
+    return DEFAULT_API_HOST;
   } catch {
     return DEFAULT_API_HOST;
   }
 }
 
-export function setApiHost(host: string) {
+export function setApiHost(rawHost: string) {
   try {
-    localStorage.setItem(API_HOST_STORAGE_KEY, host.trim());
+    const { host, port, proto } = parseHostAndPort(rawHost);
+    localStorage.setItem(API_HOST_STORAGE_KEY, host);
+    if (port) localStorage.setItem(API_PORT_STORAGE_KEY, port);
+    localStorage.setItem(API_PROTOCOL_STORAGE_KEY, proto);
   } catch {
     console.warn("Failed to save API host");
   }
@@ -71,13 +109,17 @@ export function setApiHost(host: string) {
 export function getApiPort(): string {
   try {
     const stored = localStorage.getItem(API_PORT_STORAGE_KEY);
-    if (stored != null) return stored.trim();
+    if (stored != null && stored.trim() !== "") {
+      const p = stored.trim().replace(/^:/, "");
+      if (p === "5173" || p === "5174") return "3001";
+      return p;
+    }
   } catch { /* ignore */ }
-  return String(DEFAULT_PORT);
+  return String(DEFAULT_PORT || "3001");
 }
 
 export function setApiPort(port: string) {
-  try { localStorage.setItem(API_PORT_STORAGE_KEY, String(port ?? "").trim()); } catch { /* ignore */ }
+  try { localStorage.setItem(API_PORT_STORAGE_KEY, String(port ?? "").replace(/^:/, "").trim()); } catch { /* ignore */ }
 }
 
 export function getApiProtocol(): string {
@@ -126,7 +168,7 @@ export async function testApiConnection(): Promise<{ ok: boolean; message: strin
     if (res.ok) return { ok: true, message: `Connected to ${proto}://${host}${portPart}` };
     return { ok: false, message: `Server responded with HTTP ${res.status}` };
   } catch {
-    return { ok: false, message: `Cannot reach ${proto}://${host}${portPart} — check IP and that the backend is running` };
+    return { ok: false, message: `Cannot reach ${proto}://${host}${portPart} — check IP and that the backend is running on port ${port}` };
   }
 }
 

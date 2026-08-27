@@ -255,8 +255,10 @@ function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; tex
     return null;
   }
   setApiHost(trimmed);
-  onSaved?.({ type: "ok", text: `✅ Server saved: http://${trimmed}:3001 — no APK rebuild needed. This setting is saved on your device.` });
-  return trimmed;
+  const cleanHost = getApiHost();
+  const url = getApiBaseUrl().replace(/\/api$/, "");
+  onSaved?.({ type: "ok", text: `✅ Server saved: ${url} — setting saved on device.` });
+  return cleanHost;
 }
 
 async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): Promise<void> {
@@ -273,9 +275,9 @@ async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, o
 }
 
 function resetServerIp(setApiHostState: (v: string) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): void {
-  setApiHostState("localhost");
-  setApiHost("localhost");
-  onSaved?.({ type: "ok", text: "Reset to localhost — use this when the backend runs on the same PC." });
+  setApiHostState("192.168.1.164");
+  setApiHost("192.168.1.164");
+  onSaved?.({ type: "ok", text: "Default set to 192.168.1.164:3001" });
 }
 
 function ServerIpPanel({
