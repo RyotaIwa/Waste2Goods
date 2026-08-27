@@ -20,7 +20,11 @@ Route::post('/auth/login', [ApiController::class, 'login']);
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/users', [ApiController::class, 'getUsers']);
     Route::get('/users/{id}', function ($id) {
-        // Get user by ID logic here
+        $user = \App\Models\User::where('userId', $id)->orWhere('id', $id)->first();
+        if (!$user) {
+            return response()->json(['error' => 'User not found'], 404);
+        }
+        return response()->json($user);
     });
     Route::get('/kiosks', [ApiController::class, 'getKiosks']);
     Route::get('/rewards', [ApiController::class, 'getRewards']);
