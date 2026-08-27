@@ -339,42 +339,63 @@ type SectionRenderProps = {
 };
 
 function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
-  if (p.section === "dashboard") {
-    return (
+  const sectionComponents: Record<AdminSection, React.ReactNode> = {
+    dashboard: (
       <AdminDashboard
         liveSummary={p.dashboardSummary}
         liveWeekly={p.liveWeekly}
         liveLeaderboard={p.liveLeaderboard}
         liveTx={p.liveTx}
       />
-    );
-  }
-  if (p.section === "users" || p.section === "users-detail") {
-    return (
+    ),
+    users: (
       <AdminUsers
         liveUsers={p.liveUsers}
         searchQuery={p.searchQuery}
         onRefresh={p.refreshData}
         onSelect={u => { p.setSelectedUser(u); p.setSection("users-detail"); }}
-        selectedUser={p.section === "users-detail" ? p.selectedUser : null}
+        selectedUser={null} // Only show detail when section is 'users-detail'
         onBack={() => p.setSection("users")}
         onAdjust={() => { p.setAdjustType("Add"); p.setAdjustAmount("100"); p.setAdjustMsg(null); p.setShowAdjustModal(true); }}
       />
-    );
-  }
-  if (p.section === "rewards") {
-    return <AdminRewards liveRewards={p.liveRewards} liveRedemptions={p.liveRedemptions} searchQuery={p.searchQuery} onRefresh={p.refreshData} />;
-  }
-  if (p.section === "analytics") {
-    return <AdminAnalytics liveWeekly={p.liveWeekly} liveMonthly={p.liveMonthly} liveRedemptions={p.liveRedemptions} />;
-  }
-  if (p.section === "monitoring") {
-    return <AdminMonitoring liveKiosks={p.liveKiosks} liveTx={p.liveTx} onRefresh={p.refreshData} />;
-  }
-  if (p.section === "admins") {
-    return <AdminAdmins />;
-  }
-  return null;
+    ),
+    "users-detail": (
+      <AdminUsers
+        liveUsers={p.liveUsers}
+        searchQuery={p.searchQuery}
+        onRefresh={p.refreshData}
+        onSelect={u => { p.setSelectedUser(u); p.setSection("users-detail"); }}
+        selectedUser={p.selectedUser} // Show detail for selected user
+        onBack={() => p.setSection("users")}
+        onAdjust={() => { p.setAdjustType("Add"); p.setAdjustAmount("100"); p.setAdjustMsg(null); p.setShowAdjustModal(true); }}
+      />
+    ),
+    rewards: (
+      <AdminRewards
+        liveRewards={p.liveRewards}
+        liveRedemptions={p.liveRedemptions}
+        searchQuery={p.searchQuery}
+        onRefresh={p.refreshData}
+      />
+    ),
+    analytics: (
+      <AdminAnalytics
+        liveWeekly={p.liveWeekly}
+        liveMonthly={p.liveMonthly}
+        liveRedemptions={p.liveRedemptions}
+      />
+    ),
+    monitoring: (
+      <AdminMonitoring
+        liveKiosks={p.liveKiosks}
+        liveTx={p.liveTx}
+        onRefresh={p.refreshData}
+      />
+    ),
+    admins: <AdminAdmins />,
+  };
+
+  return sectionComponents[p.section] || null;
 }
 
 // Login Screen Component
