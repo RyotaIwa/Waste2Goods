@@ -1292,6 +1292,7 @@ function AdminUserProfileDetail({
 
 function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selectedUser, onBack, onAdjust }: Readonly<{ liveUsers: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void>; onSelect: (u: any) => void; selectedUser: any; onBack: () => void; onAdjust: () => void }>) {
   const [showEditForm, setShowEditForm] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
   const [editUser, setEditUser] = useState<any>(null);
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -1307,8 +1308,16 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     setUFirst(""); setULast(""); setUEmail(""); setUPass(""); setUPass2(""); setUPhone(""); setUPoints("0"); setBanner(null);
   };
 
+  const openCreate = () => {
+    resetForm();
+    setShowEditForm(false);
+    setEditUser(null);
+    setShowCreateForm(true);
+  };
+
   const openEdit = (u: any) => {
     setEditUser(u);
+    setShowCreateForm(false);
     setUFirst(u.firstName || "");
     setULast(u.lastName || "");
     setUEmail(u.email || "");
@@ -1317,6 +1326,34 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
     setUPhone(u.phone || u.contactInfo || "");
     setUPoints(String(u.points ?? u.pointsBalance ?? 0));
     setShowEditForm(true);
+  };
+
+  const submitCreate = async () => {
+    setBanner(null);
+    if (!uFirst.trim() || !uLast.trim() || !uEmail.trim() || !uPass.trim()) {
+      setBanner({ type: "err", text: "First name, last name, email, and password are required." });
+      return;
+    }
+    const pwError = validatePasswordPair(uPass, uPass2);
+    if (pwError) { setBanner({ type: "err", text: pwError }); return; }
+    try {
+      setSaving(true);
+      const res = await Waste2GoodsAPI.createUser({
+        firstName: uFirst.trim(),
+        lastName: uLast.trim(),
+        email: uEmail.trim(),
+        password: uPass,
+        phone: uPhone.trim(),
+        pointsBalance: Number(uPoints) || 0,
+        barangayId: 1
+      });
+      if (!res || !(res as any).ok) throw new Error((res as any)?.error || "User creation failed");
+      setBanner({ type: "ok", text: `Resident ${uFirst} ${uLast} created successfully with ${uPoints} pts!` });
+      if (onRefresh) await onRefresh();
+      setTimeout(() => { setShowCreateForm(false); resetForm(); }, 1500);
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Creation failed. Is backend running with MySQL?" });
+    } finally { setSaving(false); }
   };
 
   const submitEdit = async () => {
@@ -1382,12 +1419,13 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
 
   return (
     <div className="space-y-4 relative">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
           <p className="text-xs text-muted-foreground">Cabantian Barangay — real MySQL users table (users sign up via Mobile App){searchQuery ? ` · filtered for "${searchQuery}"` : ""}</p>
         </div>
         <div className="flex gap-2">
+          <button type="button" onClick={openCreate} className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors shadow-xs"><Plus className="w-3.5 h-3.5" />Add Resident</button>
           {onRefresh && <button type="button" onClick={onRefresh} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
           <button type="button" onClick={exportCSV} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><Download className="w-3.5 h-3.5" />Export</button>
         </div>
@@ -1396,6 +1434,65 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
       {banner && (
         <div className={`text-xs px-4 py-3 rounded-2xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
           {banner.type === 'ok' ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}{banner.text}
+        </div>
+      )}
+
+      {showCreateForm && (
+        <div className="bg-white rounded-2xl border border-border p-5 space-y-4 shadow-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+              <Users className="w-5 h-5 text-green-700" />
+            </div>
+            <div>
+              <h3 className="font-black text-foreground">Create Resident Account</h3>
+              <p className="text-xs text-muted-foreground">Add a new resident with starting balance and login credentials</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor="user-create-first" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">First Name *</label>
+              <input id="user-create-first" value={uFirst} onChange={e => setUFirst(e.target.value)} placeholder="Juan" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label htmlFor="user-create-last" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Last Name *</label>
+              <input id="user-create-last" value={uLast} onChange={e => setULast(e.target.value)} placeholder="Reyes" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label htmlFor="user-create-email" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Email Address *</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input id="user-create-email" type="email" value={uEmail} onChange={e => setUEmail(e.target.value)} placeholder="resident@example.com" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="user-create-pass" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Password *</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input id="user-create-pass" type="password" value={uPass} onChange={e => setUPass(e.target.value)} placeholder="Min 6 chars" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="user-create-pass2" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Confirm Password *</label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <input id="user-create-pass2" type="password" value={uPass2} onChange={e => setUPass2(e.target.value)} placeholder="Confirm password" className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="user-create-phone" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Phone</label>
+              <input id="user-create-phone" value={uPhone} onChange={e => setUPhone(e.target.value)} placeholder="+63 9XX XXX XXXX" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label htmlFor="user-create-points" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Initial Points Balance</label>
+              <input id="user-create-points" type="number" value={uPoints} onChange={e => setUPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => { setShowCreateForm(false); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button type="button" disabled={saving} onClick={submitCreate} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+              {saving ? "Creating..." : "Create Resident"}
+            </button>
+          </div>
         </div>
       )}
 

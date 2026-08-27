@@ -1734,7 +1734,14 @@ function ScreenRewards(p: MobileAppRouterProps) {
             const canRedeem = (Number(p.currentUser.points || 0) >= r.cost);
             const cls = canRedeem ? "bg-primary text-white" : "bg-muted text-muted-foreground";
             return (
-              <button type="button" key={r.name} onClick={() => p.setSelectedReward(r)} disabled={!canRedeem} className={`rounded-2xl border bg-white text-left overflow-hidden transition-all ${canRedeem ? "border-border hover:border-primary" : "border-border opacity-60 cursor-not-allowed"}`}>
+              <button
+                type="button"
+                key={r.name}
+                onClick={() => p.setSelectedReward(r)}
+                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${
+                  canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
+                }`}
+              >
                 <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
                   <div className="text-5xl">{r.icon}</div>
                   {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
