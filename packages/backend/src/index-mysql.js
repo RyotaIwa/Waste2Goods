@@ -995,7 +995,7 @@ app.get('/api/tasks', authenticate, (req, res) => {
 // ──────────────────────────────────────────────────────
 app.get('/api/admin/admins', authenticate, requireRole('admin'), cacheRoute(60), async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT adminId, adminIdentifier, firstName, lastName, roleId, barangayId, createdAt FROM administrators ORDER BY createdAt ASC');
+    const [rows] = await db.query('SELECT adminId, adminIdentifier, firstName, lastName, roleId, barangayId, COALESCE(status, \'active\') as status, createdAt FROM administrators ORDER BY createdAt ASC');
     res.json(rows.map(a => ({
       adminId: a.adminId,
       email: a.adminIdentifier,
@@ -1004,6 +1004,7 @@ app.get('/api/admin/admins', authenticate, requireRole('admin'), cacheRoute(60),
       name: `${a.firstName} ${a.lastName}`,
       roleId: a.roleId,
       barangayId: a.barangayId,
+      status: a.status || 'active',
       createdAt: a.createdAt
     })));
   } catch (err) {
@@ -1027,7 +1028,7 @@ app.post('/api/admin/admins', authenticate, requireRole('admin'), writeLimiter, 
     const passwordHash = await hashPassword(password);
     const createdAt = new Date();
     await db.query(
-      'INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, status, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?)',
       [adminId, email.toLowerCase().trim(), email.toLowerCase().trim(), firstName, lastName, passwordHash, barangayId, roleId, createdAt]
     );
     CacheBust.all();
@@ -1041,6 +1042,7 @@ app.post('/api/admin/admins', authenticate, requireRole('admin'), writeLimiter, 
         name: `${firstName} ${lastName}`,
         roleId,
         barangayId,
+        status: 'active',
         createdAt
       }
     });
@@ -1049,20 +1051,41 @@ app.post('/api/admin/admins', authenticate, requireRole('admin'), writeLimiter, 
   }
 });
 
-// Delete Admin Account
-app.delete('/api/admin/admins/:id', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
+// Archive / Unarchive Admin Account (Soft status - maintains record in database)
+app.put('/api/admin/admins/:id/status', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
   try {
     const adminId = String(req.params.id).trim();
+    const { status = 'archived' } = req.body;
     if (adminId === 'A-001' || adminId.toLowerCase() === 'admin@waste2goods.ph') {
-      return res.status(400).json({ error: 'Primary super administrator A-001 cannot be deleted' });
+      return res.status(400).json({ error: 'Primary super administrator A-001 cannot be archived' });
     }
     const [exists] = await db.query('SELECT * FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
     if (!exists.length) {
       return res.status(404).json({ error: 'Admin account not found' });
     }
-    await db.query('DELETE FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
+    await db.query('UPDATE administrators SET status = ? WHERE adminId = ? OR adminIdentifier = ?', [status, adminId, adminId]);
     CacheBust.all();
-    res.json({ ok: true, adminId, message: 'Admin account deleted successfully' });
+    res.json({ ok: true, adminId, status, message: `Admin account ${status === 'archived' ? 'archived' : 'activated'} successfully` });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Soft-Archive Admin Account (Preserves admin in DB, marks status as archived)
+app.delete('/api/admin/admins/:id', authenticate, requireRole('admin'), writeLimiter, async (req, res) => {
+  try {
+    const adminId = String(req.params.id).trim();
+    if (adminId === 'A-001' || adminId.toLowerCase() === 'admin@waste2goods.ph') {
+      return res.status(400).json({ error: 'Primary super administrator A-001 cannot be archived' });
+    }
+    const [exists] = await db.query('SELECT * FROM administrators WHERE adminId = ? OR adminIdentifier = ?', [adminId, adminId]);
+    if (!exists.length) {
+      return res.status(404).json({ error: 'Admin account not found' });
+    }
+    // Soft-archive: Do NOT delete from DB, retain record with archived status
+    await db.query("UPDATE administrators SET status = 'archived' WHERE adminId = ? OR adminIdentifier = ?", [adminId, adminId]);
+    CacheBust.all();
+    res.json({ ok: true, adminId, status: 'archived', message: 'Admin account archived successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

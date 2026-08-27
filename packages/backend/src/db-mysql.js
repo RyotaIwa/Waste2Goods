@@ -99,6 +99,7 @@ async function applySchemaMigrations() {
 
     totalApplied += await migrateTableColumns('administrators', [
       { column: 'roleId',    definition: 'INT' },
+      { column: 'status',    definition: "VARCHAR(20) DEFAULT 'active'" },
       { column: 'createdAt', definition: 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP' },
     ]);
 

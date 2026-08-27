@@ -409,6 +409,9 @@ export const Waste2GoodsAPI = {
   // Admin Management
   fetchAdminAdmins: () => fetchApi("/admin/admins"),
   createAdmin: (data) => fetchApi("/admin/admins", { method: "POST", body: JSON.stringify(data) }),
+  deleteAdmin: (adminId) => fetchApi(`/admin/admins/${adminId}`, { method: "DELETE" }),
+  updateAdminStatus: (adminId, status = "archived") => fetchApi(`/admin/admins/${adminId}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
+  archiveAdmin: (adminId, status = "archived") => fetchApi(`/admin/admins/${adminId}/status`, { method: "PUT", body: JSON.stringify({ status }) }),
 
   // Redeem
   redeemReward: (data) => fetchApi("/rewards/redeem", { method: "POST", body: JSON.stringify(data) }),

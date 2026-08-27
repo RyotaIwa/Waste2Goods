@@ -524,6 +524,16 @@ export const Waste2GoodsAPI = {
     fetchApi<any>(`/admin/admins/${adminId}`, {
       method: "DELETE",
     }),
+  updateAdminStatus: (adminId: string, status: "active" | "archived" = "archived") =>
+    fetchApi<any>(`/admin/admins/${adminId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    }),
+  archiveAdmin: (adminId: string, status: "active" | "archived" = "archived") =>
+    fetchApi<any>(`/admin/admins/${adminId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    }),
 
   // Redeem
   redeemReward: (data: { userId: string; rewardId: number | string; quantity?: number }) =>

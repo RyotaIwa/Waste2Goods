@@ -4,7 +4,7 @@ import {
   ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
   X, Plus, Download, Eye, Edit, Trash2,
   AlertCircle, MapPin, Cpu, RefreshCw, Battery, Gift,
-  Lock, Mail, AlertTriangle, Check
+  Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore, EyeOff
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -2118,36 +2118,56 @@ function AdminAdmins() {
     } finally { setCreating(false); }
   };
 
-  const handleRemoveAdmin = async (admin: any) => {
+  const [tabFilter, setTabFilter] = useState<"all" | "active" | "archived">("active");
+
+  const handleToggleArchiveAdmin = async (admin: any, currentStatus: string) => {
     const id = admin.adminId || admin.email;
     const name = admin.name || `${admin.firstName || ""} ${admin.lastName || ""}`.trim() || id;
     if (admin.adminId === "A-001" || admin.email === "admin@waste2goods.ph") {
-      alert("Primary super administrator A-001 cannot be removed.");
+      alert("Primary super administrator A-001 cannot be archived.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to remove administrator "${name}"? This action cannot be undone.`)) {
+    const isArchiving = currentStatus !== "archived";
+    const targetStatus = isArchiving ? "archived" : "active";
+    const actionText = isArchiving ? "archive" : "restore";
+    const confirmMessage = isArchiving
+      ? `Are you sure you want to archive administrator "${name}"? The account will be hidden from active lists but safely retained in the database.`
+      : `Restore administrator "${name}" to active status?`;
+
+    if (!window.confirm(confirmMessage)) {
       return;
     }
     try {
       setErr(""); setSuccess("");
       setDeletingId(id);
-      const res = await (Waste2GoodsAPI as any).deleteAdmin(admin.adminId || admin.email);
-      if (res && (res as any).error) throw new Error((res as any).error);
-      setSuccess(`Admin ${name} removed successfully!`);
+      if (Waste2GoodsAPI.updateAdminStatus) {
+        await Waste2GoodsAPI.updateAdminStatus(id, targetStatus);
+      } else {
+        await (Waste2GoodsAPI as any).deleteAdmin(id);
+      }
+      setSuccess(`Admin ${name} ${isArchiving ? "archived (preserved in DB)" : "restored"} successfully!`);
       await load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Failed to remove admin account.");
+      setErr(e instanceof Error ? e.message : `Failed to ${actionText} admin account.`);
     } finally {
       setDeletingId(null);
     }
   };
+
+  const activeAdmins = admins.filter(a => (a.status || "active") === "active");
+  const archivedAdmins = admins.filter(a => (a.status || "active") === "archived");
+  const displayedAdmins = tabFilter === "all"
+    ? admins
+    : tabFilter === "active"
+      ? activeAdmins
+      : archivedAdmins;
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-black text-foreground">Admin Management</h2>
-          <p className="text-xs text-muted-foreground mt-1">Manage administrators with access to this panel</p>
+          <p className="text-xs text-muted-foreground mt-1">Manage and archive administrators with access to this panel (all records preserved)</p>
         </div>
         <button
           type="button"
@@ -2253,34 +2273,66 @@ function AdminAdmins() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-border overflow-hidden">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
+      <div className="bg-white rounded-2xl border border-border overflow-hidden shadow-xs">
+        <div className="px-5 py-4 border-b border-border flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <h3 className="font-black text-foreground">Registered Admins ({admins.length})</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">Barangay-level admins with full dashboard access</p>
+            <h3 className="font-black text-foreground">Admin Accounts ({admins.length})</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">Barangay-level admins with dashboard access</p>
           </div>
-          <button type="button" onClick={load} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline">
-            <RefreshCw className="w-3 h-3" />Refresh
-          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Status Filter Tabs */}
+            <div className="flex items-center bg-muted/40 p-1 rounded-xl border border-border">
+              <button
+                type="button"
+                onClick={() => setTabFilter("active")}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${tabFilter === "active" ? "bg-primary text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Active ({activeAdmins.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTabFilter("archived")}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${tabFilter === "archived" ? "bg-amber-600 text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                Archived / Hidden ({archivedAdmins.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setTabFilter("all")}
+                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${tabFilter === "all" ? "bg-foreground text-background shadow-xs" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                All ({admins.length})
+              </button>
+            </div>
+
+            <button type="button" onClick={load} className="text-xs font-bold text-primary flex items-center gap-1 hover:underline ml-2">
+              <RefreshCw className="w-3 h-3" />Refresh
+            </button>
+          </div>
         </div>
         <div className="divide-y divide-border">
           {loading && (
             <div className="px-5 py-16 text-center text-sm text-muted-foreground">Loading admins...</div>
           )}
-          {!loading && admins.length === 0 && (
+          {!loading && displayedAdmins.length === 0 && (
             <div className="px-5 py-16 text-center">
               <Shield className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
-              <p className="text-sm text-muted-foreground">No admins loaded. Click "Add New Admin" to create one.</p>
+              <p className="text-sm text-muted-foreground">
+                {tabFilter === "archived" ? "No archived admins." : "No admins found in this view."}
+              </p>
             </div>
           )}
-          {!loading && admins.map(a => {
+          {!loading && displayedAdmins.map(a => {
             const fullName = a.name || `${a.firstName || ""} ${a.lastName || ""}`.trim();
             const initials = fullName.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0,2).toUpperCase();
             const date = a.createdAt ? new Date(a.createdAt) : null;
             const joined = date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "—";
+            const isArchived = (a.status || "active") === "archived";
+
             return (
-              <div key={a.adminId || a.email} className="px-5 py-4 flex items-center gap-4">
-                <div className="w-11 h-11 rounded-full bg-primary/10 flex items-center justify-center font-black text-primary">
+              <div key={a.adminId || a.email} className={`px-5 py-4 flex items-center gap-4 transition-colors ${isArchived ? "bg-muted/20 opacity-75" : ""}`}>
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center font-black ${isArchived ? "bg-amber-100 text-amber-800" : "bg-primary/10 text-primary"}`}>
                   {initials || "A"}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -2289,7 +2341,15 @@ function AdminAdmins() {
                     <span className="text-[10px] font-black px-2.5 py-1 rounded-full bg-primary/10 text-primary uppercase tracking-wide">
                       {a.roleId === 1 ? "Full" : "Admin"}
                     </span>
-                    <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS}`}>Active</span>
+                    {isArchived ? (
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-200">
+                        Archived / Hidden
+                      </span>
+                    ) : (
+                      <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS}`}>
+                        Active
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1 flex-wrap">
                     <span><Mail className="w-3 h-3 inline -mt-0.5 mr-1" />{a.email}</span>
@@ -2303,12 +2363,25 @@ function AdminAdmins() {
                   <button
                     type="button"
                     disabled={deletingId === (a.adminId || a.email)}
-                    onClick={() => handleRemoveAdmin(a)}
-                    className="p-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors text-xs font-bold flex items-center gap-1 disabled:opacity-50"
-                    title="Remove Admin"
+                    onClick={() => handleToggleArchiveAdmin(a, a.status || "active")}
+                    className={`px-3 py-2 rounded-xl border transition-colors text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 ${
+                      isArchived
+                        ? "border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
+                        : "border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-100/70"
+                    }`}
+                    title={isArchived ? "Restore to Active" : "Archive Admin (Preserve in Database)"}
                   >
-                    <Trash2 className="w-4 h-4 text-red-500" />
-                    <span className="hidden sm:inline">Remove</span>
+                    {isArchived ? (
+                      <>
+                        <ArchiveRestore className="w-4 h-4 text-green-600" />
+                        <span className="hidden sm:inline">Restore</span>
+                      </>
+                    ) : (
+                      <>
+                        <Archive className="w-4 h-4 text-amber-600" />
+                        <span className="hidden sm:inline">Archive / Hide</span>
+                      </>
+                    )}
                   </button>
                 ) : (
                   <span className="text-[10px] font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-500">Primary Admin</span>
