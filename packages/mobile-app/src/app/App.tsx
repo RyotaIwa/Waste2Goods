@@ -1149,34 +1149,43 @@ export default function App() {
     return "Since Today";
   })();
 
+  // Build profile update patches from current form state — extracted to keep
+  // handleSaveProfile below the 15-point cognitive complexity ceiling (S3776).
+  const buildProfilePatches = (): Record<string, any> => {
+    const patches: Record<string, any> = {};
+    if (setFName) patches.firstName = setFName;
+    if (setLName) patches.lastName = setLName;
+    if (setFormEmail) patches.email = setFormEmail;
+    if (setPhone) patches.phone = setPhone;
+    if (setProvince) patches.province = setProvince;
+    if (setCity) patches.city = setCity;
+    if (setBrgy) patches.barangayName = setBrgy;
+    return patches;
+  };
+
+  // Perform the profile save HTTP call — supports both Waste2GoodsAPI.saveProfile
+  // helper and a raw fetch fallback — extracted to keep handleSaveProfile simple.
+  const saveProfileViaApiCall = async (patches: Record<string, any>): Promise<boolean> => {
+    if (Waste2GoodsAPI.saveProfile) {
+      return Waste2GoodsAPI.saveProfile(patches);
+    }
+    const userId = currentUser.id || currentUser.userId;
+    const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${Waste2GoodsAPI.getAuthState()?.token || ""}` },
+      body: JSON.stringify(patches),
+    });
+    return res.ok;
+  };
+
   // Handler for the Settings "Save Changes" button — PUTs to /users/:id via core helper
   const handleSaveProfile = async () => {
     setProfileSaving(true);
     setProfileBanner(null);
     try {
-      const patches: any = {};
-      if (setFName) patches.firstName = setFName;
-      if (setLName) patches.lastName = setLName;
-      if (setFormEmail) patches.email = setFormEmail;
-      if (setPhone) patches.phone = setPhone;
-      if (setProvince) patches.province = setProvince;
-      if (setCity) patches.city = setCity;
-      if (setBrgy) patches.barangayName = setBrgy;
-      let ok = false;
-      if (Waste2GoodsAPI.saveProfile) {
-        ok = await Waste2GoodsAPI.saveProfile(patches);
-      } else {
-        // Fallback PUT
-        const userId = currentUser.id || currentUser.userId;
-        const res = await fetch(`${getApiBaseUrl()}/users/${userId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${Waste2GoodsAPI.getAuthState()?.token || ""}` },
-          body: JSON.stringify(patches),
-        });
-        ok = res.ok;
-      }
+      const patches = buildProfilePatches();
+      const ok = await saveProfileViaApiCall(patches);
       if (ok) {
-        // Re-pull so profile + avatar update instantly
         const fresh = Waste2GoodsAPI.refreshCurrentUser ? await Waste2GoodsAPI.refreshCurrentUser() : null;
         if (fresh) setProfileUser({ ...fresh });
         setProfileBanner({ type: "ok", text: "✅ Profile saved successfully!" });

@@ -285,6 +285,98 @@ function applyAdminDataSet(
   if (hasProfile && adminProf) applyAdminProfile(adminProf, setters);
 }
 
+// --- App() useEffect body helpers — extracted to keep CC ≤ 15 ---
+
+function runAdminDataFetchEffect(
+  screen: AppScreen,
+  dataSetters: AdminDataSetters,
+  cancelledRef: { cancelled: boolean },
+): void {
+  if (screen !== "admin") return;
+  (async () => {
+    try {
+      const results = await fetchAllAdminSettled(false);
+      if (cancelledRef.cancelled) return;
+      applyAdminDataSet(results, dataSetters, false);
+    } catch {
+      // fall-through: null state falls back to demo data during render
+    }
+  })();
+}
+
+function runAdminAuthGuardEffect(screen: AppScreen, setScreen: (s: AppScreen) => void): void {
+  if (screen === "login") return;
+  const auth = Waste2GoodsAPI.getAuthState();
+  if (!auth || !auth.isAuthenticated || !auth.token) {
+    console.log("🔐 Auth guard: no valid token — returning to login screen");
+    Waste2GoodsAPI.logout();
+    setScreen("login");
+  }
+}
+
+// --- Section render dispatch helper ---
+
+type SectionRenderProps = {
+  section: AdminSection;
+  selectedUser: any;
+  setSelectedUser: (u: any) => void;
+  setSection: (s: AdminSection) => void;
+  setAdjustType: (v: any) => void;
+  setAdjustAmount: (v: string) => void;
+  setAdjustMsg: (v: { type: "ok" | "err"; text: string } | null) => void;
+  setShowAdjustModal: (v: boolean) => void;
+  dashboardSummary: DashboardSummaryShape | null;
+  liveWeekly: any[] | null;
+  liveLeaderboard: any[] | null;
+  liveTx: any[] | null;
+  liveUsers: any[] | null;
+  searchQuery: string;
+  refreshData: () => Promise<void>;
+  liveRewards: any[] | null;
+  liveRedemptions: any[] | null;
+  liveMonthly: any[] | null;
+  liveKiosks: any[] | null;
+};
+
+function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
+  if (p.section === "dashboard") {
+    return (
+      <AdminDashboard
+        liveSummary={p.dashboardSummary}
+        liveWeekly={p.liveWeekly}
+        liveLeaderboard={p.liveLeaderboard}
+        liveTx={p.liveTx}
+      />
+    );
+  }
+  if (p.section === "users" || p.section === "users-detail") {
+    return (
+      <AdminUsers
+        liveUsers={p.liveUsers}
+        searchQuery={p.searchQuery}
+        onRefresh={p.refreshData}
+        onSelect={u => { p.setSelectedUser(u); p.setSection("users-detail"); }}
+        selectedUser={p.section === "users-detail" ? p.selectedUser : null}
+        onBack={() => p.setSection("users")}
+        onAdjust={() => { p.setAdjustType("Add"); p.setAdjustAmount("100"); p.setAdjustMsg(null); p.setShowAdjustModal(true); }}
+      />
+    );
+  }
+  if (p.section === "rewards") {
+    return <AdminRewards liveRewards={p.liveRewards} liveRedemptions={p.liveRedemptions} searchQuery={p.searchQuery} onRefresh={p.refreshData} />;
+  }
+  if (p.section === "analytics") {
+    return <AdminAnalytics liveWeekly={p.liveWeekly} liveMonthly={p.liveMonthly} liveRedemptions={p.liveRedemptions} />;
+  }
+  if (p.section === "monitoring") {
+    return <AdminMonitoring liveKiosks={p.liveKiosks} liveTx={p.liveTx} onRefresh={p.refreshData} />;
+  }
+  if (p.section === "admins") {
+    return <AdminAdmins />;
+  }
+  return null;
+}
+
 // Login Screen Component
 function LoginScreen({ onLogin }: Readonly<{ onLogin: () => void }>) {
   const [email, setEmail] = useState("");
@@ -432,17 +524,8 @@ export default function App() {
 
   // Fetch all modules whenever the section changes (and logged into admin)
   useEffect(() => {
-    if (screen !== "admin") return;
     let cancelled = false;
-    (async () => {
-      try {
-        const results = await fetchAllAdminSettled(false);
-        if (cancelled) return;
-        applyAdminDataSet(results, dataSetters, false);
-      } catch {
-        // If everything fails, still render (null falls cause demo used)
-      }
-    })();
+    runAdminDataFetchEffect(screen, dataSetters, { get cancelled() { return cancelled; } });
     return () => { cancelled = true; };
   }, [screen, section, profileRefreshKey]);
 
@@ -454,14 +537,7 @@ export default function App() {
   // AUTH GUARD: If screen === 'admin' but no real token is stored, force back to login screen.
   // (Prevents leftover stale state or tampering from showing the dashboard without auth.)
   useEffect(() => {
-    if (screen !== "login") {
-      const auth = Waste2GoodsAPI.getAuthState();
-      if (!auth || !auth.isAuthenticated || !auth.token) {
-        console.log("🔐 Auth guard: no valid token — returning to login screen");
-        Waste2GoodsAPI.logout();
-        setScreen("login");
-      }
-    }
+    runAdminAuthGuardEffect(screen, setScreen);
   }, [screen]);
 
   const handleLogout = () => {
@@ -485,6 +561,28 @@ export default function App() {
 
   // Admin profile data (reactive via adminProfile state; falls back to localStorage then defaults)
   const { name: adminName, email: adminEmail, roleLabel, initials } = computeAdminDisplay(adminProfile, ROLE_NAME);
+
+  const sectionContent = renderAdminSectionContent({
+    section,
+    selectedUser,
+    setSelectedUser,
+    setSection,
+    setAdjustType,
+    setAdjustAmount,
+    setAdjustMsg,
+    setShowAdjustModal,
+    dashboardSummary,
+    liveWeekly,
+    liveLeaderboard,
+    liveTx,
+    liveUsers,
+    searchQuery,
+    refreshData,
+    liveRewards,
+    liveRedemptions,
+    liveMonthly,
+    liveKiosks,
+  });
 
   return (
     <div className="w-full rounded-2xl overflow-hidden border border-border shadow-xl" style={{ minHeight: STYLE_MIN_HEIGHT, fontFamily: STYLE_FONT_INTER }}>
@@ -592,29 +690,7 @@ export default function App() {
               </div>
             )}
 
-            {section === "dashboard" && (
-              <AdminDashboard
-                liveSummary={dashboardSummary}
-                liveWeekly={liveWeekly}
-                liveLeaderboard={liveLeaderboard}
-                liveTx={liveTx}
-              />
-            )}
-            {(section === "users" || section === "users-detail") && (
-              <AdminUsers
-                liveUsers={liveUsers}
-                searchQuery={searchQuery}
-                onRefresh={refreshData}
-                onSelect={u => { setSelectedUser(u); setSection("users-detail"); }}
-                selectedUser={section === "users-detail" ? selectedUser : null}
-                onBack={() => setSection("users")}
-                onAdjust={() => { setAdjustType("Add"); setAdjustAmount("100"); setAdjustMsg(null); setShowAdjustModal(true); }}
-              />
-            )}
-            {section === "rewards" && <AdminRewards liveRewards={liveRewards} liveRedemptions={liveRedemptions} searchQuery={searchQuery} onRefresh={refreshData} />}
-            {section === "analytics" && <AdminAnalytics liveWeekly={liveWeekly} liveMonthly={liveMonthly} liveRedemptions={liveRedemptions} />}
-            {section === "monitoring" && <AdminMonitoring liveKiosks={liveKiosks} liveTx={liveTx} onRefresh={refreshData} />}
-            {section === "admins" && <AdminAdmins />}
+            {sectionContent}
           </div>
         </div>
       </div>
