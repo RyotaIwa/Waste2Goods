@@ -4,7 +4,8 @@ import {
   ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
   X, Plus, Download, Eye, Edit, Trash2,
   AlertCircle, MapPin, Cpu, RefreshCw, Battery, Gift,
-  Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore, EyeOff
+  Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore, EyeOff,
+  Activity, Upload
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -136,9 +137,13 @@ async function handlePointAdjustSubmit(params: PointAdjustParams) {
 }
 
 function getSearchPlaceholder(section: string): string {
-  if (section === "users") return "Search residents by name, email, or ID...";
-  if (section === "rewards") return "Search rewards by name or category...";
-  return "Search users, rewards, redemptions...";
+  if (section === "dashboard") return "Search residents or activities...";
+  if (section === "users" || section === "users-detail") return "Search residents by name, email, or ID...";
+  if (section === "rewards") return "Search rewards by name, category, or stock...";
+  if (section === "analytics") return "Search rewards, redemptions, or trends...";
+  if (section === "monitoring") return "Search kiosks by ID, location, or status...";
+  if (section === "admins") return "Search admins by name, email, or role...";
+  return "Search across admin panel...";
 }
 
 function getNotifSeverityBg(severity: string): string {
@@ -346,6 +351,7 @@ function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
         liveWeekly={p.liveWeekly}
         liveLeaderboard={p.liveLeaderboard}
         liveTx={p.liveTx}
+        searchQuery={p.searchQuery}
       />
     ),
     users: (
@@ -383,6 +389,7 @@ function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
         liveWeekly={p.liveWeekly}
         liveMonthly={p.liveMonthly}
         liveRedemptions={p.liveRedemptions}
+        searchQuery={p.searchQuery}
       />
     ),
     monitoring: (
@@ -390,9 +397,10 @@ function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
         liveKiosks={p.liveKiosks}
         liveTx={p.liveTx}
         onRefresh={p.refreshData}
+        searchQuery={p.searchQuery}
       />
     ),
-    admins: <AdminAdmins />,
+    admins: <AdminAdmins searchQuery={p.searchQuery} />,
   };
 
   return sectionComponents[p.section] || null;
@@ -901,8 +909,14 @@ function WasteCompositionCard({
   );
 }
 
-function TopResidentsCard({ liveLeaderboard }: Readonly<{ liveLeaderboard: any[] | null }>) {
-  const mergedLeaderboard = formatDashboardLeaderboard(liveLeaderboard);
+function TopResidentsCard({ liveLeaderboard, searchQuery = "" }: Readonly<{ liveLeaderboard: any[] | null; searchQuery?: string }>) {
+  let mergedLeaderboard = formatDashboardLeaderboard(liveLeaderboard);
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedLeaderboard = mergedLeaderboard.filter(u =>
+      u.name.toLowerCase().includes(q) || u.avatar.toLowerCase().includes(q)
+    );
+  }
   const isLive = Boolean(liveLeaderboard && liveLeaderboard.length > 0);
 
   return (
@@ -912,6 +926,9 @@ function TopResidentsCard({ liveLeaderboard }: Readonly<{ liveLeaderboard: any[]
         {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <div className="space-y-2">
+        {mergedLeaderboard.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-4">No residents match "{searchQuery}".</p>
+        )}
         {mergedLeaderboard.map(u => (
           <div key={String(u.rank)} className="flex items-center gap-2">
             <RankIcon rank={u.rank} />
@@ -938,8 +955,14 @@ function getTxIcon(type: string) {
   return <Zap className="w-3 h-3 text-amber-600" />;
 }
 
-function RecentActivityCard({ liveTx }: Readonly<{ liveTx: any[] | null }>) {
-  const mergedTx = formatDashboardTransactions(liveTx);
+function RecentActivityCard({ liveTx, searchQuery = "" }: Readonly<{ liveTx: any[] | null; searchQuery?: string }>) {
+  let mergedTx = formatDashboardTransactions(liveTx);
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedTx = mergedTx.filter(t =>
+      t.desc.toLowerCase().includes(q) || String(t.date).toLowerCase().includes(q)
+    );
+  }
   const isLive = Boolean(liveTx && liveTx.length > 0);
 
   return (
@@ -949,6 +972,9 @@ function RecentActivityCard({ liveTx }: Readonly<{ liveTx: any[] | null }>) {
         {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
       </div>
       <div className="space-y-2">
+        {mergedTx.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-4">No activities match "{searchQuery}".</p>
+        )}
         {mergedTx.map(t => (
           <div key={String(t.id)} className="flex items-center gap-2 py-1 border-b border-border last:border-0">
             <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${getTxBadgeBg(t.type)}`}>
@@ -968,11 +994,13 @@ function AdminDashboard({
   liveWeekly,
   liveLeaderboard,
   liveTx,
+  searchQuery = "",
 }: Readonly<{
   liveSummary: null | { totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number; kgDelta: number; newUsers: number; redeemedDelta: number; };
   liveWeekly: any[] | null;
   liveLeaderboard: any[] | null;
   liveTx: any[] | null;
+  searchQuery?: string;
 }>) {
   const [wasteFilter, setWasteFilter] = useState<string>("all");
   const [kioskFilter, setKioskFilter] = useState<string>("all");
@@ -1085,8 +1113,8 @@ function AdminDashboard({
         <WasteCompositionCard wasteData={dynamicWasteComposition} />
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <TopResidentsCard liveLeaderboard={liveLeaderboard} />
-        <RecentActivityCard liveTx={liveTx} />
+        <TopResidentsCard liveLeaderboard={liveLeaderboard} searchQuery={searchQuery} />
+        <RecentActivityCard liveTx={liveTx} searchQuery={searchQuery} />
       </div>
     </div>
   );
@@ -1895,20 +1923,32 @@ function exportAnalyticsDataCSV(mergedMonthly: any[], mergedWeekly: any[], liveR
   URL.revokeObjectURL(url);
 }
 
-function AnalyticsTopRedeemedCard() {
+function AnalyticsTopRedeemedCard({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
   const counts = [72, 58, 41, 31, 24];
+  let items = rewards.slice(0, 5).map((r, i) => ({ ...r, count: counts[i] }));
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    items = items.filter(r => r.name.toLowerCase().includes(q) || (r.category && r.category.toLowerCase().includes(q)));
+  }
+
   return (
     <div className="bg-white rounded-2xl p-4 border border-border">
-      <h3 className="font-black text-sm text-foreground mb-4">Top Redeemed Rewards</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-black text-sm text-foreground">Top Redeemed Rewards</h3>
+        {searchQuery.trim() && <span className="text-xs text-muted-foreground font-semibold">Filter: "{searchQuery}"</span>}
+      </div>
       <div className="space-y-3">
-        {rewards.slice(0, 5).map((r, i) => (
+        {items.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-4">No rewards match "{searchQuery}".</p>
+        )}
+        {items.map((r) => (
           <div key={r.id} className="flex items-center gap-3">
             <span className="text-xl w-8">{r.icon}</span>
             <span className="text-xs font-semibold text-foreground w-40 truncate">{r.name}</span>
             <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
-              <div className="h-full rounded-full bg-accent" style={{ width: `${(counts[i] / counts[0]) * 100}%` }} />
+              <div className="h-full rounded-full bg-accent" style={{ width: `${(r.count / counts[0]) * 100}%` }} />
             </div>
-            <span className="text-xs font-black text-muted-foreground w-16 text-right">{counts[i]} redeemed</span>
+            <span className="text-xs font-black text-muted-foreground w-16 text-right">{r.count} redeemed</span>
           </div>
         ))}
       </div>
@@ -1916,7 +1956,7 @@ function AnalyticsTopRedeemedCard() {
   );
 }
 
-function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: Readonly<{ liveWeekly: any[] | null; liveMonthly: any[] | null; liveRedemptions: any[] | null }>) {
+function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions, searchQuery = "" }: Readonly<{ liveWeekly: any[] | null; liveMonthly: any[] | null; liveRedemptions: any[] | null; searchQuery?: string }>) {
   const mergedWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
   const mergedMonthly = liveMonthly && liveMonthly.length > 0 ? liveMonthly : monthlyData;
   const redeemed = (liveRedemptions || []).length;
@@ -1969,7 +2009,7 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions }: Readonly<{
           </ResponsiveContainer>
         </div>
       </div>
-      <AnalyticsTopRedeemedCard />
+      <AnalyticsTopRedeemedCard searchQuery={searchQuery} />
     </div>
   );
 }
@@ -1989,7 +2029,7 @@ function getKioskIconColor(status: string): string {
 function getKioskBadgeClass(status: string): string {
   if (status === "online") return BADGE_SUCCESS_CLS;
   if (status === "maintenance") return BADGE_WARN_CLS;
-  return "bg-red-100 text-red-600";
+  return BADGE_DANGER_CLS;
 }
 
 function getBatteryBg(battery: number): string {
@@ -2004,7 +2044,7 @@ function getLogLevelBadgeClass(level: string): string {
   return "bg-blue-100 text-blue-700";
 }
 
-function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void> }>) {
+function AdminMonitoring({ liveKiosks, liveTx, onRefresh, searchQuery = "" }: Readonly<{ liveKiosks: any[] | null; liveTx: any[] | null; onRefresh?: () => Promise<void>; searchQuery?: string }>) {
   const [openLogsKiosk, setOpenLogsKiosk] = useState<string | null>(null);
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -2045,7 +2085,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
     }
   };
 
-  const mergedKiosks: any[] = liveKiosks && liveKiosks.length > 0
+  let mergedKiosks: any[] = liveKiosks && liveKiosks.length > 0
     ? liveKiosks.map((k, i) => ({
         id: k.kioskId || k.id || `K-0${i + 1}`,
         kioskId: k.kioskId || k.id || `K-0${i + 1}`,
@@ -2058,6 +2098,16 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
         battery: Number(k.batteryPct || k.battery || 85),
       }))
     : kiosks.slice();
+
+  if (searchQuery.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedKiosks = mergedKiosks.filter(k =>
+      String(k.id || "").toLowerCase().includes(q) ||
+      String(k.location || "").toLowerCase().includes(q) ||
+      String(k.status || "").toLowerCase().includes(q)
+    );
+  }
+
   const online = mergedKiosks.filter(k => String(k.status).toLowerCase() === "online").length;
   const offline = mergedKiosks.filter(k => String(k.status).toLowerCase() === "offline").length;
   const maintenance = mergedKiosks.filter(k => String(k.status).toLowerCase() === "maintenance").length;
@@ -2081,7 +2131,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
       </div>
       <div className="flex items-center justify-between mb-1 px-1">
         <div className="flex items-center gap-3">
-          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span></p>
+          <p className="text-xs text-muted-foreground font-semibold">{mergedKiosks.length} kiosks <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveKiosks && liveKiosks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveKiosks && liveKiosks.length > 0 ? "● LIVE from /api/kiosks" : "DEMO"}</span>{searchQuery ? ` · filter "${searchQuery}"` : ""}</p>
           {calibrateMsg && (
             <p className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${calibrateMsg.ok ? BADGE_SUCCESS_CLS : "bg-red-100 text-red-600"}`}>{calibrateMsg.text}</p>
           )}
@@ -2090,6 +2140,11 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
       </div>
 
       <div className="space-y-3">
+        {mergedKiosks.length === 0 && (
+          <div className="bg-white rounded-2xl border border-border p-10 text-center text-xs text-muted-foreground">
+            No kiosks match "{searchQuery}".
+          </div>
+        )}
         {mergedKiosks.map(k => (
           <div key={k.id} className="bg-white rounded-2xl border border-border p-4 flex items-center gap-4">
             <div className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${getKioskBg(k.status)}`}>
@@ -2098,30 +2153,38 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <p className="font-black text-sm text-foreground">{k.id}</p>
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize flex items-center gap-1 ${getKioskBadgeClass(k.status)}`}>
-                  <StatusPip status={k.status} />{k.status}
+                <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${getKioskBadgeClass(k.status)}`}>{k.status}</span>
+                <span className="text-xs text-muted-foreground font-semibold">· {k.location}</span>
+              </div>
+              <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
+                <span className="flex items-center gap-1 font-semibold"><Scale className="w-3.5 h-3.5 text-green-600" />{k.weight}</span>
+                <span className="flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-600" />{k.submissions} items today</span>
+                <span className="flex items-center gap-1 font-semibold"><Activity className="w-3.5 h-3.5 text-amber-600" />{k.temp}</span>
+                <span className="flex items-center gap-1.5 font-semibold">
+                  <span className="w-12 h-1.5 rounded-full bg-muted overflow-hidden inline-block"><span className={`h-full rounded-full block ${getBatteryBg(k.battery)}`} style={{ width: `${k.battery}%` }} /></span>
+                  {k.battery}%
                 </span>
+                <span>Last ping: {k.lastPing}</span>
               </div>
-              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3" />{k.location}</p>
             </div>
-            <div className="grid grid-cols-4 gap-6 text-center flex-shrink-0">
-              {[["Weight",k.weight],["Submissions",String(k.submissions)],["Temp",k.temp],["Last Ping",k.lastPing]].map(([l,v]) => (
-                <div key={String(l)}><p className="text-xs text-muted-foreground">{l}</p><p className="font-black text-xs text-foreground mt-0.5">{v}</p></div>
-              ))}
-            </div>
-            <div className="flex flex-col items-end gap-2 flex-shrink-0">
-              <div className="flex items-center gap-1.5">
-                <Battery className="w-3.5 h-3.5 text-muted-foreground" />
-                <div className="w-16 h-2 rounded-full bg-muted overflow-hidden"><div className={`h-full rounded-full ${getBatteryBg(k.battery)}`} style={{ width: `${k.battery}%` }} /></div>
-                <span className="text-xs font-bold text-muted-foreground">{k.battery}%</span>
-              </div>
-              <div className="flex gap-1.5">
-                <button type="button" onClick={() => openLogs(k)} className="text-xs font-semibold text-blue-600 hover:underline flex items-center gap-1 disabled:opacity-50"><Eye className="w-3 h-3" />Logs</button>
-                <span className="text-muted-foreground">·</span>
-                <button type="button" disabled={calibratingId === k.id} onClick={() => doCalibrate(k)} className="text-xs font-semibold text-primary hover:underline flex items-center gap-1 disabled:opacity-50">
-                  <RefreshCw className={`w-3 h-3 ${calibratingId === k.id ? "animate-spin" : ""}`} />{calibratingId === k.id ? "Calibrating..." : "Calibrate"}
-                </button>
-              </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                disabled={calibratingId === k.id}
+                onClick={() => doCalibrate(k)}
+                className="px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors disabled:opacity-50 flex items-center gap-1"
+                title="Send zero/tare test ping to kiosk"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${calibratingId === k.id ? 'animate-spin text-primary' : ''}`} />
+                {calibratingId === k.id ? 'Calibrating...' : 'Calibrate'}
+              </button>
+              <button
+                type="button"
+                onClick={() => openLogs(k)}
+                className="px-3 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors flex items-center gap-1"
+              >
+                <Activity className="w-3.5 h-3.5" />Logs
+              </button>
             </div>
           </div>
         ))}
@@ -2129,32 +2192,28 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
 
       {/* Kiosk Logs Modal */}
       {openLogsKiosk && (
-        <div className="absolute inset-0 bg-black/50 flex items-start justify-center pt-8 z-50 rounded-2xl">
-          <div className="bg-white rounded-2xl p-5 w-[640px] max-w-[95%] shadow-2xl">
-            <div className="flex items-center justify-between mb-3">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-2xl w-full border border-border p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-black text-foreground flex items-center gap-2"><Cpu className="w-4 h-4 text-primary" />{openLogsKiosk} · Activity Logs</h3>
-                <p className="text-[10px] text-muted-foreground mt-0.5">{logsLoading ? "Loading from MySQL /api/kiosks/:id/logs..." : `${logs.length} entries loaded`}</p>
+                <h3 className="font-black text-foreground">Diagnostic Logs · Kiosk {openLogsKiosk}</h3>
+                <p className="text-xs text-muted-foreground">Recent telemetry events, weights, errors, and system heartbeats</p>
               </div>
               <button type="button" onClick={() => setOpenLogsKiosk(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
-            {logsMsg && <div className="mb-2 text-xs px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 font-semibold">{logsMsg}</div>}
-            <div className="max-h-80 overflow-auto border border-border rounded-xl divide-y divide-border bg-background">
-              {logsLoading && (
-                <div className="px-4 py-10 text-center text-xs text-muted-foreground">Loading logs...</div>
-              )}
-              {!logsLoading && logs.length === 0 && !logsMsg && (
-                <div className="px-4 py-10 text-center text-xs text-muted-foreground">No logs.</div>
-              )}
+            <div className="flex-1 overflow-auto rounded-xl border border-border bg-slate-900 text-slate-100 p-3 font-mono text-xs divide-y divide-slate-800">
+              {logsMsg && <div className="px-4 py-6 text-center text-xs text-amber-300 font-sans">{logsMsg}</div>}
+              {logsLoading && <div className="px-4 py-10 text-center text-xs text-muted-foreground">Loading logs...</div>}
+              {!logsLoading && logs.length === 0 && !logsMsg && <div className="px-4 py-10 text-center text-xs text-muted-foreground">No logs.</div>}
               {!logsLoading && logs.map((l: any, i: number) => (
-                <div key={l.id || l.logId || `log-${i}`} className="px-4 py-2 flex items-start gap-2">
-                  <span className={`text-[10px] font-black uppercase px-2 py-1 rounded flex-shrink-0 ${getLogLevelBadgeClass(l.level)}`}>{l.level || 'info'}</span>
-                  <span className="text-[10px] text-muted-foreground w-32 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleString()}</span>
-                  <span className="text-xs font-semibold text-foreground flex-1 min-w-0 break-words">{l.message || l.msg || String(l)}</span>
+                <div key={l.id || l.logId || `log-${i}`} className="px-2 py-1.5 flex items-start gap-2">
+                  <span className={`text-[10px] font-bold uppercase px-1 rounded ${getLogLevelBadgeClass(l.level)}`}>{l.level || 'info'}</span>
+                  <span className="text-[10px] text-slate-400 w-24 flex-shrink-0">{new Date(l.time || Date.now()).toLocaleTimeString()}</span>
+                  <span className="text-xs text-slate-200 flex-1 break-words">{l.message || l.msg || String(l)}</span>
                 </div>
               ))}
             </div>
-            <div className="mt-3 flex justify-end">
+            <div className="flex justify-end">
               <button type="button" onClick={() => setOpenLogsKiosk(null)} className="px-4 py-2 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors">Close</button>
             </div>
           </div>
@@ -2164,7 +2223,7 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh }: Readonly<{ liveKiosk
   );
 }
 
-function AdminAdmins() {
+function AdminAdmins({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
   const [showForm, setShowForm] = useState(false);
   const [admins, setAdmins] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -2251,10 +2310,20 @@ function AdminAdmins() {
     }
   };
 
-  const activeAdmins = admins.filter(a => (a.status || "active") === "active");
-  const archivedAdmins = admins.filter(a => (a.status || "active") === "archived");
+  const q = searchQuery.trim().toLowerCase();
+  const searchFilteredAdmins = q
+    ? admins.filter(a => {
+        const name = `${a.firstName || ""} ${a.lastName || ""} ${a.name || ""}`.toLowerCase();
+        const em = String(a.email || "").toLowerCase();
+        const id = String(a.adminId || "").toLowerCase();
+        return name.includes(q) || em.includes(q) || id.includes(q);
+      })
+    : admins;
+
+  const activeAdmins = searchFilteredAdmins.filter(a => (a.status || "active") === "active");
+  const archivedAdmins = searchFilteredAdmins.filter(a => (a.status || "active") === "archived");
   const displayedAdmins = tabFilter === "all"
-    ? admins
+    ? searchFilteredAdmins
     : tabFilter === "active"
       ? activeAdmins
       : archivedAdmins;
