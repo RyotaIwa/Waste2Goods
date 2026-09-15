@@ -263,14 +263,11 @@ function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; tex
 
 function getBackendOrigin(): string {
   try {
-    const base = Waste2GoodsAPI.getApiBaseUrl?.() || "";
+    const base = getApiBaseUrl();
     if (base.startsWith("http://") || base.startsWith("https://")) {
       return base.replace(/\/api\/?$/, "");
     }
-    const host = getApiHost() || "localhost";
-    const proto = getApiProtocol() || "http";
-    const port = getApiPort() || "3001";
-    return `${proto}://${host}:${port}`;
+    return "http://localhost:3001";
   } catch {
     return "http://localhost:3001";
   }
@@ -2691,6 +2688,17 @@ export default function App() {
     regProvince && regCity ? (PH_LOCATIONS[regProvince]?.[regCity] || []).sort(alphabeticalCompare) : [];
 
   const go = (s: MobileScreen) => setScreen(s);
+
+  // ── Automatic URL Pathname Sanitizer ──
+  useEffect(() => {
+    try {
+      if (typeof window !== "undefined" && window.location.pathname && window.location.pathname !== "/") {
+        if (window.location.pathname.includes("192.168.") || window.location.pathname.includes("localhost") || window.location.pathname.includes("/api/auth")) {
+          window.history.replaceState({}, document.title, "/");
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
 
   // ── OAuth Callback Query Parameter Handler ──
   useEffect(() => {
