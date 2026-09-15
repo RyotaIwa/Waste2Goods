@@ -540,11 +540,12 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
           _isYou: isMe,
         };
       })
-    : DEMO_LEADERBOARD_FALLBACK.map((u, i) => {
-        const isMe = (u.name.toLowerCase() === myName.toLowerCase()) || (u.id === currentUser.id);
+    : DEMO_LEADERBOARD_FALLBACK.map((u: any, i: number) => {
+        const isMe = (u.name.toLowerCase() === myName.toLowerCase()) || (Boolean(u.id) && u.id === currentUser.id);
+        const demoId = u.id || `demo-${u.rank || i + 1}`;
         return {
-          id: u.id || `demo-${i}`,
-          userId: u.id || `demo-${i}`,
+          id: demoId,
+          userId: demoId,
           name: u.name,
           displayName: u.name,
           _initials: u.avatar || "RU",
