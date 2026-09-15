@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
+import { findOrCreateOAuthUser } from './oauth-user-store.js';
 
 const STATE_PREFIX = 'google:oauth:state:';
 const CODE_PREFIX = 'google:oauth:code:';
@@ -127,25 +128,28 @@ a{color:#2563eb}</style></head><body>
       profile = typeof raw === 'string' ? JSON.parse(raw) : raw;
     }
 
+    const userRecord = await findOrCreateOAuthUser(profile, { provider: 'google' });
     const access = signAccessToken({
-      userId: profile.id || DEMO_GOOGLE_USER.id,
-      role: 'resident',
-      name: profile.name,
-      email: profile.email || DEMO_GOOGLE_USER.email,
+      userId: userRecord.userId,
+      role: userRecord.role,
+      name: userRecord.name,
+      email: userRecord.email,
+      barangayId: userRecord.barangayId,
     });
     const refresh = await issueRefreshToken({
-      userId: profile.id || DEMO_GOOGLE_USER.id,
-      role: 'resident',
-      name: profile.name,
+      userId: userRecord.userId,
+      role: userRecord.role,
+      name: userRecord.name,
+      barangayId: userRecord.barangayId,
     });
 
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>Google OAuth Complete</title>
 <style>body{font-family:ui-sans-serif,system-ui;max-width:760px;margin:40px auto;padding:0 16px;color:#0f172a}
 pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:auto;font-size:12px}</style></head><body>
 <h1>Google OAuth Authorization Code Exchanged</h1>
-<p>Provider: <strong>${googleConfigured() ? 'accounts.google.com' : 'Local Demo IdP (Google OAuth 2.0 flow)'}</strong>. Code exchanged for Waste2Goods JWT:</p>
+<p>Provider: <strong>${googleConfigured() ? 'accounts.google.com' : 'Local Demo IdP (Google OAuth 2.0 flow)'}</strong>. User ${userRecord.created ? 'created' : 'found'} in MySQL (userId=${userRecord.userId}). Code exchanged for Waste2Goods JWT:</p>
 <pre>${JSON.stringify({
-      user: { name: profile.name, email: profile.email, role: 'resident' },
+      user: { userId: userRecord.userId, name: userRecord.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
       access_token: access.accessToken,
       token_type: 'Bearer',
       expires_in: access.expiresIn,

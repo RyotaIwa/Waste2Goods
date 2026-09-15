@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 
+let RateLimitRedisStoreCtor = null;
+(async () => {
+  try {
+    const rlRedis = await import('rate-limit-redis');
+    RateLimitRedisStoreCtor = rlRedis.RedisStore || rlRedis.default?.RedisStore || (rlRedis.default && typeof rlRedis.default === 'function' ? rlRedis.default : null);
+  } catch {
+    RateLimitRedisStoreCtor = null;
+  }
+})();
+
 const REDIS_URL = process.env.REDIS_URL || process.env.REDIS_URI;
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
 const REDIS_PORT = Number(process.env.REDIS_PORT || 6379);
@@ -249,16 +259,15 @@ export async function redisStats() {
 }
 
 export function makeRateLimitRedisStore() {
-  if (!isRedisEnabled()) return undefined;
+  if (!isRedisEnabled() || !redisInstance) return undefined;
   try {
-    const { RedisStore } = require?.('rate-limit-redis') ||
-      (globalThis.__rate_limit_redis_loaded);
-    if (!RedisStore) return undefined;
-    return new RedisStore({
-      sendCommand: async (...args) => redisInstance.call(...args),
+    const Ctor = RateLimitRedisStoreCtor;
+    if (!Ctor) return undefined;
+    return new Ctor({
+      sendCommand: (...args) => redisInstance.call(...args),
       prefix: ns('rl:'),
     });
-  } catch {
+  } catch (_err) {
     return undefined;
   }
 }

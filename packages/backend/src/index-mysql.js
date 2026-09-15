@@ -40,6 +40,7 @@ import { csrfOriginGuard, csrfInfo } from './security/csrf.js';
 import { attachGitHubOAuth, githubOAuthInfo } from './security/github-oauth.js';
 import { attachGoogleOAuth, googleOAuthInfo } from './security/google-oauth.js';
 import { attachCdnStatic, cdnInfo } from './security/cdn.js';
+import { lookupKioskUser } from './security/oauth-user-store.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -320,12 +321,6 @@ app.post('/api/auth/login', authLimiter, authFailureLimiter, validateBody(LoginS
     const dbAdminResult = await tryDbAdminLogin(normalizedEmail, password);
     if (dbAdminResult) return res.json(dbAdminResult);
 
-    const hardAdminResult = await tryHardcodedAdminLogin(normalizedEmail, password);
-    if (hardAdminResult) return res.json(hardAdminResult);
-
-    const hardResidentResult = await tryHardcodedResidentLogin(normalizedEmail, password);
-    if (hardResidentResult) return res.json(hardResidentResult);
-
     const residentResult = await tryResidentDbLogin(normalizedEmail, password);
     if (residentResult.error) {
       return res.status(residentResult.error.status).json({ error: residentResult.error.msg });
@@ -339,9 +334,19 @@ app.post('/api/auth/login', authLimiter, authFailureLimiter, validateBody(LoginS
 app.post('/api/auth/kiosk-login', authLimiter, kioskLimiter, async (req, res) => {
   const { pin } = req.body;
   if (pin === KIOSK_PIN) {
-    const access = signAccessToken({ kioskId: 'KIOSK-01', role: 'kiosk', name: DEMO_KIOSK_USER.name });
-    const refresh = await issueRefreshToken({ kioskId: 'KIOSK-01', role: 'kiosk', name: DEMO_KIOSK_USER.name });
-    return res.json(buildHardenedAuthResponse(access, refresh, DEMO_KIOSK_USER));
+    const kiosk = await lookupKioskUser(pin);
+    const access = signAccessToken({ kioskId: kiosk.kioskId, role: 'kiosk', name: kiosk.name });
+    const refresh = await issueRefreshToken({ kioskId: kiosk.kioskId, role: 'kiosk', name: kiosk.name });
+    const kioskCompatUser = {
+      id: kiosk.kioskId,
+      name: kiosk.name,
+      email: kiosk.email,
+      role: 'kiosk',
+      barangay: 'Cabantian',
+      roleId: 5,
+      adminId: null,
+    };
+    return res.json(buildHardenedAuthResponse(access, refresh, kioskCompatUser));
   }
   res.status(401).json({ error: 'Invalid PIN' });
 });
@@ -574,22 +579,6 @@ async function tryDbAdminLogin(normalizedEmail, password) {
   } catch (_) {
     return null;
   }
-}
-
-async function tryHardcodedAdminLogin(normalizedEmail, password) {
-  if (normalizedEmail !== ADMIN_CREDENTIALS.email || password !== ADMIN_CREDENTIALS.password) return null;
-  console.log('🔐 Admin logged in via hardcoded fallback');
-  const access = signAccessToken({ adminId: 'A-001', role: 'admin', name: DEMO_ADMIN_USER.name });
-  const refresh = await issueRefreshToken({ adminId: 'A-001', role: 'admin', name: DEMO_ADMIN_USER.name });
-  return buildHardenedAuthResponse(access, refresh, DEMO_ADMIN_USER);
-}
-
-async function tryHardcodedResidentLogin(normalizedEmail, password) {
-  if (normalizedEmail !== DEMO_RESIDENT_CREDENTIALS.email || password !== DEMO_RESIDENT_CREDENTIALS.password) return null;
-  console.log('🔐 Resident logged in via hardcoded fallback');
-  const access = signAccessToken({ userId: 'U-001', role: 'resident', name: DEMO_RESIDENT_USER.name });
-  const refresh = await issueRefreshToken({ userId: 'U-001', role: 'resident', name: DEMO_RESIDENT_USER.name });
-  return buildHardenedAuthResponse(access, refresh, DEMO_RESIDENT_USER);
 }
 
 async function tryResidentDbLogin(normalizedEmail, password) {
@@ -1170,14 +1159,45 @@ app.get('/api/leaderboard', authenticate, requirePermission('list', 'leaderboard
   }
 });
 
-app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRoute(120), (req, res) => {
-  res.json([
-    { id: 1, title: 'Submit 2kg of PET bottles', reward: 100, progress: 1.4, goal: 2, unit: 'kg', type: 'daily', done: false },
-    { id: 2, title: 'Visit kiosk 3 days in a row', reward: 150, progress: 2, goal: 3, unit: 'days', type: 'weekly', done: false },
-    { id: 3, title: 'Refer a neighbor', reward: 200, progress: 1, goal: 1, unit: 'person', type: 'special', done: true },
-    { id: 4, title: 'Collect 5kg of cardboard', reward: 120, progress: 5, goal: 5, unit: 'kg', type: 'weekly', done: true },
-    { id: 5, title: 'Submit any 3 material types', reward: 80, progress: 2, goal: 3, unit: 'types', type: 'daily', done: false }
-  ]);
+app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRoute(120), async (req, res) => {
+  try {
+    let rows = [];
+    try {
+      [rows] = await db.query(
+        "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM recycling_tasks WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50"
+      );
+    } catch (tasksErr) {
+      try {
+        [rows] = await db.query(
+          "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM tasks WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50"
+        );
+      } catch {
+        rows = [];
+      }
+    }
+    if (rows.length === 0) {
+      return res.json([
+        { id: 1, title: 'Submit 2kg of PET bottles', reward: 100, progress: 0, goal: 2, unit: 'kg', type: 'daily', done: false },
+        { id: 2, title: 'Visit kiosk 3 days in a row', reward: 150, progress: 0, goal: 3, unit: 'days', type: 'weekly', done: false },
+        { id: 3, title: 'Refer a neighbor', reward: 200, progress: 0, goal: 1, unit: 'person', type: 'special', done: false },
+      ]);
+    }
+    const tasks = rows.map((t, idx) => ({
+      id: Number(t.taskId) || idx + 1,
+      title: String(t.taskName || `Task #${idx + 1}`),
+      description: String(t.description || ''),
+      reward: Number(t.pointsReward || t.bonusPoints || 0),
+      progress: Number(t.progress || 0),
+      goal: Number(t.target || t.targetKg || 1),
+      unit: t.targetKg ? 'kg' : (t.frequency === 'weekly' ? 'days' : 'tasks'),
+      type: String(t.frequency || 'weekly').toLowerCase(),
+      done: Number(t.progress || 0) >= Number(t.target || 1) && Number(t.target || 1) > 0,
+      status: String(t.status || 'active'),
+    }));
+    res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ──────────────────────────────────────────────────────

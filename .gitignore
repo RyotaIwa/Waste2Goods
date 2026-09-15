@@ -40,3 +40,11 @@ yarn-error.log*
 # XAMPP / local DB dumps
 *.sql
 !packages/backend/database/*.sql
+
+# Chat exports, temporary files & binaries
+chat*.txt
+*chat*.mjs
+CHAT_BACKUP.md
+*.exe
+*.docx
+Screenshot*.png

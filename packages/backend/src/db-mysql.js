@@ -7,6 +7,8 @@ import { ADMIN_CREDENTIALS, DEMO_RESIDENT_CREDENTIALS } from '@waste2goods/core'
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+const KIOSK_PIN = process.env.KIOSK_PIN || '7890';
+
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_USER = process.env.DB_USER || 'root';
@@ -78,6 +80,178 @@ async function migrateTableColumns(tableName, migrations) {
   return applied;
 }
 
+async function ensureTasksView() {
+  try {
+    const [[existsRow]] = await db.query(
+      "SELECT COUNT(*) AS cnt FROM information_schema.VIEWS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tasks'"
+    );
+    if (Number(existsRow?.cnt || 0) > 0) return 0;
+    await db.query(
+      "CREATE VIEW tasks AS SELECT taskId, taskName, description, bonus_points, bonusPoints, targetKg, startDate, endDate, progress, target, frequency, barangayId, materialId, status FROM recycling_tasks"
+    );
+    console.log('🔧 Migration applied: Created VIEW `tasks` AS SELECT * FROM recycling_tasks');
+    return 1;
+  } catch (err) {
+    console.debug('Tasks VIEW migration skipped:', err.message);
+    return 0;
+  }
+}
+
+async function ensureRewardsSeed() {
+  try {
+    const [[cnt]] = await db.query('SELECT COUNT(*) AS cnt FROM rewards');
+    if (Number(cnt?.cnt || 0) > 0) return 0;
+    await db.query(`
+      INSERT INTO rewards (rewardId, rewardName, points_required, pointsCost, stock_quantity, stockQuantity, description, category, icon, isSeasonal, status, created_at, createdAt) VALUES
+      (1, 'Eco Water Bottle', 350, 350, 120, 120, 'Reusable stainless steel 500ml water bottle with Waste2Goods logo', 'Eco Essentials', '🥤', 0, 'active', NOW(), NOW()),
+      (2, 'Bamboo Utensil Set', 280, 280, 95, 95, 'Fork, spoon, chopsticks, straw with canvas pouch', 'Eco Essentials', '🥢', 0, 'active', NOW(), NOW()),
+      (3, 'Raffia Tote Bag', 220, 220, 150, 150, 'Hand-woven natural raffia shopping bag', 'Eco Essentials', '👜', 0, 'active', NOW(), NOW()),
+      (4, 'Cotton Tote Bag', 150, 150, 200, 200, 'Heavy-duty canvas grocery bag with print', 'Eco Essentials', '🛍️', 0, 'active', NOW(), NOW()),
+      (5, 'Notebook (Set of 3)', 180, 180, 180, 180, 'Recycled paper notebooks with Barangay Cabantian design', 'School Supplies', '📓', 0, 'active', NOW(), NOW()),
+      (6, 'Pencil Case Set', 160, 160, 110, 110, 'Eco-friendly pencil case with pencils and eraser', 'School Supplies', '✏️', 0, 'active', NOW(), NOW()),
+      (7, 'Pencil (Pack of 12)', 90, 90, 250, 250, '100% recycled newspaper pencils with seeds', 'School Supplies', '🖊️', 0, 'active', NOW(), NOW()),
+      (8, 'Rice (2kg)', 550, 550, 75, 75, 'Premium well-milled rice 2kg pack', 'Groceries', '🍚', 0, 'active', NOW(), NOW()),
+      (9, 'Pancit Canton (Pack of 6)', 240, 240, 130, 130, 'Assorted flavor instant pancit canton', 'Groceries', '🍜', 0, 'active', NOW(), NOW()),
+      (10, 'Canned Sardines (Pack of 3)', 195, 195, 100, 100, 'Premium sardines in tomato sauce', 'Groceries', '🐟', 0, 'active', NOW(), NOW()),
+      (11, 'Coffee (10 sachets)', 180, 180, 90, 90, '3-in-1 coffee mix', 'Groceries', '☕', 0, 'active', NOW(), NOW()),
+      (12, 'Laundry Detergent (1kg)', 260, 260, 80, 80, 'Eco-friendly biodegradable detergent powder', 'Household', '🧺', 0, 'active', NOW(), NOW()),
+      (13, 'Dishwashing Liquid (500ml)', 210, 210, 70, 70, 'Plant-based concentrated dish soap', 'Household', '🧽', 0, 'active', NOW(), NOW()),
+      (14, 'Toilet Soap (Set of 3)', 150, 150, 100, 100, 'Natural herbal bath soap trio', 'Household', '🧼', 0, 'active', NOW(), NOW()),
+      (15, 'Toothbrush + Toothpaste', 130, 130, 140, 140, 'Bamboo toothbrush with fluoride toothpaste', 'Household', '🪥', 0, 'active', NOW(), NOW()),
+      (16, 'Vegetable Seedlings Kit', 290, 290, 60, 60, 'Pechay, kangkong, tomato seeds + starter pots', 'Community', '🌱', 0, 'active', NOW(), NOW()),
+      (17, 'Community T-Shirt', 330, 330, 75, 75, 'Limited Waste2Goods barangay shirt (sizes M/L/XL)', 'Community', '👕', 0, 'active', NOW(), NOW()),
+      (18, 'Sinulog Gift Pack', 420, 420, 30, 30, 'Seasonal: Sinulog-themed mug + keychain + tote', 'Seasonal', '🎊', 1, 'active', NOW(), NOW()),
+      (19, 'Kadayawan Durian Treats', 520, 520, 25, 25, 'Seasonal: Local durian candies, yema, pasalubong box', 'Seasonal', '🎁', 1, 'active', NOW(), NOW()),
+      (20, 'Pasko Ham & Cheese Pack', 750, 750, 40, 40, 'Seasonal Christmas: Premium ham + cheese loaf', 'Seasonal', '🎄', 1, 'active', NOW(), NOW())
+    `);
+    console.log('✅ Rewards seed data inserted successfully');
+    return 1;
+  } catch (err) {
+    console.debug('Rewards seed skipped:', err.message);
+    return 0;
+  }
+}
+
+async function ensureRecyclingTasksSeed() {
+  try {
+    const [[cnt]] = await db.query('SELECT COUNT(*) AS cnt FROM recycling_tasks');
+    if (Number(cnt?.cnt || 0) > 0) return 0;
+    await db.query(`
+      INSERT INTO recycling_tasks (taskId, taskName, description, bonus_points, bonusPoints, targetKg, startDate, endDate, progress, target, frequency, barangayId, materialId, status) VALUES
+      (1, 'Daily Recycling', 'Submit any amount of PET plastic today', 25, 25, 0.50, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
+      (2, 'Streak Bonus - 3 Days', '3 days in a row! Keep it up', 100, 100, 1.00, NULL, NULL, 0, 3, 'daily', NULL, NULL, 'active'),
+      (3, '5 kg Weekly Challenge', 'Collect and submit 5 kg total this week', 300, 300, 5.00, NULL, NULL, 0, 1, 'weekly', NULL, NULL, 'active'),
+      (4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 150, 150, 0.20, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
+      (5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 20kg target', 1000, 1000, 20.00, NULL, NULL, 0, 1, 'monthly', NULL, NULL, 'active')
+    `);
+    console.log('✅ Recycling tasks seed data inserted successfully');
+    return 1;
+  } catch (err) {
+    console.debug('Recycling tasks seed skipped:', err.message);
+    return 0;
+  }
+}
+
+async function ensureRecyclableMaterialsSeed() {
+  try {
+    const [[cnt]] = await db.query('SELECT COUNT(*) AS cnt FROM recyclable_materials');
+    if (Number(cnt?.cnt || 0) > 0) return 0;
+    await db.query(`
+      INSERT INTO recyclable_materials (materialId, materialName, materialType, pointsPerKg, kgPerUnit, description, status) VALUES
+      (1, 'PET Plastic Bottle (500ml)', 'PET Plastic', 50.00, 0.01, 'Clean 500ml clear PET bottle with cap removed', 'active'),
+      (2, 'PET Plastic Bottle (1L)', 'PET Plastic', 50.00, 0.02, 'Clean 1L clear PET beverage bottle', 'active'),
+      (3, 'PET Plastic Bottle (1.5L)', 'PET Plastic', 50.00, 0.03, 'Clean 1.5L clear PET soda/water bottle', 'active'),
+      (4, 'PET Plastic Container', 'PET Plastic', 50.00, 0.02, 'Clean food-grade PET container (tupperware-style)', 'active'),
+      (5, 'Bulk PET Plastic (by weight)', 'PET Plastic', 50.00, 1.00, 'Any clean PET plastic weighed directly on kiosk scale', 'active')
+    `);
+    console.log('✅ Recyclable materials seed data inserted successfully');
+    return 1;
+  } catch (err) {
+    console.debug('Recyclable materials seed skipped:', err.message);
+    return 0;
+  }
+}
+
+async function ensureRolesSeed() {
+  try {
+    const needRoles = [
+      { id: 1, name: 'SUPER_ADMIN',     description: 'System super administrator (immutable A-001)' },
+      { id: 2, name: 'ADMIN',           description: 'Barangay admin panel dashboard access' },
+      { id: 3, name: 'BARANGAY_ADMIN',  description: 'Per-barangay operations admin' },
+      { id: 4, name: 'RESIDENT',        description: 'Standard registered resident user' },
+      { id: 5, name: 'KIOSK',           description: 'Kiosk terminal on-site role' },
+      { id: 6, name: 'ANON',            description: 'Unauthenticated public browser role' },
+    ];
+    for (const r of needRoles) {
+      const [[exists]] = await db.query('SELECT COUNT(*) AS cnt FROM roles WHERE roleId = ?', [r.id]);
+      if (Number(exists?.cnt || 0) > 0) continue;
+      try {
+        await db.query(
+          'INSERT INTO roles (roleId, roleName, description, createdAt) VALUES (?, ?, ?, NOW())',
+          [r.id, r.name, r.description]
+        );
+      } catch (_colErr) {
+        try {
+          await db.query(
+            'INSERT INTO roles (roleId, roleName, description, created_at) VALUES (?, ?, ?, NOW())',
+            [r.id, r.name, r.description]
+          );
+        } catch (_noTimeCol) {
+          await db.query(
+            'INSERT INTO roles (roleId, roleName, description) VALUES (?, ?, ?)',
+            [r.id, r.name, r.description]
+          );
+        }
+      }
+      console.log(`✅ Role seed inserted: roleId=${r.id} name=${r.name}`);
+    }
+    return 1;
+  } catch (err) {
+    console.debug('Roles seed skipped:', err.message);
+    return 0;
+  }
+}
+
+async function ensureKioskAdminSeed() {
+  try {
+    const pwPlain = KIOSK_PIN || '7890';
+    const [rows] = await db.query(
+      "SELECT adminId, passwordHash FROM administrators WHERE adminIdentifier = 'kiosk@waste2goods.ph' OR adminId = 'K-001' LIMIT 1"
+    );
+    if (rows && rows.length > 0) {
+      const match = await bcrypt.compare(pwPlain, String(rows[0].passwordHash || '')).catch(() => false);
+      if (!match) {
+        const newHash = await precomputeHash(pwPlain);
+        await db.query("UPDATE administrators SET passwordHash = ? WHERE adminId = ?", [newHash, rows[0].adminId]);
+        console.log('🔄 Synced password hash for kiosk administrator K-001 in administrators table');
+      }
+      return 0;
+    }
+    const pw = await precomputeHash(pwPlain);
+    try {
+      await db.query(
+        "INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, status, createdAt) VALUES ('K-001', 'kiosk@waste2goods.ph', 'kiosk@waste2goods.ph', 'Kiosk', 'Terminal', ?, 1, 5, 'active', NOW())",
+        [pw]
+      );
+    } catch (fkErr) {
+      if (/foreign key|roleId/i.test(fkErr.message || '')) {
+        await db.query(
+          "INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, status, createdAt) VALUES ('K-001', 'kiosk@waste2goods.ph', 'kiosk@waste2goods.ph', 'Kiosk', 'Terminal', ?, 1, NULL, 'active', NOW())",
+          [pw]
+        );
+        console.log('✅ Kiosk administrator (K-001) inserted with roleId=NULL FK-safe fallback');
+        return 1;
+      }
+      throw fkErr;
+    }
+    console.log('✅ Kiosk administrator (K-001) inserted successfully');
+    return 1;
+  } catch (err) {
+    console.debug('Kiosk admin seed skipped:', err.message);
+    return 0;
+  }
+}
+
 async function applySchemaMigrations() {
   try {
     let totalApplied = 0;
@@ -108,6 +282,13 @@ async function applySchemaMigrations() {
     } catch (err) {
       console.debug('Email migration sync skipped:', err.message);
     }
+
+    totalApplied += await ensureTasksView();
+    totalApplied += await ensureRewardsSeed();
+    totalApplied += await ensureRecyclingTasksSeed();
+    totalApplied += await ensureRecyclableMaterialsSeed();
+    totalApplied += await ensureRolesSeed();
+    totalApplied += await ensureKioskAdminSeed();
 
     if (totalApplied === 0) {
       console.log('✅ All table schemas are up to date');
@@ -143,14 +324,21 @@ async function insertInfrastructureData() {
 
 async function insertAdminData() {
   try {
+    const pw = ADMIN_CREDENTIALS?.password ?? 'AdminCabantian2025';
     const [rows] = await db.query(
-      "SELECT COUNT(*) as count FROM administrators WHERE adminId = 'A-001' OR adminIdentifier = 'admin@waste2goods.ph'"
+      "SELECT adminId, passwordHash FROM administrators WHERE adminId = 'A-001' OR adminIdentifier = 'admin@waste2goods.ph' OR email = 'admin@waste2goods.ph' LIMIT 1"
     );
-    if (rows[0].count > 0) {
-      console.log('✅ Admin user (A-001 Juan Reyes) already present in administrators table');
+    if (rows && rows.length > 0) {
+      const match = await bcrypt.compare(pw, String(rows[0].passwordHash || '')).catch(() => false);
+      if (!match) {
+        const newHash = await precomputeHash(pw);
+        await db.query("UPDATE administrators SET passwordHash = ? WHERE adminId = ?", [newHash, rows[0].adminId]);
+        console.log('🔄 Synced password hash for admin user (A-001 Juan Reyes) in administrators table');
+      } else {
+        console.log('✅ Admin user (A-001 Juan Reyes) already present in administrators table');
+      }
       return;
     }
-    const pw = ADMIN_CREDENTIALS?.password ?? 'AdminCabantian2025';
     const passwordHash = await precomputeHash(pw);
     await db.query(`
       INSERT INTO administrators (adminId, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt)
@@ -174,27 +362,40 @@ async function insertAdminData() {
 
 async function insertResidentData() {
   try {
+    const pw = DEMO_RESIDENT_CREDENTIALS?.password ?? 'ResidentCabantian2025';
+    const email = (DEMO_RESIDENT_CREDENTIALS?.email ?? 'resident@cabantian.ph').toLowerCase().trim();
     const [rows] = await db.query(
-      "SELECT COUNT(*) as count FROM users WHERE userId = 'U-001' OR email = 'resident@cabantian.ph'"
+      "SELECT userId, passwordHash FROM users WHERE email = ? LIMIT 1",
+      [email]
     );
-    if (rows[0].count > 0) {
-      console.log('✅ Demo resident (U-001 Maria Santos) already present in users table');
+    if (rows && rows.length > 0) {
+      const match = await bcrypt.compare(pw, String(rows[0].passwordHash || '')).catch(() => false);
+      if (!match) {
+        const newHash = await precomputeHash(pw);
+        await db.query("UPDATE users SET passwordHash = ? WHERE userId = ?", [newHash, rows[0].userId]);
+        console.log('🔄 Synced password hash for demo resident (' + email + ') in users table');
+      } else {
+        console.log('✅ Demo resident (' + email + ') already present in users table');
+      }
       return;
     }
-    const pw = DEMO_RESIDENT_CREDENTIALS?.password ?? 'ResidentCabantian2025';
     const passwordHash = await precomputeHash(pw);
+    const [[maxRow]] = await db.query(
+      "SELECT COALESCE(MAX(CAST(SUBSTRING(userId, 3) AS UNSIGNED)), 0) AS maxNum FROM users"
+    );
+    const nextId = `U-${String(Number(maxRow?.maxNum || 0) + 1).padStart(3, '0')}`;
     await db.query(`
       INSERT INTO users (
         userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
         total_points, pointsBalance, totalSubmissions, createdAt, status,
         phone, province, city, barangayName, streetAddress
       ) VALUES (
-        'U-001',
+        ?,
         'Maria',
         'Santos',
-        'resident@cabantian.ph',
         ?,
-        'U-001-QRSA1',
+        ?,
+        ?,
         1,
         50,
         50,
@@ -207,9 +408,9 @@ async function insertResidentData() {
         'Cabantian',
         'Cabantian Road'
       )
-    `, [passwordHash]);
-    console.log('✅ Demo resident (U-001 Maria Santos) inserted into users table');
-    console.log('   → Email: resident@cabantian.ph  |  Password: ' + pw);
+    `, [nextId, email, passwordHash, `${nextId}-QRSA1`]);
+    console.log(`✅ Demo resident (Maria Santos ${email}) inserted into users table as ${nextId}`);
+    console.log('   → Email: ' + email + '  |  Password: ' + pw);
   } catch (err) {
     console.error('Warning inserting demo resident user:', err.message);
   }

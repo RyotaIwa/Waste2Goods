@@ -3,19 +3,25 @@ import { RedisStore } from 'rate-limit-redis';
 import {
   isRedisEnabled, redisBackendMode, redisIncr, redisExpire, redisGet,
 } from './redis-client.js';
+import redisClientModule from './redis-client.js';
 
 function buildRedisStore(prefix) {
   if (!isRedisEnabled()) return undefined;
   try {
+    const factory = redisClientModule.makeRateLimitRedisStore;
+    if (typeof factory === 'function') {
+      const store = factory();
+      if (store) return store;
+    }
     return new RedisStore({
       prefix: `w2g:rl:${prefix}:`,
       sendCommand: async (command, ...args) => {
-        const Redis = (await import('ioredis')).default;
-        const i = Redis.default || Redis;
-        const client = (await import('./redis-client.js')).default;
-        if (client && client._raw) return client._raw.call(...[command, ...args]);
-        const fallback = await redisIncr(`${prefix}:${args[0] || 'k'}`, 1, 60);
-        return [String(fallback)];
+        try {
+          const fallback = await redisIncr(`${prefix}:${args[0] || 'k'}`, 1, 60);
+          return [String(fallback)];
+        } catch {
+          return ['0'];
+        }
       },
     });
   } catch {

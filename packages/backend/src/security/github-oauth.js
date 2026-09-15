@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
+import { findOrCreateOAuthUser } from './oauth-user-store.js';
 
 const STATE_PREFIX = 'gh:oauth:state:';
 const CODE_PREFIX = 'gh:oauth:code:';
@@ -122,25 +123,28 @@ a{color:#58a6ff}</style></head><body>
       profile = typeof raw === 'string' ? JSON.parse(raw) : raw;
     }
 
+    const userRecord = await findOrCreateOAuthUser(profile, { provider: 'github' });
     const access = signAccessToken({
-      userId: profile.id || DEMO_USER.id,
-      role: 'resident',
-      name: profile.name || profile.login,
-      email: profile.email || DEMO_USER.email,
+      userId: userRecord.userId,
+      role: userRecord.role,
+      name: userRecord.name,
+      email: userRecord.email,
+      barangayId: userRecord.barangayId,
     });
     const refresh = await issueRefreshToken({
-      userId: profile.id || DEMO_USER.id,
-      role: 'resident',
-      name: profile.name || profile.login,
+      userId: userRecord.userId,
+      role: userRecord.role,
+      name: userRecord.name,
+      barangayId: userRecord.barangayId,
     });
 
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>GitHub OAuth complete</title>
 <style>body{font-family:ui-sans-serif,system-ui;max-width:760px;margin:40px auto;padding:0 16px;color:#0f172a}
 pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:auto;font-size:12px}</style></head><body>
 <h1>GitHub Authorization Code exchanged</h1>
-<p>Provider: <strong>${githubConfigured() ? 'github.com' : 'local demo IdP'}</strong>. Code was one-time; this page holds the resulting Waste2Goods JWT.</p>
+<p>Provider: <strong>${githubConfigured() ? 'github.com' : 'local demo IdP'}</strong>. User ${userRecord.created ? 'created' : 'found'} in MySQL (userId=${userRecord.userId}). Code was one-time; this page holds the resulting Waste2Goods JWT.</p>
 <pre>${JSON.stringify({
-      user: { login: profile.login || profile.name, email: profile.email, role: 'resident' },
+      user: { userId: userRecord.userId, login: profile.login || profile.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
       access_token: access.accessToken,
       token_type: 'Bearer',
       expires_in: access.expiresIn,
