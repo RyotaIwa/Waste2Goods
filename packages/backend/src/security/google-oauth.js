@@ -143,9 +143,17 @@ a{color:#2563eb}</style></head><body>
       barangayId: userRecord.barangayId,
     });
 
+    if (saved?.returnTo && (saved.returnTo.startsWith('http://') || saved.returnTo.startsWith('https://'))) {
+      const sep = saved.returnTo.includes('?') ? '&' : '?';
+      const redirectTarget = `${saved.returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
+      return res.redirect(302, redirectTarget);
+    }
+
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>Google OAuth Complete</title>
 <style>body{font-family:ui-sans-serif,system-ui;max-width:760px;margin:40px auto;padding:0 16px;color:#0f172a}
-pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:auto;font-size:12px}</style></head><body>
+pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:auto;font-size:12px}
+.btn{display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:12px}
+</style></head><body>
 <h1>Google OAuth Authorization Code Exchanged</h1>
 <p>Provider: <strong>${googleConfigured() ? 'accounts.google.com' : 'Local Demo IdP (Google OAuth 2.0 flow)'}</strong>. User ${userRecord.created ? 'created' : 'found'} in MySQL (userId=${userRecord.userId}). Code exchanged for Waste2Goods JWT:</p>
 <pre>${JSON.stringify({
@@ -156,7 +164,8 @@ pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:au
       refresh_token: refresh.refreshToken,
       jti: access.jti,
     }, null, 2)}</pre>
-<p>Use this access token as <code>Authorization: Bearer …</code> on protected APIs. <a href="/security-dashboard">Security Dashboard</a></p>
+<p>Use this access token as <code>Authorization: Bearer …</code> on protected APIs.</p>
+<p><a class="btn" href="/security-dashboard">Go to Security Dashboard</a></p>
 </body></html>`);
   });
 }
