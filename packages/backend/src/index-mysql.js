@@ -376,6 +376,11 @@ app.post('/api/auth/refresh', authLimiter, async (req, res) => {
   }
 });
 
+app.get('/api/auth/me', authenticateJWT, async (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'unauthorized' });
+  return res.json({ user: req.user });
+});
+
 app.post('/api/auth/logout', authenticate, async (req, res) => {
   try {
     const jti = req.user?.jti;
