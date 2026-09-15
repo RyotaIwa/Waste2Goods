@@ -15,7 +15,10 @@
     "dev:backend-laravel": "cd packages/backend-laravel && npm run dev",
     "build:admin": "cd packages/admin-panel && npm run build",
     "build:kiosk": "cd packages/kiosk-app && npm run build",
-    "build:mobile": "cd packages/mobile-app && npm run build"
+    "build:mobile": "cd packages/mobile-app && npm run build",
+    "test": "npm test --workspace=@waste2goods/backend",
+    "lint": "npm run lint --workspace=@waste2goods/backend",
+    "audit:ci": "npm audit --omit=dev --audit-level=high"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.1.12",

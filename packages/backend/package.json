@@ -8,7 +8,12 @@
     "dev": "node src/index.js",
     "dev-mysql": "node src/index-mysql.js",
     "start": "node src/index.js",
-    "start-mysql": "node src/index-mysql.js"
+    "start-mysql": "node src/index-mysql.js",
+    "test": "node --test src/security/security.test.js",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0"
   },
   "dependencies": {
     "@waste2goods/core": "*",

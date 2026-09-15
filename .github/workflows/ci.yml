@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend-security:
+    name: Test, lint, dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm install
+      - name: Unit tests
+        run: npm test --workspace=@waste2goods/backend
+      - name: ESLint
+        run: npm run lint --workspace=@waste2goods/backend
+      - name: npm audit (backend production, high+)
+        run: npm audit --omit=dev --audit-level=high --workspace=@waste2goods/backend
