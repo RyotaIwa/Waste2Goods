@@ -13,16 +13,26 @@ export function originAllowed(origin) {
   return DEFAULT_ORIGINS.some((re) => re.test(origin));
 }
 
+const NULL_ORIGIN = 'null';
+
+function hostToOrigin(req) {
+  const host = String(req.headers.host || '').trim();
+  if (!host) return '';
+  const proto = (req.protocol === 'https' || String(req.headers['x-forwarded-proto'] || '').toLowerCase() === 'https') ? 'https' : 'http';
+  return `${proto}://${host}`;
+}
+
 export function extractOrigin(req) {
-  const origin = String(req.headers.origin || '').trim();
-  if (origin) return origin;
+  let origin = String(req.headers.origin || '').trim();
+  if (origin && origin !== NULL_ORIGIN) return origin;
   const referer = String(req.headers.referer || '').trim();
-  if (!referer) return '';
-  try {
-    return new URL(referer).origin;
-  } catch {
-    return '';
+  if (referer) {
+    try {
+      const u = new URL(referer).origin;
+      if (u) return u;
+    } catch { /* fall through */ }
   }
+  return hostToOrigin(req);
 }
 
 /** Browser CSRF defense: mutating requests with a foreign Origin/Referer are rejected. curl/Postman (no Origin) still work. */
@@ -44,6 +54,7 @@ export function csrfInfo() {
     note: 'APIs use Bearer tokens (not cookies), which already resists classic CSRF. Origin guard stops hostile websites from driving the API from a browser.',
     oauthState: 'Random state stored server-side (Redis/memory) for GitHub + /oauth2/authorize',
     sameSite: 'Any future cookies would be SameSite=Lax; demo JWTs stay in Authorization header',
+    privacyBrowsers: 'When Origin header is "null" (Brave Shields / Firefox Strict / Safari ITP), guard falls back to Referer → Host header so the localhost OAuth demo forms still work.',
   };
 }
 
