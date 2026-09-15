@@ -261,6 +261,21 @@ function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; tex
   return cleanHost;
 }
 
+function getBackendOrigin(): string {
+  try {
+    const base = Waste2GoodsAPI.getApiBaseUrl?.() || "";
+    if (base.startsWith("http://") || base.startsWith("https://")) {
+      return base.replace(/\/api\/?$/, "");
+    }
+    const host = getApiHost() || "localhost";
+    const proto = getApiProtocol() || "http";
+    const port = getApiPort() || "3001";
+    return `${proto}://${host}:${port}`;
+  } catch {
+    return "http://localhost:3001";
+  }
+}
+
 async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): Promise<void> {
   const trimmed = apiHost.trim();
   if (!trimmed) {
@@ -1252,7 +1267,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
             </div>
 
             <a
-              href={`${getApiHost()}/api/auth/google?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
+              href={`${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
               className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -1265,7 +1280,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
             </a>
 
             <a
-              href={`${getApiHost()}/api/auth/github?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
+              href={`${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
               className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
@@ -1391,7 +1406,7 @@ function ScreenLogin(p: ScreenLoginProps) {
           </div>
 
           <a
-            href={`${p.apiHost}/api/auth/google?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
+            href={`${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
             className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -1404,7 +1419,7 @@ function ScreenLogin(p: ScreenLoginProps) {
           </a>
 
           <a
-            href={`${p.apiHost}/api/auth/github?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
+            href={`${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(window.location.origin + window.location.pathname)}`}
             className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
