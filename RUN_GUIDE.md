@@ -7,11 +7,51 @@
 ## 📋 Port Map (All Services)
 | Service | Port | Localhost URL | LAN URL (Wi‑Fi IP) | Description |
 |---|---|---|---|---|
-| **Back-end (Express + MySQL)** | `3001` | `http://localhost:3001` | `http://<YOUR-IP>:3001` | Core REST API, OAuth 2.0 Auth Server, ABAC, DevSecOps |
-| **Security Dashboard** | `3001` | `http://localhost:3001/security-dashboard` | `http://<YOUR-IP>:3001/security-dashboard` | Real-time security telemetry, ABAC matrix, OAuth clients |
-| **Mobile App (PWA)** | `5173` | `http://localhost:5173` | `http://<YOUR-IP>:5173` | Resident gamified recycling & rewards interface |
-| **Admin Panel** | `5174` | `http://localhost:5174` | `http://<YOUR-IP>:5174` | Barangay staff analytics, user management, redemption workflow |
-| **Kiosk App** | `5175` | `http://localhost:5175` | `http://<YOUR-IP>:5175` | On-site kiosk terminal interface for bottle drop-off & weighing |
+| **Back-end (Express + MySQL)** | `3001` | `http://localhost:3001` | `http://192.168.1.164:3001` | Core REST API, OAuth 2.0 Auth Server, ABAC, DevSecOps |
+| **Security Dashboard** | `3001` | `http://localhost:3001/security-dashboard` | `http://192.168.1.164:3001/security-dashboard` | Real-time security telemetry, ABAC matrix, OAuth clients |
+| **Mobile App (PWA)** | `5173` | `http://localhost:5173` | `http://192.168.1.164:5173` | Resident gamified recycling & rewards interface |
+| **Admin Panel** | `5174` | `http://localhost:5174` | `http://192.168.1.164:5174` | Barangay staff analytics, user management, redemption workflow |
+| **Kiosk App** | `5175` | `http://localhost:5175` | `http://192.168.1.164:5175` | On-site kiosk terminal interface for bottle drop-off & weighing |
+
+---
+
+## 📱 How to Open & Use the Mobile App on Your Physical Phone / Mobile Device
+
+Follow these 4 simple steps to run the Waste2Goods mobile app on your smartphone (Android or iPhone):
+
+### Step 1: Connect Both Devices to the Same Wi-Fi
+- Ensure your **phone** and your **computer** are connected to the exact same Wi-Fi network / router.
+
+### Step 2: Find Your PC's Wi-Fi IP Address
+1. Open PowerShell and run:
+   ```powershell
+   ipconfig
+   ```
+2. Look under **"Wireless LAN adapter Wi-Fi"** for the **IPv4 Address**.
+   *(Your current IP is: `192.168.1.164`)*
+
+### Step 3: Open the App on Your Phone Browser
+1. Open **Chrome** (Android) or **Safari** (iPhone) on your phone.
+2. Navigate to:
+   ```
+   http://192.168.1.164:5173
+   ```
+   *(Replace `192.168.1.164` with your PC's IP if it ever changes).*
+
+### Step 4: Configure the Server IP in the App
+1. On the Mobile App login screen, tap the **🌐 Server IP Settings** gear/button.
+2. Enter your PC's Wi-Fi IP address:
+   ```
+   192.168.1.164
+   ```
+   *(or `http://192.168.1.164:3001`)*
+3. Tap **💾 Save IP**, then tap **🔌 Test Connection** ➡️ It will display **"Connection OK ✅"**.
+4. Log in as `resident@cabantian.ph` (password: `ResidentCabantian2025`) or tap **Sign Up** to create a fresh resident account!
+
+> 💡 **Tip — Install as a Native App (PWA):**
+> - **iOS (Safari):** Tap the **Share** button (box with arrow up) ➡️ Tap **"Add to Home Screen"**.
+> - **Android (Chrome):** Tap the **3 dots menu (⋮)** ➡️ Tap **"Install App"** or **"Add to Home Screen"**.
+> - It will now appear on your phone home screen with its own Waste2Goods app icon!
 
 ---
 
@@ -58,6 +98,17 @@ cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype"
 npm install
 ```
 
+### 3️⃣ Allow LAN Inbound Traffic (Firewall Rule)
+If your phone cannot reach your PC, run this once in PowerShell **as Administrator**:
+```powershell
+$ports = @(3001, 5173, 5174, 5175)
+foreach ($p in $ports) {
+  $exists = Get-NetFirewallRule -DisplayName "W2G-Port-$p" -ErrorAction SilentlyContinue
+  if (-not $exists) { New-NetFirewallRule -DisplayName "W2G-Port-$p" -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow | Out-Null }
+}
+Write-Host "✅ Firewall rules applied for LAN ports 3001, 5173, 5174, 5175"
+```
+
 ---
 
 ## 🚀 Running the Full Stack (4 Terminals)
@@ -94,7 +145,7 @@ npm run start-mysql
 cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype\packages\admin-panel"
 npm run dev
 ```
-Open **`http://localhost:5174`** in your browser.
+Open **`http://localhost:5174`** (or `http://192.168.1.164:5174` on LAN).
 
 **Admin Credentials:**
 | Field | Value |
@@ -109,7 +160,7 @@ Open **`http://localhost:5174`** in your browser.
 cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype\packages\mobile-app"
 npm run dev
 ```
-Open **`http://localhost:5173`** in your PC browser or phone.
+Open **`http://localhost:5173`** (on PC) or **`http://192.168.1.164:5173`** (on phone).
 
 **Resident Credentials:**
 | Field | Value |
