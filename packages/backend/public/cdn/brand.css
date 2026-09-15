@@ -1,0 +1,3 @@
+:root { --w2g-green: #117243; --w2g-ink: #0f172a; }
+body { font-family: ui-sans-serif, system-ui, sans-serif; color: var(--w2g-ink); margin: 2rem; }
+h1 { color: var(--w2g-green); }

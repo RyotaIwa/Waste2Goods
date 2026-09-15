@@ -36,6 +36,10 @@ import {
 import {
   oauth2RouterAttach, oauthDiscovery, getOAuthClients,
 } from './security/oauth2-server.js';
+import { csrfOriginGuard, csrfInfo } from './security/csrf.js';
+import { attachGitHubOAuth, githubOAuthInfo } from './security/github-oauth.js';
+import { attachGoogleOAuth, googleOAuthInfo } from './security/google-oauth.js';
+import { attachCdnStatic, cdnInfo } from './security/cdn.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -100,6 +104,9 @@ app.use(cors({
   maxAge: 86400,
 }));
 app.use(express.json({ limit: process.env.BODY_LIMIT || '100kb' }));
+app.use(express.urlencoded({ extended: false, limit: process.env.BODY_LIMIT || '100kb' }));
+app.use(csrfOriginGuard);
+attachCdnStatic(app);
 
 const authenticate = (req, res, next) => authenticateJWT(req, res, next);
 
@@ -107,6 +114,8 @@ const authenticate = (req, res, next) => authenticateJWT(req, res, next);
 // D2 P2: Attach OAuth 2.0 Authorization Server routes
 // ════════════════════════════════════════════════════════════════════
 oauth2RouterAttach(app, { authenticate });
+attachGitHubOAuth(app);
+attachGoogleOAuth(app);
 
 // ════════════════════════════════════════════════════════════════════
 // D2 P2: Security / DevSecOps Demo Dashboard — for instructor review
@@ -132,6 +141,24 @@ app.get('/api/security/policy', authenticate, requireRole('admin', 'super_admin'
 app.get('/api/security/redis-stats', authenticate, requireRole('admin', 'super_admin'), async (req, res) => {
   res.json(await redisStats());
 });
+app.get('/api/security/csrf', (_req, res) => res.json(csrfInfo()));
+app.get('/api/security/cdn-info', (_req, res) => res.json(cdnInfo()));
+app.get('/api/security/github-oauth', (_req, res) => res.json(githubOAuthInfo()));
+app.get('/api/security/google-oauth', (_req, res) => res.json(googleOAuthInfo()));
+app.get('/api/security/threat-model', (_req, res) => {
+  res.json({
+    sqlInjection: {
+      defense: 'mysql2 parameterized queries (? placeholders) + Zod schemas — user input never concatenated into SQL',
+      example: "db.query('SELECT * FROM users WHERE email = ?', [normalizedEmail])",
+    },
+    xss: {
+      defense: 'Helmet CSP, JSON APIs (not HTML reflection of user input), nosniff',
+    },
+    csrf: csrfInfo(),
+    bruteForce: 'authLimiter 10/15min/IP + authFailureLimiter 5 fails/email/5min',
+    rateLimit: 'express-rate-limit 8 tiers (global 1000/min/IP)',
+  });
+});
 
 // Root route - show welcome message
 app.get('/', async (req, res) => {
@@ -140,14 +167,17 @@ app.get('/', async (req, res) => {
     status: 'success',
     backend: redisBackendMode(),
     d2p1DevSecOps: [
-      'OAuth 2.0 Authorization Server — Authorization Code + PKCE S256 + Refresh Rotation + Introspect + Revoke (RFC 6749 / 7662 / 7009)',
+      'OAuth 2.0 Authorization Server (Keycloak-style) — Authorization Code + PKCE S256 + Refresh Rotation + Introspect + Revoke (RFC 6749 / 7662 / 7009)',
+      'Federated Login with GitHub — Authorization Code + CSRF state (real GitHub or local demo IdP)',
       'JWT hardening — 15min short-lived access tokens, 7d rotating refresh tokens with reuse-detection family revocation, aud/iss/jti claims, jti-based access revocation list',
       'Redis-backed rate limiting — 8 tiers: global, auth, authFailure, write, analyticsHeavy, kiosk, oauthAuthorize, oauthToken + progressive delay penalty after 5 hits',
       'Redis caching — namespaced (adm/res/kio/pub), tags, TTL 15-60s, CDN-ready Surrogate-Key / Cache-Control / Surrogate-Control headers (L1→L3 tiers)',
+      'Static CDN path /cdn/* with 1-year Cache-Control + Cloudflare/CloudFront config notes',
       'ABAC Policy Engine — 6 roles × 11 resources × 9 actions matrix, barangay scoping, ownership checks, superadmin ID protection, 5-step evaluation order',
       'API Gateway: X-Request-ID correlation, structured [GW] access logs, 404 handler, error handler with requestId, Helmet CSP/HSTS nosniff',
+      'Threat mitigation: parameterized SQL, Zod validation, CSRF Origin guard, XSS CSP',
       'Zod gateway-level input validation (15 schemas) + bcrypt 10-round password hashing with legacy backward-compat',
-      'SonarCloud static analysis — Cognitive Complexity ≤ 15 per function, 5 source packages analyzed, quality gate wait=true',
+      'CI/CD — GitHub Actions: tests + ESLint + npm audit (dependency scanning)',
     ],
     oauth2Endpoints: [
       'GET  /api/oauth2/.well-known/oauth-authorization-server (RFC 8414 metadata)',
@@ -1734,7 +1764,9 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-seri
   </div>
 
   <div class="btn-row">
-    <a class="btn btn-primary" href="/api/oauth2/authorize?client_id=admin-panel&redirect_uri=http://localhost:3001/api/oauth2/demo/callback&response_type=code&scope=admin:read%20profile:read&state=instructor-demo-12345&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256">▶ Step 1: Launch OAuth Consent Screen (admin-panel + PKCE)</a>
+    <a class="btn btn-primary" href="/api/oauth2/authorize?client_id=waste2goods-docs&redirect_uri=http://localhost:3001/api/oauth2/demo/callback&response_type=code&scope=profile:read&state=instructor-demo-12345&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256">▶ Step 1: OAuth Consent (waste2goods-docs + PKCE)</a>
+    <a class="btn btn-primary" href="/api/auth/google">🔵 Login with Google (OAuth 2.0)</a>
+    <a class="btn btn-primary" href="/api/auth/github">🐙 Login with GitHub (OAuth 2.0)</a>
     <a class="btn btn-outline" href="/api/oauth2/.well-known/oauth-authorization-server">🔍 RFC 8414 Discovery</a>
     <a class="btn btn-outline" href="/api/oauth2/clients">📋 Registered Clients</a>
   </div>
@@ -1805,20 +1837,22 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-seri
 <span class="c">// Write operations → cache bust</span>
 <span class="k">POST/PUT/DELETE</span>  →  <span class="v">CacheBust.users | transactions | rewards | redemptions | kiosks</span>
     </div>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/cache-stats">📈 Cache Stats (JSON)</a> <a class="btn btn-ghost" href="/api/security/redis-stats">🔴 Redis Status</a></div>
+    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/cache-stats">📈 Cache Stats (JSON)</a> <a class="btn btn-ghost" href="/api/security/redis-stats">🔴 Redis Status</a> <a class="btn btn-ghost" href="/cdn/">🌐 CDN static (/cdn)</a> <a class="btn btn-ghost" href="/api/security/cdn-info">CDN headers JSON</a></div>
   </div>
   <div class="section">
-    <h2>📐 Code Quality — SonarCloud Quality Gate</h2>
-    <div class="sub">Cognitive Complexity ≤ 15 per function (S3776). 5 source packages analyzed: backend, core, mobile-app, admin-panel, kiosk-app.</div>
+    <h2>📐 Code Quality — Tests, Lint, CI, Sonar</h2>
+    <div class="sub">node:test unit tests, ESLint, GitHub Actions (test + npm audit), Cognitive Complexity ≤ 15. Helmet CSP / HSTS / Zod / bcrypt.</div>
     <div class="box" style="margin-top:12px"><h4>DevSecOps Stack</h4><ul>
-      <li><b>Helmet.js</b> — CSP, HSTS (prod only), nosniff</li>
+      <li><b>GitHub Actions</b> — <code>.github/workflows/ci.yml</code> runs tests + ESLint + <code>npm audit</code></li>
+      <li><b>Helmet.js</b> — CSP, HSTS (prod only), nosniff (XSS)</li>
+      <li><b>CSRF Origin guard</b> — foreign browser Origins rejected on POST/PUT/DELETE</li>
+      <li><b>Parameterized SQL</b> — mysql2 <code>?</code> placeholders (SQLi)</li>
       <li><b>CORS whitelist</b> — RegExp + exact-match origin list</li>
       <li><b>Zod v4</b> — 15 schemas at the API gateway (reject malformed input pre-controller)</li>
       <li><b>bcryptjs</b> — 10-round salted password hashing, legacy <code>hashed_</code> compat</li>
-      <li><b>API Gateway logger</b> — X-Request-ID correlation, [GW] structured logs, status/elapsed/user/IP</li>
-      <li><b>Error handler</b> — requestId leak-safe in prod (no stack leak)</li>
+      <li><b>API Gateway logger</b> — X-Request-ID correlation, [GW] structured logs</li>
     </ul></div>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/auth-info">🔐 Auth Hardening Spec (JSON)</a></div>
+    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/auth-info">🔐 Auth Hardening Spec (JSON)</a> <a class="btn btn-ghost" href="/api/security/threat-model">Threat model JSON</a></div>
   </div>
 </div>
 
@@ -1865,5 +1899,7 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`📡 LAN access:  http://<YOUR-PC-WIFI-IP>:${PORT} — find your IP with: ipconfig`);
   console.log(`🛡️  DevSecOps:  http://localhost:${PORT}/security-dashboard`);
   console.log(`🔐 OAuth2:      http://localhost:${PORT}/api/oauth2/.well-known/oauth-authorization-server`);
-  console.log(`🔒 Stack:       Helmet | JWT(15m/7d rot) | bcrypt(10) | Rate-Limit(8 tier) | ABAC(6×11×9) | Zod(15 schema) | Redis Cache(3 tier) | OAuth2 + PKCE | Gateway Logger`);
+  console.log(`🐙 GitHub OAuth: http://localhost:${PORT}/api/auth/github`);
+  console.log(`🌐 CDN static:   http://localhost:${PORT}/cdn/`);
+  console.log(`🔒 Stack:       Helmet | JWT(15m/7d rot) | GitHub OAuth | bcrypt(10) | Rate-Limit(8 tier) | ABAC | Zod | Redis Cache | CDN /cdn | CSRF Origin | CI audit`);
 });

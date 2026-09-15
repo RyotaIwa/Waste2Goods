@@ -46,6 +46,7 @@ const CLIENT_REGISTRY = [
       'http://localhost:5174/oauth/callback',
       'http://127.0.0.1:5174/oauth/callback',
       'http://localhost:5174/auth/oauth/callback',
+      'http://localhost:3001/api/oauth2/demo/callback',
     ],
     allowedCorsOrigins: [
       /^http:\/\/localhost(:[0-9]+)?$/,
@@ -120,7 +121,7 @@ function buildScopeList(client, requestedScopeStr) {
   return filtered.join(' ');
 }
 
-function pkceChallengeFromVerifierS256(verifier) {
+export function pkceChallengeFromVerifierS256(verifier) {
   return createHash('sha256').update(String(verifier || '')).digest('base64url');
 }
 

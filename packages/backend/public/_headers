@@ -1,0 +1,6 @@
+# Cloudflare Pages / origin _headers (also applied by Express on /cdn)
+/cdn/*
+  Cache-Control: public, max-age=31536000, immutable
+  CDN-Cache-Control: max-age=31536000
+  Surrogate-Control: max-age=31536000
+  Surrogate-Key: static-assets w2g-cdn
