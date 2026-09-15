@@ -46,14 +46,16 @@ export function googleOAuthInfo() {
   };
 }
 
-function isLanHost(host) {
-  if (!host) return false;
-  const h = host.split(':')[0].toLowerCase();
-  return h !== 'localhost' && h !== '127.0.0.1' && (
-    h.startsWith('192.168.') ||
-    h.startsWith('10.') ||
-    h.startsWith('172.') ||
-    h.endsWith('.nip.io')
+function isLanRequest(req) {
+  const host = (req.get('host') || req.hostname || '').toLowerCase();
+  const returnTo = String(req.query?.return_to || '').toLowerCase();
+  return (
+    host.includes('192.168.') ||
+    host.includes('10.') ||
+    host.includes('172.') ||
+    returnTo.includes('192.168.') ||
+    returnTo.includes('10.') ||
+    returnTo.includes('172.')
   );
 }
 
@@ -65,7 +67,7 @@ export function attachGoogleOAuth(app) {
 
     // Google Cloud OAuth rejects raw private IPs with Error 400.
     // If request originates from LAN IP or Google is unconfigured, use Demo IdP flow.
-    if (googleConfigured() && !isLanHost(req.get('host'))) {
+    if (googleConfigured() && !isLanRequest(req)) {
       const params = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
         redirect_uri: callbackUrl(req),
@@ -172,7 +174,8 @@ export function attachGoogleOAuth(app) {
     await redisDel(`${STATE_PREFIX}${state}`);
 
     let profile = DEMO_GOOGLE_USER;
-    if (googleConfigured() && code) {
+    const isDemoCode = code && String(code).startsWith('googled_');
+    if (googleConfigured() && code && !isDemoCode) {
       try {
         profile = await exchangeGoogleCode(String(code), callbackUrl(req));
       } catch (err) {
