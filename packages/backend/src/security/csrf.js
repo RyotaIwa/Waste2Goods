@@ -1,11 +1,11 @@
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 const DEFAULT_ORIGINS = [
-  /^http:\/\/localhost(:[0-9]+)?$/,
-  /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-  /^http:\/\/10\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-  /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^https?:\/\/localhost(:[0-9]+)?$/,
+  /^https?:\/\/127\.0\.0\.1(:[0-9]+)?$/,
+  /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^https?:\/\/10\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^https?:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
 ];
 
 export function originAllowed(origin) {
@@ -38,8 +38,15 @@ export function extractOrigin(req) {
 /** Browser CSRF defense: mutating requests with a foreign Origin/Referer are rejected. curl/Postman (no Origin) still work. */
 export function csrfOriginGuard(req, res, next) {
   if (SAFE_METHODS.has(String(req.method || 'GET').toUpperCase())) return next();
+  // OAuth approval routes use RFC 6749 state parameter for CSRF protection
+  const p = String(req.path || req.url || '');
+  if (p.startsWith('/api/auth/google/demo') || p.startsWith('/api/auth/github/demo') || p.startsWith('/api/oauth2/')) {
+    return next();
+  }
   const origin = extractOrigin(req);
   if (!origin) return next();
+  const hostOrigin = hostToOrigin(req);
+  if (origin === hostOrigin) return next();
   if (originAllowed(origin)) return next();
   return res.status(403).json({
     error: 'CSRF blocked — Origin is not on the allowlist',

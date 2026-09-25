@@ -1263,8 +1263,13 @@ function ScreenRegister(p: ScreenRegisterProps) {
               <div className="flex-1 h-px bg-border" />
             </div>
 
-            <a
-              href={`${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(window.location.origin + "/")}`}
+            <button
+              type="button"
+              onClick={() => {
+                // Direct backend Google OAuth — works without Appwrite configuration
+                const redirectUri = `${window.location.origin}/`;
+                window.location.href = `${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(redirectUri)}`;
+              }}
               className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -1274,17 +1279,21 @@ function ScreenRegister(p: ScreenRegisterProps) {
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
               </svg>
               <span>Sign up with Google</span>
-            </a>
+            </button>
 
-            <a
-              href={`${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(window.location.origin + "/")}`}
+            <button
+              type="button"
+              onClick={() => {
+                const redirectUri = `${window.location.origin}/`;
+                window.location.href = `${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(redirectUri)}`;
+              }}
               className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
                 <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
               </svg>
               <span>Sign up with GitHub</span>
-            </a>
+            </button>
           </div>
         )}
         {p.regStep === 1 && (
@@ -1393,7 +1402,7 @@ function ScreenLogin(p: ScreenLoginProps) {
         )}
         <div className="mt-auto space-y-2.5 pt-2 shrink-0">
           <button type="button" disabled={p.loginLoading} onClick={p.onLogin} className={`w-full py-3.5 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60 flex items-center justify-center gap-2`}>
-            {p.loginLoading ? "Signing in..." : "Sign In with Password"}
+            {p.loginLoading ? "Signing in..." : "Sign In"}
           </button>
           
           <div className="flex items-center gap-3 pt-1">
@@ -1402,8 +1411,13 @@ function ScreenLogin(p: ScreenLoginProps) {
             <div className="flex-1 h-px bg-border" />
           </div>
 
-          <a
-            href={`${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(window.location.origin + "/")}`}
+          <button
+            type="button"
+            onClick={() => {
+              // Direct backend Google OAuth — works without Appwrite configuration
+              const redirectUri = `${window.location.origin}/`;
+              window.location.href = `${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(redirectUri)}`;
+            }}
             className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
@@ -1413,17 +1427,22 @@ function ScreenLogin(p: ScreenLoginProps) {
               <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
             </svg>
             <span>Continue with Google</span>
-          </a>
+          </button>
 
-          <a
-            href={`${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(window.location.origin + "/")}`}
+          <button
+            type="button"
+            onClick={() => {
+              // Direct backend GitHub OAuth — works without Appwrite configuration
+              const redirectUri = `${window.location.origin}/`;
+              window.location.href = `${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(redirectUri)}`;
+            }}
             className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
               <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
             </svg>
             <span>Continue with GitHub</span>
-          </a>
+          </button>
         </div>
       </div>
       <p className="text-center text-xs text-muted-foreground pt-5 shrink-0">New resident? <button type="button" onClick={() => p.go("register")} className="text-primary font-bold">Create account</button></p>
@@ -2700,42 +2719,66 @@ export default function App() {
     } catch { /* ignore */ }
   }, []);
 
-  // ── OAuth Callback Query Parameter Handler ──
+  // ── OAuth Callback Query Parameter Handler (Native + Appwrite SDK) ──
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get("token") || params.get("accessToken");
-      if (token) {
-        const userId = params.get("userId") || "U-001";
-        const name = params.get("name") || "Google User";
-        const email = params.get("email") || "";
-        const role = params.get("role") || "resident";
-        const refreshToken = params.get("refreshToken") || "";
-        const userObj = {
-          id: userId,
-          userId,
-          name,
-          email,
-          role,
-          total_points: 50,
-          pointsBalance: 50,
-          barangayName: "Cabantian",
-        };
-        const authState = {
-          token,
-          accessToken: token,
-          refreshToken,
-          isAuthenticated: true,
-          user: userObj,
-        };
-        localStorage.setItem("w2g_auth_state", JSON.stringify(authState));
-        setProfileUser({ ...userObj });
-        window.history.replaceState({}, document.title, window.location.pathname);
-        setScreen("home");
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+
+        // 1. Native backend OAuth redirect — tokens come as URL params
+        const token = params.get("token") || params.get("accessToken");
+        if (token) {
+          const userId = params.get("userId") || "U-001";
+          const name = params.get("name") || "Google User";
+          const email = params.get("email") || "";
+          const role = params.get("role") || "resident";
+          const refreshToken = params.get("refreshToken") || "";
+          const userObj = {
+            id: userId,
+            userId,
+            name,
+            email,
+            role,
+            total_points: 50,
+            pointsBalance: 50,
+            barangayName: "Cabantian",
+          };
+          const authState: any = {
+            token,
+            accessToken: token,
+            refreshToken,
+            isAuthenticated: true,
+            user: userObj,
+          };
+          localStorage.setItem("w2g_auth_state", JSON.stringify(authState));
+          setProfileUser({ ...userObj });
+          window.history.replaceState({}, document.title, window.location.pathname);
+          if (!cancelled) setScreen("home");
+          return;
+        }
+
+        // 2. Appwrite SDK OAuth redirect — Appwrite saved a session but no URL tokens.
+        //    We detect an active Appwrite account session → create JWT → sync with backend → get platform tokens.
+        Waste2GoodsAPI.appwrite.configure();
+        const me = await Waste2GoodsAPI.appwrite.whoAmI();
+        if (me && !cancelled) {
+          const provider =
+            (typeof (me as any).providerType === "string" && (me as any).providerType) ||
+            (typeof (me as any).provider === "string" && (me as any).provider) ||
+            "appwrite";
+          const synced = await Waste2GoodsAPI.appwrite.syncWithBackend({ provider });
+          if (synced && synced.token && synced.user && !cancelled) {
+            setProfileUser({ ...(synced.user as any) });
+            window.history.replaceState({}, document.title, window.location.pathname);
+            setScreen("home");
+          }
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("OAuth callback handler:", e);
       }
-    } catch (e) {
-      console.warn("OAuth URL parse error:", e);
-    }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {

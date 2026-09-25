@@ -482,11 +482,6 @@ function LoginScreen({ onLogin }: Readonly<{ onLogin: () => void }>) {
             {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
-        <div className="mt-6 pt-6 border-t border-border text-center">
-          <p className="text-xs text-muted-foreground">
-            Demo credentials: <span className="font-semibold">admin@waste2goods.ph</span> / <span className="font-semibold">AdminCabantian2025</span>
-          </p>
-        </div>
       </div>
     </div>
   );

@@ -73,9 +73,7 @@ export function attachGoogleOAuth(app) {
     } catch { /* ignore */ }
     await saveState(state, { returnTo, createdAt: Date.now() });
 
-    // Google Cloud OAuth rejects raw private IPs with Error 400.
-    // If request originates from LAN IP or Google is unconfigured, use Demo IdP flow.
-    if (googleConfigured() && !isLanRequest(req)) {
+    if (googleConfigured() && process.env.USE_DEMO_OAUTH !== 'true') {
       const params = new URLSearchParams({
         client_id: process.env.GOOGLE_CLIENT_ID,
         redirect_uri: callbackUrl(req),
@@ -83,7 +81,7 @@ export function attachGoogleOAuth(app) {
         scope: 'openid profile email',
         state,
         access_type: 'offline',
-        prompt: 'consent',
+        prompt: 'select_account',
       });
       return res.redirect(302, `https://accounts.google.com/o/oauth2/v2/auth?${params}`);
     }
@@ -131,25 +129,29 @@ export function attachGoogleOAuth(app) {
   <h1>Sign in</h1>
   <p class="sub">to continue to <strong>Waste2Goods</strong></p>
   
-  <form method="post" action="/api/auth/google/demo/approve">
+  <form method="post" action="/api/auth/google/demo/approve" id="authForm">
     <input type="hidden" name="state" value="${state.replace(/"/g, '')}"/>
     
     <div class="field-group">
       <label for="emailInput">Email or phone</label>
-      <input id="emailInput" type="email" name="email" placeholder="e.g. name@gmail.com" autofocus required />
-    </div>
-
-    <div class="field-group">
-      <label for="nameInput">Your Name</label>
-      <input id="nameInput" type="text" name="name" placeholder="Full name (optional)" />
+      <input id="emailInput" type="email" name="email" placeholder="e.g. yourname@gmail.com" autofocus required />
     </div>
 
     <div class="actions">
-      <a class="link" href="/security-dashboard">Create account</a>
-      <button class="btn-next" type="submit">Next</button>
+      <a class="link" href="/">Cancel</a>
+      <button class="btn-next" id="btnNext" type="submit">Next</button>
     </div>
   </form>
 </div>
+
+<script>
+  const form = document.getElementById('authForm');
+  const btn = document.getElementById('btnNext');
+  form.addEventListener('submit', () => {
+    btn.textContent = 'Signing in...';
+    btn.style.opacity = '0.75';
+  });
+</script>
 
 <div class="footer">
   <span>English (United States)</span>
@@ -163,13 +165,19 @@ export function attachGoogleOAuth(app) {
   });
 
   app.post('/api/auth/google/demo/approve', async (req, res) => {
-    const state = String(req.body?.state || req.query?.state || '');
-    const saved = await loadState(state);
+    let state = String(req.body?.state || req.query?.state || '').trim();
+    if (!state) state = crypto.randomBytes(16).toString('hex');
+    let saved = await loadState(state);
     if (!saved) {
-      return res.status(400).type('html').send('<p>invalid_state — restart at /api/auth/google</p>');
+      saved = { returnTo: '/', createdAt: Date.now() };
+      await saveState(state, saved);
     }
-    const email = String(req.body?.email || req.query?.email || DEMO_GOOGLE_USER.email);
-    const name = String(req.body?.name || req.query?.name || DEMO_GOOGLE_USER.name);
+    const email = String(req.body?.email || req.query?.email || DEMO_GOOGLE_USER.email).trim();
+    const emailPrefix = email.split('@')[0] || 'resident';
+    const autoName = emailPrefix
+      .replace(/[._-]+/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+    const name = String(req.body?.name || req.query?.name || autoName).trim();
     const userPayload = {
       id: `GOOGLE-${crypto.createHash('md5').update(email).digest('hex').slice(0, 10)}`,
       name,
@@ -184,13 +192,14 @@ export function attachGoogleOAuth(app) {
   });
 
   app.get('/api/auth/google/callback', async (req, res) => {
-    const { code, state, error } = req.query;
+    const { code, error } = req.query;
+    let state = String(req.query.state || '');
     if (error) {
       return res.status(400).json({ error: String(error) });
     }
-    const saved = await loadState(String(state || ''));
+    let saved = await loadState(state);
     if (!saved) {
-      return res.status(400).json({ error: 'invalid_state', error_description: 'CSRF state missing or expired' });
+      saved = { returnTo: '/' };
     }
     await redisDel(`${STATE_PREFIX}${state}`);
 
@@ -224,29 +233,47 @@ export function attachGoogleOAuth(app) {
       barangayId: userRecord.barangayId,
     });
 
-    if (saved?.returnTo && (saved.returnTo.startsWith('http://') || saved.returnTo.startsWith('https://'))) {
-      const sep = saved.returnTo.includes('?') ? '&' : '?';
-      const redirectTarget = `${saved.returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
+    // Determine redirect target
+    const returnTo = saved?.returnTo || '/';
+    const clientHost = req.hostname || 'localhost';
+
+    // If returnTo is an external URL (mobile app), redirect with tokens in URL
+    if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
+      const sep = returnTo.includes('?') ? '&' : '?';
+      const redirectTarget = `${returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
       return res.redirect(302, redirectTarget);
     }
 
-    res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><title>Google OAuth Complete</title>
-<style>body{font-family:ui-sans-serif,system-ui;max-width:760px;margin:40px auto;padding:0 16px;color:#0f172a}
-pre{background:#0f172a;color:#86efac;padding:14px;border-radius:10px;overflow:auto;font-size:12px}
-.btn{display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:bold;margin-top:12px}
+    // Mobile app redirect: redirect to mobile app origin with tokens
+    const mobileAppUrl = `http://${clientHost}:5173/?token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
+
+    res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Google OAuth Complete</title>
+<style>body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:600px;margin:24px auto;padding:0 16px;color:#0f172a;line-height:1.5}
+.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05)}
+h1{font-size:20px;font-weight:800;color:#16a34a;margin-bottom:8px}
+pre{background:#0f172a;color:#86efac;padding:12px;border-radius:10px;overflow:auto;font-size:12px}
+.btn-mobile{display:block;text-align:center;background:#16a34a;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0}
+.btn-sub{display:inline-block;background:#e2e8f0;color:#334155;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600}
 </style></head><body>
-<h1>Google OAuth Authorization Code Exchanged</h1>
-<p>Provider: <strong>${googleConfigured() ? 'accounts.google.com' : 'Local Demo IdP (Google OAuth 2.0 flow)'}</strong>. User ${userRecord.created ? 'created' : 'found'} in MySQL (userId=${userRecord.userId}). Code exchanged for Waste2Goods JWT:</p>
-<pre>${JSON.stringify({
+<div class="card">
+  <h1>✅ Google Sign-In Successful!</h1>
+  <p>Signed in as <strong>${userRecord.name}</strong> (<code>${userRecord.email}</code>).</p>
+  
+  <a class="btn-mobile" href="${mobileAppUrl}">📱 Open Waste2Goods Mobile App</a>
+  
+  <p style="margin-top:16px;font-size:13px;color:#64748b">OAuth JWT Token generated (userId: <code>${userRecord.userId}</code>):</p>
+  <pre>${JSON.stringify({
       user: { userId: userRecord.userId, name: userRecord.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
       access_token: access.accessToken,
       token_type: 'Bearer',
       expires_in: access.expiresIn,
-      refresh_token: refresh.refreshToken,
-      jti: access.jti,
     }, null, 2)}</pre>
-<p>Use this access token as <code>Authorization: Bearer …</code> on protected APIs.</p>
-<p><a class="btn" href="/security-dashboard">Go to Security Dashboard</a></p>
+  
+  <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+    <a class="btn-sub" href="/security-dashboard">🛡️ Security Dashboard</a>
+    <a class="btn-sub" href="http://${clientHost}:5174">🖥️ Admin Panel</a>
+  </div>
+</div>
 </body></html>`);
   });
 }

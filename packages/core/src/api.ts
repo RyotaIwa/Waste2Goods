@@ -10,6 +10,14 @@ import {
   AuthUser,
   AuthState,
 } from "./types";
+
+let AppwriteSdk: any = null;
+try {
+  const mod = await import("appwrite");
+  AppwriteSdk = mod;
+} catch {
+  AppwriteSdk = null;
+}
 import {
   USERS,
   KIOSKS,
@@ -85,9 +93,20 @@ function parseHostAndPort(rawInput: string): { host: string; port: string; proto
 
 export function getApiHost(): string {
   try {
+    const hn = (typeof window !== "undefined" && window.location ? window.location.hostname || "" : "").toLowerCase();
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
     if (stored && stored.trim()) {
-      return parseHostAndPort(stored).host;
+      const parsed = parseHostAndPort(stored).host;
+      // If we are on a real LAN device (not localhost), but stored host is localhost, prefer the real LAN hostname!
+      if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
+        if (parsed === "localhost" || parsed === "127.0.0.1" || parsed === "::1") {
+          return hn;
+        }
+      }
+      return parsed;
+    }
+    if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
+      return hn;
     }
     return DEFAULT_API_HOST;
   } catch {
@@ -424,10 +443,149 @@ export const Waste2GoodsAPI = {
       throw new Error("Invalid PIN");
     }
   },
-  logout: () => {
+  logout: async () => {
+    try {
+      if (AppwriteSdk) {
+        Waste2GoodsAPI.appwrite.configure();
+        if (Waste2GoodsAPI.appwrite.account) {
+          try { await (Waste2GoodsAPI.appwrite.account as any).deleteSession("current"); } catch {}
+        }
+      }
+    } catch {}
     clearStoredAuth();
   },
   getAuthState: () => getStoredAuth(),
+
+  // ——— Appwrite SDK client + OAuth (Google / GitHub / any provider) ———
+  appwrite: {
+    client: null as any,
+    account: null as any,
+    configured: false,
+    endpoint: "",
+    projectId: "",
+    region: "",
+
+    configure(opts: { endpoint?: string; projectId?: string; region?: string } = {}): boolean {
+      try {
+        const VITE: any = typeof (import.meta as any)?.env !== "undefined" ? (import.meta as any).env : {};
+        const endpoint = opts.endpoint || VITE.VITE_APPWRITE_ENDPOINT || localStorage.getItem("w2g_appwrite_endpoint") || "https://cloud.appwrite.io/v1";
+        const projectId = opts.projectId || VITE.VITE_APPWRITE_PROJECT_ID || localStorage.getItem("w2g_appwrite_project") || "";
+        const region = opts.region || VITE.VITE_APPWRITE_REGION || localStorage.getItem("w2g_appwrite_region") || "fra";
+        if (!AppwriteSdk || !projectId) return (this.configured = false);
+        const { Client, Account } = AppwriteSdk;
+        const client = new Client().setEndpoint(endpoint).setProject(projectId);
+        const account = new Account(client);
+        this.client = client;
+        this.account = account;
+        this.endpoint = endpoint;
+        this.projectId = projectId;
+        this.region = region;
+        this.configured = true;
+        try { localStorage.setItem("w2g_appwrite_endpoint", endpoint); } catch {}
+        try { localStorage.setItem("w2g_appwrite_project", projectId); } catch {}
+        try { localStorage.setItem("w2g_appwrite_region", region); } catch {}
+        return true;
+      } catch {
+        this.configured = false;
+        return false;
+      }
+    },
+
+    async getInfo(): Promise<{ configured: boolean; endpoint: string; projectId: string; region?: string; providers: string[] }> {
+      try {
+        const configured = this.configure();
+        const res = await fetch(`${getApiBaseUrl()}/auth/appwrite/info`).then(r => r.json()).catch(() => ({}));
+        return {
+          configured: this.configured || res.configured || false,
+          endpoint: this.endpoint || res.endpoint || "",
+          projectId: this.projectId || res.projectId || "",
+          region: this.region || res.region || "",
+          providers: res.providers || ["google", "github"],
+        };
+      } catch {
+        return { configured: this.configured || false, endpoint: this.endpoint, projectId: this.projectId, region: this.region, providers: ["google", "github"] };
+      }
+    },
+
+    async initiateOAuth2(provider: "google" | "github" | string = "google", opts: { success?: string; failure?: string; scopes?: string[] } = {}): Promise<string | null> {
+      try {
+        if (!this.configure()) {
+          const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
+          window.location.href = fallbackUrl;
+          return fallbackUrl;
+        }
+        const success = opts.success || window.location.origin + "/";
+        const failure = opts.failure || window.location.origin + "/#login";
+        const url = await (this.account as any).createOAuth2Session(provider, success, failure, opts.scopes);
+        if (url && url.toString) window.location.href = url.toString();
+        return url;
+      } catch (err: any) {
+        try {
+          const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
+          window.location.href = fallbackUrl;
+          return fallbackUrl;
+        } catch { return null; }
+      }
+    },
+
+    async loginGoogle(opts: { success?: string; failure?: string } = {}): Promise<void> {
+      const success = opts.success || window.location.origin + "/";
+      const failure = opts.failure || window.location.origin + "/#login";
+      await this.initiateOAuth2("google", { success, failure, scopes: ["profile", "email"] });
+    },
+
+    async loginGithub(opts: { success?: string; failure?: string } = {}): Promise<void> {
+      const success = opts.success || window.location.origin + "/";
+      const failure = opts.failure || window.location.origin + "/#login";
+      await this.initiateOAuth2("github", { success, failure, scopes: ["read:user", "user:email"] });
+    },
+
+    async getJwt(): Promise<string | null> {
+      try {
+        if (!this.configure()) return null;
+        const token = await (this.account as any).createJWT();
+        return (token as any)?.jwt || token || null;
+      } catch { return null; }
+    },
+
+    async syncWithBackend(additional: { provider?: string } = {}): Promise<AuthState | null> {
+      try {
+        const jwt = await this.getJwt();
+        if (!jwt) throw new Error("No Appwrite session JWT available — log in with Appwrite first");
+        const response = await fetch(`${getApiBaseUrl()}/auth/appwrite/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            appwriteJwt: jwt,
+            provider: additional.provider || "appwrite",
+          }),
+        });
+        if (!response.ok) {
+          const e = await response.json().catch(() => ({}));
+          throw new Error(e.error || "Backend sync failed");
+        }
+        const payload = await response.json();
+        const user = payload.dbUser || payload.user || {};
+        const authState: AuthState = {
+          isAuthenticated: true,
+          user,
+          token: payload.accessToken,
+        };
+        try { Object.assign((authState as any), { refreshToken: payload.refreshToken, refreshFamilyId: payload.refreshFamilyId, appwriteUser: payload.appwriteUser }); } catch {}
+        setStoredAuth(authState);
+        return authState;
+      } catch (err) {
+        throw err instanceof Error ? err : new Error("Appwrite -> Platform sync failed");
+      }
+    },
+
+    async whoAmI(): Promise<any | null> {
+      try {
+        if (!this.configure()) return null;
+        return await (this.account as any).get();
+      } catch { return null; }
+    },
+  },
 
   // ——— Profile refresh / save (Mobile + Admin "My Profile") ———
   // Re-fetches the currently-logged-in user (resident) from GET /users/:id

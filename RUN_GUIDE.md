@@ -4,6 +4,13 @@
 
 ---
 
+## 📚 Key Reference Documents
+- **Security & Source Code Map:** [`SECURITY_AND_CODE_ARCHITECTURE.md`](file:///c:/Users/USER/Downloads/Gamified%20Recycling%20Platform%20Prototype/SECURITY_AND_CODE_ARCHITECTURE.md)
+- **Step-by-Step Instructor Presentation:** [`RUBRIC_STEP_BY_STEP.md`](file:///c:/Users/USER/Downloads/Gamified%20Recycling%20Platform%20Prototype/RUBRIC_STEP_BY_STEP.md)
+- **Plain English Flow Explanation:** [`RUBRIC_FLOW_EXPLANATION.md`](file:///c:/Users/USER/Downloads/Gamified%20Recycling%20Platform%20Prototype/RUBRIC_FLOW_EXPLANATION.md)
+
+---
+
 ## 📋 Port Map (All Services)
 | Service | Port | Localhost URL | LAN URL (Wi‑Fi IP) | Description |
 |---|---|---|---|---|

@@ -50,9 +50,19 @@ function parseHostAndPort(rawInput) {
 
 export function getApiHost() {
   try {
+    const hn = (typeof window !== "undefined" && window.location ? window.location.hostname || "" : "").toLowerCase();
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
     if (stored && stored.trim()) {
-      return parseHostAndPort(stored).host;
+      const parsed = parseHostAndPort(stored).host;
+      if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
+        if (parsed === "localhost" || parsed === "127.0.0.1" || parsed === "::1") {
+          return hn;
+        }
+      }
+      return parsed;
+    }
+    if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
+      return hn;
     }
     return "localhost";
   } catch {

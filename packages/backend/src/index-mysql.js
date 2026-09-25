@@ -39,6 +39,7 @@ import {
 import { csrfOriginGuard, csrfInfo } from './security/csrf.js';
 import { attachGitHubOAuth, githubOAuthInfo } from './security/github-oauth.js';
 import { attachGoogleOAuth, googleOAuthInfo } from './security/google-oauth.js';
+import { attachAppwriteAuth, appwriteInfo, syncAppwriteSessionToPlatform } from './security/appwrite-auth.js';
 import { attachCdnStatic, cdnInfo } from './security/cdn.js';
 import { lookupKioskUser } from './security/oauth-user-store.js';
 
@@ -117,6 +118,7 @@ const authenticate = (req, res, next) => authenticateJWT(req, res, next);
 oauth2RouterAttach(app, { authenticate });
 attachGitHubOAuth(app);
 attachGoogleOAuth(app);
+attachAppwriteAuth(app);
 
 // ════════════════════════════════════════════════════════════════════
 // D2 P2: Security / DevSecOps Demo Dashboard — for instructor review
@@ -146,6 +148,15 @@ app.get('/api/security/csrf', (_req, res) => res.json(csrfInfo()));
 app.get('/api/security/cdn-info', (_req, res) => res.json(cdnInfo()));
 app.get('/api/security/github-oauth', (_req, res) => res.json(githubOAuthInfo()));
 app.get('/api/security/google-oauth', (_req, res) => res.json(googleOAuthInfo()));
+app.get('/api/security/appwrite', (_req, res) => res.json(appwriteInfo()));
+app.get('/api/auth/appwrite-sync', authenticate, async (req, res) => {
+  try {
+    const synced = await syncAppwriteSessionToPlatform(req.headers['x-appwrite-jwt'] || req.body?.appwriteJwt || '', { provider: req.body?.provider || 'appwrite' });
+    res.json(synced);
+  } catch (e) {
+    res.status(401).json({ error: e?.message || String(e) });
+  }
+});
 app.get('/api/security/threat-model', (_req, res) => {
   res.json({
     sqlInjection: {
