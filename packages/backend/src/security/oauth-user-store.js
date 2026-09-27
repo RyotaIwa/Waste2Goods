@@ -2,11 +2,7 @@ import bcrypt from 'bcryptjs';
 import db from '../db-mysql.js';
 
 async function hashPasswordSafe(plain) {
-  try {
-    return await bcrypt.hash(plain, 10);
-  } catch {
-    return `hashed_${plain}`;
-  }
+  return bcrypt.hash(plain, 10);
 }
 
 async function nextUserId() {

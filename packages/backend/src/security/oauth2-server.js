@@ -160,9 +160,24 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
     ? `<p class="user-line">Signed in as: <strong>${escapeHtml(sessionUser.name)}</strong> &lt;${escapeHtml(sessionUser.email || sessionUser.sub || 'anon')}&gt; · role: ${escapeHtml(sessionUser.role)}</p>`
     : `<p class="user-line warn">⚠️ Not signed in — you will be asked for credentials next.</p>`;
 
+  // Escape all client registry values: they are trusted static config, but we
+  // escape defensively so any future dynamic registration cannot cause XSS.
+  const safeClientName  = escapeHtml(client.clientName);
+  const safeClientId    = escapeHtml(client.clientId);
+  const safeClientType  = escapeHtml(client.clientType);
+  const safeClientLogo  = escapeHtml(client.logo);
+  const safeIssuer      = escapeHtml(JWT_ISSUER);
+  const safeBackend     = escapeHtml(redisBackendMode());
+
+  // Build hidden inputs: skip null/undefined values to avoid literal "null" strings.
+  const hiddenInputs = Object.entries(authorizeQuery || {})
+    .filter(([, v]) => v != null)
+    .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(String(v))}"/>`)
+    .join('');
+
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
-    <title>Waste2Goods — Authorize ${client.clientName}</title>
+    <title>Waste2Goods — Authorize ${safeClientName}</title>
     <style>
       *{box-sizing:border-box} body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto;background:linear-gradient(135deg,#0b3d2e,#117243 55%,#5b9f31);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;color:#0a0a0a}
       .card{width:100%;max-width:560px;background:#ffffff;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.25);overflow:hidden}
@@ -195,13 +210,13 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
         <div class="logo">♻️</div>
         <div>
           <div class="title">Waste2Goods — OAuth 2.0 Authorization</div>
-          <div class="sub">Issuer: ${JWT_ISSUER} · backend: ${redisBackendMode()}</div>
+          <div class="sub">Issuer: ${safeIssuer} · backend: ${safeBackend}</div>
         </div>
       </div>
       <div class="body">
         <div class="row">
-          <div class="c-logo">${client.logo}</div>
-          <div><strong>${client.clientName}</strong><p style="margin:2px 0 0;color:#4d5660;font-size:12px">Client ID: <code>${client.clientId}</code> · ${client.pkceRequired ? '<span class="chip">PKCE required</span>' : ''}<span class="chip">${client.clientType}</span></p></div>
+          <div class="c-logo">${safeClientLogo}</div>
+          <div><strong>${safeClientName}</strong><p style="margin:2px 0 0;color:#4d5660;font-size:12px">Client ID: <code>${safeClientId}</code> · ${client.pkceRequired ? '<span class="chip">PKCE required</span>' : ''}<span class="chip">${safeClientType}</span></p></div>
           <div class="auth-arrow">➡️</div>
           <div class="c-logo">♻️</div>
           <div><strong>Waste2Goods Auth Server</strong><p style="margin:2px 0 0;color:#4d5660;font-size:12px">Issue access + refresh tokens</p></div>
@@ -210,7 +225,7 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
         <ul class="scope-list">${scopeHtml || '<li class="scope-row"><em>No scopes requested.</em></li>'}</ul>
         ${userHtml}
         <form class="form" method="POST" action="/api/oauth2/authorize/consent">
-          ${Object.entries(authorizeQuery || {}).map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}"/>`).join('')}
+          ${hiddenInputs}
           <div class="actions">
             <button type="submit" class="deny" name="decision" value="deny">Cancel / Deny</button>
             <button type="submit" class="allow" name="decision" value="allow">✅ Allow — Issue Authorization Code</button>

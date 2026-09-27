@@ -5,9 +5,21 @@ import {
   redisSet, redisGet, redisDel, redisDelPattern, redisBackendMode, redisExists,
 } from './redis-client.js';
 
-export const JWT_SECRET = process.env.JWT_SECRET || 'w2g_d2_secret_f9a8c7e6b5d4c3b2a1091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e';
-export const JWT_AUDIENCE = process.env.JWT_AUDIENCE || 'w2g-localhost';
-export const JWT_ISSUER = process.env.JWT_ISSUER || 'w2g-auth-server';
+const DEV_FALLBACK_SECRET = 'w2g_dev_only_secret_do_not_use_in_production_f9a8c7e6b5d4c3b2a109';
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (!process.env.JWT_SECRET) {
+  if (isProduction) {
+    throw new Error('[auth-jwt] JWT_SECRET environment variable is required in production. Set it before starting the server.');
+  } else {
+    // Development fallback only — never used in production
+    console.warn('[auth-jwt] WARNING: JWT_SECRET not set. Using insecure development fallback. Set JWT_SECRET in production.');
+  }
+}
+
+export const JWT_SECRET    = process.env.JWT_SECRET || DEV_FALLBACK_SECRET;
+export const JWT_AUDIENCE  = process.env.JWT_AUDIENCE || 'w2g-localhost';
+export const JWT_ISSUER    = process.env.JWT_ISSUER || 'w2g-auth-server';
 export const JWT_ALGORITHM = 'HS256';
 
 export const ACCESS_TOKEN_EXPIRES_IN = process.env.JWT_ACCESS_TTL || '15m';
