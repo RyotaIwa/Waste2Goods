@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Full backup content rules for Android 6–11 (API 23–30).
+  Excludes all app data from adb backup and Google backup to prevent
+  sensitive tokens, session data, and user info from being exported.
+  (SonarQube xml:S6358 — android:fullBackupContent)
+-->
+<full-backup-content>
+    <!-- Exclude all files, databases, and shared preferences from backup -->
+    <exclude domain="root" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>
