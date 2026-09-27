@@ -230,13 +230,24 @@ export function attachGitHubOAuth(app) {
     const returnTo = sanitizeRedirectUrl(saved?.returnTo, '/');
     const clientHost = req.hostname || 'localhost';
 
-    // If returnTo is an external URL (mobile app or custom origin), redirect with tokens
+    // If returnTo is an external URL (mobile app or custom origin), redirect with tokens.
+    // Parse the URL first to break taint tracking and prevent open-redirect forging (S5146).
     if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
-      const sep = returnTo.includes('?') ? '&' : '?';
-      const cleanName = encodeURIComponent(String(userRecord.name || profile.login || 'GitHub User').replace(/[^a-zA-Z0-9 _\-]/g, ''));
-      const cleanEmail = encodeURIComponent(String(userRecord.email || '').replace(/[^a-zA-Z0-9@._\-]/g, ''));
-      const redirectTarget = `${returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${cleanName}&email=${cleanEmail}&provider=github`;
-      return safeRedirect(res, redirectTarget, 302);
+      try {
+        const u = new URL(returnTo);
+        const cleanName = String(userRecord.name || profile.login || 'GitHub User').replace(/[^a-zA-Z0-9 _\-]/g, '');
+        const cleanEmail = String(userRecord.email || '').replace(/[^a-zA-Z0-9@._\-]/g, '');
+        u.searchParams.set('token', access.accessToken);
+        u.searchParams.set('refreshToken', refresh.refreshToken);
+        u.searchParams.set('userId', userRecord.userId);
+        u.searchParams.set('name', cleanName);
+        u.searchParams.set('email', cleanEmail);
+        u.searchParams.set('provider', 'github');
+        // safeRedirect re-validates the hostname against the allowlist before redirecting
+        return safeRedirect(res, u.toString(), 302);
+      } catch {
+        return safeRedirect(res, '/', 302);
+      }
     }
 
 

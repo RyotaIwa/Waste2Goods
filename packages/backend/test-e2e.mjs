@@ -1,8 +1,25 @@
 const BASE = 'http://localhost:3001';
 
+/**
+ * Sanitizes untrusted server-response values before logging.
+ * Strips CR/LF and control characters (S5145 log injection defense) and
+ * HTML special characters (S5131 XSS defense) to break the taint chain
+ * that SonarQube tracks from fetch() response bodies to console output.
+ *
+ * @param {unknown} value - Raw value from an HTTP response
+ * @returns {string} Single-line, HTML-safe sanitized string
+ */
+function sanitizeLog(value) {
+  if (value == null) return '';
+  return String(value)
+    .replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]))
+    .replace(/[\r\n\x00-\x1F\x7F-\x9F]+/g, ' ')
+    .trim();
+}
+
 async function run() {
   console.log('🚀 Running Comprehensive E2E Verification against Waste2Goods backend...\n');
-  
+
   // 1. Admin login
   const adminRes = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
@@ -11,9 +28,9 @@ async function run() {
   });
   const adminData = await adminRes.json();
   if (adminRes.status === 200 && adminData.accessToken) {
-    console.log(`✅ [E1] Admin Login (DB bcrypt): PASS (userId=${adminData.user?.id}, name="${adminData.user?.name}")`);
+    console.log(`✅ [E1] Admin Login (DB bcrypt): PASS (userId=${sanitizeLog(adminData.user?.id)}, name="${sanitizeLog(adminData.user?.name)}")`);
   } else {
-    console.error(`❌ [E1] Admin Login FAILED:`, adminRes.status, adminData);
+    console.error(`❌ [E1] Admin Login FAILED: status=${adminRes.status}`);
   }
   const adminToken = adminData.accessToken;
 
@@ -25,9 +42,9 @@ async function run() {
   });
   const resData = await resRes.json();
   if (resRes.status === 200 && resData.accessToken) {
-    console.log(`✅ [E2] Resident Login (DB bcrypt): PASS (userId=${resData.user?.id}, name="${resData.user?.name}")`);
+    console.log(`✅ [E2] Resident Login (DB bcrypt): PASS (userId=${sanitizeLog(resData.user?.id)}, name="${sanitizeLog(resData.user?.name)}")`);
   } else {
-    console.error(`❌ [E2] Resident Login FAILED:`, resRes.status, resData);
+    console.error(`❌ [E2] Resident Login FAILED: status=${resRes.status}`);
   }
   const residentToken = resData.accessToken;
 
@@ -39,9 +56,9 @@ async function run() {
   });
   const kioskData = await kioskRes.json();
   if (kioskRes.status === 200 && kioskData.accessToken) {
-    console.log(`✅ [E3] Kiosk Login (DB lookup): PASS (kioskId=${kioskData.user?.id}, role=${kioskData.user?.role})`);
+    console.log(`✅ [E3] Kiosk Login (DB lookup): PASS (kioskId=${sanitizeLog(kioskData.user?.id)}, role=${sanitizeLog(kioskData.user?.role)})`);
   } else {
-    console.error(`❌ [E3] Kiosk Login FAILED:`, kioskRes.status, kioskData);
+    console.error(`❌ [E3] Kiosk Login FAILED: status=${kioskRes.status}`);
   }
 
   // 4. ABAC: Admin access policy
@@ -50,9 +67,9 @@ async function run() {
   });
   const polData = await polRes.json();
   if (polRes.status === 200) {
-    console.log(`✅ [F1] ABAC Admin Policy Access: PASS (200 OK, roles=${polData.roles?.length}, resources=${polData.resources?.length})`);
+    console.log(`✅ [F1] ABAC Admin Policy Access: PASS (200 OK, roles=${sanitizeLog(polData.roles?.length)}, resources=${sanitizeLog(polData.resources?.length)})`);
   } else {
-    console.error(`❌ [F1] ABAC Admin Policy FAILED:`, polRes.status);
+    console.error(`❌ [F1] ABAC Admin Policy FAILED: status=${polRes.status}`);
   }
 
   // 5. ABAC: Resident blocked from admin policy
@@ -71,26 +88,26 @@ async function run() {
   });
   const tasksData = await tasksRes.json();
   if (tasksRes.status === 200 && Array.isArray(tasksData)) {
-    console.log(`✅ [H1] Tasks MySQL Endpoint: PASS (${tasksData.length} tasks returned from DB)`);
+    console.log(`✅ [H1] Tasks MySQL Endpoint: PASS (${sanitizeLog(tasksData.length)} tasks returned from DB)`);
   } else {
-    console.error(`❌ [H1] Tasks MySQL Endpoint FAILED:`, tasksRes.status, tasksData);
+    console.error(`❌ [H1] Tasks MySQL Endpoint FAILED: status=${tasksRes.status}`);
   }
 
   // 7. Rewards Caching (3-tier)
   const rew1 = await fetch(`${BASE}/api/rewards`, { headers: { Authorization: `Bearer ${adminToken}` } });
   const rew2 = await fetch(`${BASE}/api/rewards`, { headers: { Authorization: `Bearer ${adminToken}` } });
-  const xcache1 = rew1.headers.get('x-cache') || 'N/A';
-  const xcache2 = rew2.headers.get('x-cache') || 'N/A';
+  const xcache1 = sanitizeLog(rew1.headers.get('x-cache') || 'N/A');
+  const xcache2 = sanitizeLog(rew2.headers.get('x-cache') || 'N/A');
   console.log(`✅ [H2] Rewards 3-tier Cache: PASS (1st: ${xcache1}, 2nd: ${xcache2})`);
 
   // 8. CDN Static Assets Headers
   const cdnRes = await fetch(`${BASE}/cdn/brand.css`);
-  const cc = cdnRes.headers.get('cache-control');
-  const surrogate = cdnRes.headers.get('surrogate-key');
+  const cc = sanitizeLog(cdnRes.headers.get('cache-control'));
+  const surrogate = sanitizeLog(cdnRes.headers.get('surrogate-key'));
   if (cc && cc.includes('31536000') && surrogate) {
     console.log(`✅ [H3] CDN Static Headers: PASS (Cache-Control="${cc}", Surrogate-Key="${surrogate}")`);
   } else {
-    console.error(`❌ [H3] CDN Static Headers FAILED:`, cc, surrogate);
+    console.error(`❌ [H3] CDN Static Headers FAILED: cache-control=${cc}, surrogate-key=${surrogate}`);
   }
 
   // 9. CSRF Origin Guard
@@ -108,9 +125,10 @@ async function run() {
   // 10. Google OAuth status
   const gRes = await fetch(`${BASE}/api/security/google-oauth`);
   const gData = await gRes.json();
-  console.log(`✅ [E4] Google OAuth Status: PASS (configured=${gData.configured})`);
+  console.log(`✅ [E4] Google OAuth Status: PASS (configured=${sanitizeLog(gData.configured)})`);
 
   console.log('\n🎉 ALL 10 E2E RUBRIC TESTS PASSED GREEN!');
 }
 
 run().catch(console.error);
+

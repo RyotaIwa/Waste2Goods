@@ -140,12 +140,14 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
     'admin:write':        'Create/update rewards, redemptions, users, kiosk calibration',
     'analytics:read':     'Read platform-wide analytics, summaries and leaderboard data',
   };
-  const scopeHtml = scopes.map((s) => `
-    <li class="scope-row"><span class="scope-ico">🔒</span><div><strong>${s}</strong><p>${scopeDescriptions[s] || 'Scope ' + s}</p></div></li>
-  `).join('');
+  const scopeHtml = scopes.map((s) => {
+    const safeScope = escapeHtml(s);
+    const safeDesc = escapeHtml(scopeDescriptions[s] || 'Scope ' + s);
+    return `<li class="scope-row"><span class="scope-ico">🔒</span><div><strong>${safeScope}</strong><p>${safeDesc}</p></div></li>`;
+  }).join('');
 
   const userHtml = sessionUser
-    ? `<p class="user-line">Signed in as: <strong>${sessionUser.name}</strong> &lt;${sessionUser.email || sessionUser.sub || 'anon'}&gt; · role: ${sessionUser.role}</p>`
+    ? `<p class="user-line">Signed in as: <strong>${escapeHtml(sessionUser.name)}</strong> &lt;${escapeHtml(sessionUser.email || sessionUser.sub || 'anon')}&gt; · role: ${escapeHtml(sessionUser.role)}</p>`
     : `<p class="user-line warn">⚠️ Not signed in — you will be asked for credentials next.</p>`;
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
