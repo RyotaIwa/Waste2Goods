@@ -7,13 +7,9 @@ import db from './db-mysql.js';
 import {
   ADMIN_CREDENTIALS,
   KIOSK_PIN,
-  DEMO_RESIDENT_CREDENTIALS,
-  DEMO_ADMIN_USER,
-  DEMO_RESIDENT_USER,
-  DEMO_KIOSK_USER
 } from '@waste2goods/core';
 import {
-  signToken, signAccessToken, issueRefreshToken, rotateRefreshToken,
+  signAccessToken, issueRefreshToken, rotateRefreshToken,
   revokeRefreshToken, revokeJti, authHardeningInfo, introspectToken,
   authenticateJWT, requireRole, hashPassword, comparePassword,
   REFRESH_TOKEN_TTL_SEC,
@@ -22,7 +18,7 @@ import {
   globalLimiter, authLimiter, authFailureLimiter, writeLimiter,
   analyticsHeavyLimiter, kioskLimiter, rateLimitInfo,
 } from './security/rate-limit.js';
-import { cacheRoute, CacheBust, cacheStats, warmCacheEntry } from './security/cache.js';
+import { cacheRoute, CacheBust, cacheStats } from './security/cache.js';
 import {
   validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema,
   RewardCRUDSchema, RewardUpdateSchema, AdminCreateSchema, UserCreateSchema,
@@ -30,12 +26,12 @@ import {
   KioskSessionSchema, KioskPingSchema,
 } from './security/validate.js';
 import { gatewayLogger, apiNotFound, errorHandler } from './security/gateway.js';
-import { redisStats, redisBackendMode, isRedisEnabled } from './security/redis-client.js';
+import { redisStats, redisBackendMode } from './security/redis-client.js';
 import {
   requirePermission, requireOwnershipOrRole, authorizationPolicyInfo,
 } from './security/authorization.js';
 import {
-  oauth2RouterAttach, oauthDiscovery, getOAuthClients,
+  oauth2RouterAttach,
 } from './security/oauth2-server.js';
 import { csrfOriginGuard, csrfInfo } from './security/csrf.js';
 import { attachGitHubOAuth, githubOAuthInfo } from './security/github-oauth.js';
@@ -49,11 +45,11 @@ const app = express();
 const PORT = Number(process.env.PORT || 3001);
 
 const DEFAULT_CORS_ORIGINS = [
-  /^http:\/\/localhost(:[0-9]+)?$/,
-  /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-  /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+  /^http:\/\/localhost(:\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+  /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+  /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+  /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
 ];
 
 function buildCorsOrigins() {
@@ -69,7 +65,7 @@ function buildCorsOrigins() {
           list.push((origin) => origin === exact);
         }
       } catch (_) {
-        list.push((origin) => origin && origin.includes(raw.replace(/^https?:\/\//, '').split('/')[0]));
+        list.push((origin) => origin?.includes(raw.replace(/^https?:\/\//, '').split('/')[0]));
       }
     }
   }
@@ -616,6 +612,7 @@ async function tryDbAdminLogin(normalizedEmail, password) {
     console.log(`🔐 Admin logged in from DB: ${sanitizeLog(adminUser.name)} (${sanitizeLog(adminUser.id)})`);
     return buildHardenedAuthResponse(access, refresh, adminUser);
   } catch (_) {
+    // Database connection or table error; return null to fall back to static credentials
     return null;
   }
 }
@@ -776,7 +773,7 @@ async function queryUserWithoutTier(userId) {
       "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, phone FROM users WHERE userId = ? LIMIT 1",
       [userId]
     );
-    if (!rows || !rows.length || !rows[0]) return null;
+    if (!rows?.[0]) return null;
     const u = rows[0];
     u.tier = deriveTierFromPoints(Number(u.pointsBalance || 0));
     return u;
@@ -791,7 +788,7 @@ async function safeLoadUserWithTier(userId) {
       "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, tier, phone FROM users WHERE userId = ? LIMIT 1",
       [userId]
     );
-    if (rows && rows.length && rows[0]) {
+    if (rows?.[0]) {
       const u = rows[0];
       if (!u.tier) u.tier = deriveTierFromPoints(Number(u.pointsBalance || 0));
       return u;
@@ -924,6 +921,12 @@ function buildRewardCompatRow(r, rdByReward) {
     isSeasonal: Boolean(r.isSeasonal),
     seasonal: Boolean(r.isSeasonal),
   };
+}
+
+function resolveTaskUnit(t) {
+  if (t.targetKg) return 'kg';
+  if (t.frequency === 'weekly') return 'days';
+  return 'tasks';
 }
 
 const TASKS_COMMON_SELECT = "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM ";
@@ -1272,7 +1275,7 @@ app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRout
       reward: Number(t.pointsReward || t.bonusPoints || 0),
       progress: Number(t.progress || 0),
       goal: Number(t.target || t.targetKg || 1),
-      unit: t.targetKg ? 'kg' : (t.frequency === 'weekly' ? 'days' : 'tasks'),
+      unit: resolveTaskUnit(t),
       type: String(t.frequency || 'weekly').toLowerCase(),
       done: Number(t.progress || 0) >= Number(t.target || 1) && Number(t.target || 1) > 0,
       status: String(t.status || 'active'),
@@ -1426,7 +1429,10 @@ app.put('/api/rewards/:id', authenticate, requirePermission('update', 'reward'),
     const nextDesc = description != null ? String(description) : curr.description;
     const nextCat = category != null ? String(category) : curr.category;
     const nextIcon = icon != null ? String(icon) : curr.icon;
-    const nextSeason = isSeasonal != null ? (isSeasonal ? 1 : 0) : curr.isSeasonal;
+    let nextSeason = curr.isSeasonal;
+    if (isSeasonal != null) {
+      nextSeason = isSeasonal ? 1 : 0;
+    }
     const nextStatus = status != null ? String(status) : curr.status;
     await db.query(
       'UPDATE rewards SET rewardName = ?, pointsCost = ?, stockQuantity = ?, description = ?, category = ?, icon = ?, isSeasonal = ?, status = ? WHERE rewardId = ?',
@@ -1596,6 +1602,7 @@ app.get('/api/notifications', authenticate, requirePermission('list', 'notificat
     const unread = notifications.filter(n => n.type === 'redemption' && (n.meta?.status === 'pending' || n.meta?.status === 'ready')).length;
     res.json({ count: notifications.length, unread: Math.max(0, unread), items: notifications });
   } catch (err) {
+    // Failed to query database notifications; return empty response
     res.json({ count: 0, unread: 0, items: [] });
   }
 });

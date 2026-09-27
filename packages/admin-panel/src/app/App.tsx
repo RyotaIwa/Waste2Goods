@@ -3,8 +3,8 @@ import {
   BarChart3, Users, TrendingUp, Bell, Search, LogOut, Recycle,
   ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
   X, Plus, Download, Eye, Edit, Trash2,
-  AlertCircle, MapPin, Cpu, RefreshCw, Battery, Gift,
-  Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore, EyeOff,
+  AlertCircle, Cpu, RefreshCw, Gift,
+  Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore,
   Activity, Upload
 } from "lucide-react";
 import {
@@ -840,7 +840,12 @@ function WeeklyCollectionCard({
   selectedMaterial: string;
   selectedKiosk: string;
 }>) {
-  const chartData = filteredData && filteredData.length > 0 ? filteredData : (liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData);
+  let chartData = weeklyData;
+  if (filteredData && filteredData.length > 0) {
+    chartData = filteredData;
+  } else if (liveWeekly && liveWeekly.length > 0) {
+    chartData = liveWeekly;
+  }
   const isLive = Boolean(liveWeekly && liveWeekly.length > 0);
 
   return (
@@ -1035,7 +1040,7 @@ function AdminDashboard({
         { name: "Glass Bottles", value: 5, color: "#8b5cf6" },
       ]
     : [
-        { name: wasteFilter, value: 100, color: wasteFilter === "PET Plastic" ? "#16a34a" : wasteFilter === "Cardboard" ? "#f59e0b" : wasteFilter === "Aluminum Cans" ? "#3b82f6" : "#8b5cf6" }
+        { name: wasteFilter, value: 100, color: getWastePieColor(wasteFilter) }
       ];
 
   const totalFilteredKg = filteredWeekly.reduce((acc, curr) => acc + curr.kg, 0);
@@ -1923,7 +1928,7 @@ function AnalyticsTopRedeemedCard({ searchQuery = "" }: Readonly<{ searchQuery?:
   let items = rewards.slice(0, 5).map((r, i) => ({ ...r, count: counts[i] }));
   if (searchQuery.trim()) {
     const q = searchQuery.trim().toLowerCase();
-    items = items.filter(r => r.name.toLowerCase().includes(q) || (r.category && r.category.toLowerCase().includes(q)));
+    items = items.filter(r => r.name.toLowerCase().includes(q) || (r.category?.toLowerCase().includes(q)));
   }
 
   return (

@@ -27,11 +27,7 @@ import {
   MONTHLY_DATA,
   LEADERBOARD,
   TASKS,
-  ADMIN_CREDENTIALS,
   KIOSK_PIN,
-  DEMO_RESIDENT_CREDENTIALS,
-  DEMO_ADMIN_USER,
-  DEMO_RESIDENT_USER,
   DEMO_KIOSK_USER,
 } from "./constants";
 
@@ -70,7 +66,11 @@ function parseHostAndPort(rawInput: string): { host: string; port: string; proto
     str = str.replace(/^http:\/\//i, "");
   }
   // Strip trailing slashes and paths like /api
-  str = str.replace(/\/.*$/, "").trim();
+  const slashIdx = str.indexOf("/");
+  if (slashIdx !== -1) {
+    str = str.slice(0, slashIdx);
+  }
+  str = str.trim();
 
   let host = str || "localhost";
   let port = String(DEFAULT_PORT || "3001");
@@ -95,7 +95,7 @@ export function getApiHost(): string {
   try {
     const hn = (typeof window !== "undefined" && window.location ? window.location.hostname || "" : "").toLowerCase();
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
-    if (stored && stored.trim()) {
+    if (stored?.trim()) {
       const parsed = parseHostAndPort(stored).host;
       // If we are on a real LAN device (not localhost), but stored host is localhost, prefer the real LAN hostname!
       if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
@@ -170,7 +170,10 @@ export async function testApiConnection(): Promise<{ ok: boolean; message: strin
   try {
     if (STATIC_BASE_URL) {
       const root = STATIC_BASE_URL.endsWith("/api") ? STATIC_BASE_URL.slice(0, -"/api".length) || "/" : "/";
-      const url = root.startsWith("http") ? (root.endsWith("/") ? root : root + "/") : "/";
+      let url = "/";
+      if (root.startsWith("http")) {
+        url = root.endsWith("/") ? root : root + "/";
+      }
       const res = await fetch(url, { method: "GET", signal: AbortSignal.timeout(8000) });
       if (res.ok) return { ok: true, message: `Connected to ${url}` };
       return { ok: false, message: `Server responded with HTTP ${res.status}` };
@@ -277,7 +280,7 @@ function buildDisplayFullName(obj: any): string {
   return `${first} ${last}`.trim();
 }
 
-function findAdminMatch(admins: any, userId: string, storedAdminId?: string): any | null {
+function findAdminMatch(admins: any, userId: string, storedAdminId?: string): any {
   if (!Array.isArray(admins)) return null;
   return admins.find(a =>
     a.adminId === userId || a.id === userId || a.adminId === storedAdminId
@@ -467,11 +470,14 @@ export const Waste2GoodsAPI = {
 
     configure(opts: { endpoint?: string; projectId?: string; region?: string } = {}): boolean {
       try {
-        const VITE: any = typeof (import.meta as any)?.env !== "undefined" ? (import.meta as any).env : {};
+        const VITE: any = (import.meta as any)?.env !== undefined ? (import.meta as any).env : {};
         const endpoint = opts.endpoint || VITE.VITE_APPWRITE_ENDPOINT || localStorage.getItem("w2g_appwrite_endpoint") || "https://cloud.appwrite.io/v1";
         const projectId = opts.projectId || VITE.VITE_APPWRITE_PROJECT_ID || localStorage.getItem("w2g_appwrite_project") || "";
         const region = opts.region || VITE.VITE_APPWRITE_REGION || localStorage.getItem("w2g_appwrite_region") || "fra";
-        if (!AppwriteSdk || !projectId) return (this.configured = false);
+        if (!AppwriteSdk || !projectId) {
+          this.configured = false;
+          return false;
+        }
         const { Client, Account } = AppwriteSdk;
         const client = new Client().setEndpoint(endpoint).setProject(projectId);
         const account = new Account(client);
@@ -493,7 +499,7 @@ export const Waste2GoodsAPI = {
 
     async getInfo(): Promise<{ configured: boolean; endpoint: string; projectId: string; region?: string; providers: string[] }> {
       try {
-        const configured = this.configure();
+        this.configure();
         const res = await fetch(`${getApiBaseUrl()}/auth/appwrite/info`).then(r => r.json()).catch(() => ({}));
         return {
           configured: this.configured || res.configured || false,
@@ -507,7 +513,7 @@ export const Waste2GoodsAPI = {
       }
     },
 
-    async initiateOAuth2(provider: "google" | "github" | string = "google", opts: { success?: string; failure?: string; scopes?: string[] } = {}): Promise<string | null> {
+    async initiateOAuth2(provider: string = "google", opts: { success?: string; failure?: string; scopes?: string[] } = {}): Promise<string | null> {
       try {
         if (!this.configure()) {
           const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
@@ -517,9 +523,10 @@ export const Waste2GoodsAPI = {
         const success = opts.success || window.location.origin + "/";
         const failure = opts.failure || window.location.origin + "/#login";
         const url = await (this.account as any).createOAuth2Session(provider, success, failure, opts.scopes);
-        if (url && url.toString) window.location.href = url.toString();
+        if (url?.toString) window.location.href = url.toString();
         return url;
       } catch (err: any) {
+        // Fallback to backend OAuth endpoint if Appwrite SDK throws
         try {
           const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
           window.location.href = fallbackUrl;
@@ -579,7 +586,7 @@ export const Waste2GoodsAPI = {
       }
     },
 
-    async whoAmI(): Promise<any | null> {
+    async whoAmI(): Promise<any> {
       try {
         if (!this.configure()) return null;
         return await (this.account as any).get();

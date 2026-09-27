@@ -2418,7 +2418,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
     },
   ]);
 
-  const [selectedClaim, setSelectedClaim] = useState<any | null>(null);
+  const [selectedClaim, setSelectedClaim] = useState<any>(null);
   const [copied, setCopied] = useState(false);
 
   const copyCode = (code: string) => {
@@ -2429,7 +2429,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
 
   const markAsClaimed = (id: string) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, status: "claimed" } : item));
-    if (selectedClaim && selectedClaim.id === id) {
+    if (selectedClaim?.id === id) {
       setSelectedClaim((prev: any) => prev ? { ...prev, status: "claimed" } : null);
     }
   };
@@ -2689,7 +2689,7 @@ export default function App() {
   const [notifUnread, setNotifUnread] = useState(0);
   const [kioskSession, setKioskSession] = useState<{ connected: boolean; kioskId?: string; connectedAt?: number }>({ connected: false });
   const [kioskChecking, setKioskChecking] = useState(false);
-  const [apiHost, setApiHostState] = useState(() => getApiHost());
+  const [apiHost, setApiHost] = useState(() => getApiHost());
   const [showLoginServer, setShowLoginServer] = useState(() => {
     try {
       const hasSetIp = localStorage.getItem("w2g_api_host");
@@ -2769,7 +2769,7 @@ export default function App() {
             (typeof (me as any).provider === "string" && (me as any).provider) ||
             "appwrite";
           const synced = await Waste2GoodsAPI.appwrite.syncWithBackend({ provider });
-          if (synced && synced.token && synced.user && !cancelled) {
+          if (synced?.token && synced?.user && !cancelled) {
             setProfileUser({ ...(synced.user as any) });
             window.history.replaceState({}, document.title, window.location.pathname);
             setScreen("home");
@@ -2790,7 +2790,7 @@ export default function App() {
       // until they explicitly tap "Sign Out" on the Profile screen).
       const t = setTimeout(() => {
         const existing = Waste2GoodsAPI.getAuthState();
-        if (existing && existing.isAuthenticated && existing.token && existing.user) {
+        if (existing?.isAuthenticated && existing?.token && existing?.user) {
           go("home");
         } else {
           go("onboard1");
@@ -2805,7 +2805,7 @@ export default function App() {
   useEffect(() => {
     if (!UNPROTECTED_SCREENS.has(screen)) {
       const auth = Waste2GoodsAPI.getAuthState();
-      if (!auth || !auth.isAuthenticated || !auth.token) {
+      if (!auth?.isAuthenticated || !auth?.token) {
         console.log("🔐 Mobile auth guard: no valid token — returning to login");
         Waste2GoodsAPI.logout();
         setScreen("login");
@@ -2888,7 +2888,7 @@ export default function App() {
 
   // Poll backend: is this user currently linked to a kiosk?
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time
-  const [kioskTick, setKioskTick] = useState(0);
+  const [, setKioskTick] = useState(0);
   useEffect(() => {
     const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
     if (!watchScreens.includes(screen)) return;
