@@ -10,7 +10,7 @@ import { redisBackendMode } from './redis-client.js';
 import {
   oauthAuthorizeLimiter, oauthTokenLimiter,
 } from './rate-limit.js';
-import { escapeHtml, sanitizeOAuthState, safeRedirect } from './escape-html.js';
+import { escapeHtml, sanitizeOAuthState, safeRedirect, isSafeRedirectUrl } from './escape-html.js';
 
 const CLIENT_REGISTRY = [
   {
@@ -237,22 +237,23 @@ export function handleAuthorizeGet(req, res, sessionUser) {
     code_challenge, code_challenge_method,
   } = req.query;
 
-  if (response_type !== 'code') {
-    return callbackError(res, redirect_uri, 'unsupported_response_type', state || null, 'Only response_type=code supported (Authorization Code Flow)');
-  }
   const client = findClient(client_id);
   if (!client) {
     return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
   }
-  if (!redirect_uri || !client.redirectUris.includes(String(redirect_uri).trim())) {
+  const safeRedirectUri = String(redirect_uri || '').trim();
+  if (!safeRedirectUri || !uriMatches(client.redirectUris, safeRedirectUri)) {
     return res.status(400).json({ error: 'invalid_redirect_uri', clientId: client.clientId, allowed: client.redirectUris });
+  }
+  if (response_type !== 'code') {
+    return callbackError(res, safeRedirectUri, 'unsupported_response_type', state || null, 'Only response_type=code supported (Authorization Code Flow)');
   }
   if (client.pkceRequired && !code_challenge) {
     return res.status(400).json({ error: 'invalid_request', error_description: `PKCE code_challenge required for ${client.clientId}. Use code_challenge + code_challenge_method=S256.` });
   }
   const cleanScope = buildScopeList(client, scope);
   const html = consentScreenHtml(client, cleanScope, state, {
-    response_type, client_id, redirect_uri, scope: cleanScope, state, nonce,
+    response_type, client_id, redirect_uri: safeRedirectUri, scope: cleanScope, state, nonce,
     code_challenge: code_challenge || null, code_challenge_method: code_challenge_method || (client.pkceRequired ? 'S256' : null),
   }, sessionUser);
   res.type('text/html; charset=utf-8');
@@ -266,12 +267,15 @@ export async function handleAuthorizeConsentPost(req, res, sessionUser) {
   } = { ...req.query, ...req.body };
   const client = findClient(client_id);
   if (!client) return res.status(400).json({ error: 'invalid_client' });
-  if (!redirect_uri) return res.status(400).json({ error: 'invalid_redirect_uri' });
+  const safeRedirectUri = String(redirect_uri || '').trim();
+  if (!safeRedirectUri || !uriMatches(client.redirectUris, safeRedirectUri)) {
+    return res.status(400).json({ error: 'invalid_redirect_uri', clientId: client.clientId, allowed: client.redirectUris });
+  }
   if (decision !== 'allow') {
-    return callbackError(res, redirect_uri, 'access_denied', state || null, 'User denied consent');
+    return callbackError(res, safeRedirectUri, 'access_denied', state || null, 'User denied consent');
   }
   if (!sessionUser) {
-    return callbackError(res, redirect_uri, 'login_required', state || null, 'Please authenticate via /api/auth/login before authorizing');
+    return callbackError(res, safeRedirectUri, 'login_required', state || null, 'Please authenticate via /api/auth/login before authorizing');
   }
   try {
     const cleanScope = buildScopeList(client, scope);
@@ -280,15 +284,15 @@ export async function handleAuthorizeConsentPost(req, res, sessionUser) {
       adminId: sessionUser.adminId || null, kioskId: sessionUser.kioskId || null,
       role: sessionUser.role, name: sessionUser.name || '', barangayId: sessionUser.barangayId || null,
     }, {
-      clientId: client.clientId, redirectUri: redirect_uri,
+      clientId: client.clientId, redirectUri: safeRedirectUri,
       scope: cleanScope, nonce: nonce || null,
       codeChallenge: code_challenge || null, codeChallengeMethod: code_challenge_method || 'S256',
     });
-    const sep = String(redirect_uri).includes('?') ? '&' : '?';
-    const redirectTo = `${redirect_uri}${sep}code=${encodeURIComponent(authorizationCode)}&state=${encodeURIComponent(state || '')}`;
+    const sep = safeRedirectUri.includes('?') ? '&' : '?';
+    const redirectTo = `${safeRedirectUri}${sep}code=${encodeURIComponent(authorizationCode)}&state=${encodeURIComponent(state || '')}`;
     return safeRedirect(res, redirectTo, 302);
   } catch (err) {
-    return callbackError(res, redirect_uri, 'server_error', state || null, err.message);
+    return callbackError(res, safeRedirectUri, 'server_error', state || null, err.message);
   }
 }
 
@@ -430,11 +434,14 @@ export async function handleRevokePost(req, res) {
 }
 
 function callbackError(res, redirectUri, error, state, description) {
-  if (!redirectUri) return res.status(400).json({ error, error_description: description || error, state });
-  const sep = String(redirectUri).includes('?') ? '&' : '?';
+  const safeUri = String(redirectUri || '').trim();
+  if (!safeUri || !isSafeRedirectUrl(safeUri)) {
+    return res.status(400).json({ error, error_description: description || error, state });
+  }
+  const sep = safeUri.includes('?') ? '&' : '?';
   const q = new URLSearchParams({ error, state: state || '' });
   if (description) q.set('error_description', String(description));
-  return safeRedirect(res, `${redirectUri}${sep}${q.toString()}`, 302);
+  return safeRedirect(res, `${safeUri}${sep}${q.toString()}`, 302);
 }
 
 export function oauth2RouterAttach(app, opts = {}) {

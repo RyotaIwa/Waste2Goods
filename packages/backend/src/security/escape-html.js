@@ -109,7 +109,10 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
   try {
     const u = new URL(trimmed);
     if ((u.protocol === 'http:' || u.protocol === 'https:') && isHostAllowed(u.hostname)) {
-      return res.redirect(statusCode, u.toString());
+      const portPart = u.port ? `:${u.port}` : '';
+      const hashPart = u.hash || '';
+      const rebuilt = `${u.protocol}//${u.hostname}${portPart}${u.pathname}${u.search}${hashPart}`;
+      return res.redirect(statusCode, rebuilt);
     }
   } catch {
     /* fallback to safe default */
