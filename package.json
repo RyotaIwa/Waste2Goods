@@ -19,6 +19,7 @@
     "build:kiosk": "cd packages/kiosk-app && npm run build",
     "build:mobile": "cd packages/mobile-app && npm run build",
     "test": "npm test --workspace=@waste2goods/backend",
+    "test:coverage": "c8 --reporter=lcov --reporter=text-summary npm test",
     "lint": "npm run lint --workspace=@waste2goods/backend",
     "audit:ci": "npm audit --omit=dev --audit-level=high"
   },
@@ -27,6 +28,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "4.7.0",
+    "c8": "^11.0.0",
     "tailwindcss": "4.1.12",
     "vite": "6.3.5"
   },

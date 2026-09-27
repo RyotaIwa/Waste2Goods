@@ -16,6 +16,7 @@ yarn.lock
 dist/
 build/
 .cache/
+coverage/
 .DS_Store
 Thumbs.db
 
@@ -47,4 +48,5 @@ chat*.txt
 CHAT_BACKUP.md
 *.exe
 *.docx
+!Waste2Goods_Security_Specification.docx
 Screenshot*.png
