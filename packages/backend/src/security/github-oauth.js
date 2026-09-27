@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
-import { escapeHtml, sanitizeOAuthState, sanitizeRedirectUrl, safeRedirect } from './escape-html.js';
+import { sanitizeRedirectUrl, safeRedirect } from './escape-html.js';
 
 const STATE_PREFIX = 'gh:oauth:state:';
 const CODE_PREFIX = 'gh:oauth:code:';
@@ -252,45 +252,19 @@ export function attachGitHubOAuth(app) {
     }
 
 
-    // Default mobile app redirect target
-    const mobileAppUrl = `http://${clientHost}:5173/?token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name || profile.login || 'GitHub User')}&email=${encodeURIComponent(userRecord.email)}&provider=github`;
-
-    const safeUserName = escapeHtml(userRecord.name || profile.login);
-    const safeUserEmail = escapeHtml(userRecord.email);
-    const safeUserId = escapeHtml(userRecord.userId);
-    const safeMobileUrl = escapeHtml(mobileAppUrl);
-    const safeJsonPayload = escapeHtml(JSON.stringify({
-      user: { userId: userRecord.userId, login: profile.login, name: userRecord.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
-      access_token: access.accessToken,
-      token_type: 'Bearer',
-      expires_in: access.expiresIn,
-    }, null, 2));
-
-    res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>GitHub Sign-In Complete · Waste2Goods</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Noto,Helvetica,Arial,sans-serif;max-width:600px;margin:24px auto;padding:0 16px;color:#0f172a;line-height:1.5}
-.card{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:24px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.05)}
-h1{font-size:20px;font-weight:800;color:#24292f;margin-bottom:8px;display:flex;align-items:center;gap:8px}
-pre{background:#0d1117;color:#58a6ff;padding:12px;border-radius:10px;overflow:auto;font-size:12px}
-.btn-mobile{display:block;text-align:center;background:#24292f;color:#fff;padding:14px;border-radius:12px;text-decoration:none;font-weight:bold;font-size:16px;margin:16px 0;transition:background .15s}
-.btn-mobile:hover{background:#1b1f24}
-.btn-sub{display:inline-block;background:#f1f5f9;color:#334155;padding:8px 14px;border-radius:8px;text-decoration:none;font-size:13px;font-weight:600}
-.btn-sub:hover{background:#e2e8f0}
-</style></head><body>
-<div class="card">
-  <h1><span>🐙</span> GitHub Sign-In Successful!</h1>
-  <p>Signed in as <strong>${safeUserName}</strong> (<code>${safeUserEmail}</code>).</p>
-  
-  <a class="btn-mobile" href="${safeMobileUrl}">📱 Open Waste2Goods Mobile App</a>
-  
-  <p style="margin-top:16px;font-size:13px;color:#64748b">OAuth JWT Token generated (userId: <code>${safeUserId}</code>):</p>
-  <pre>${safeJsonPayload}</pre>
-  
-  <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
-    <a class="btn-sub" href="/security-dashboard">🛡️ Security Dashboard</a>
-    <a class="btn-sub" href="http://${escapeHtml(clientHost)}:5174">🖥️ Admin Panel</a>
-  </div>
-</div>
-</body></html>`);
+    // Redirect directly to the mobile app — no server-side HTML interpolation of tainted values.
+    // All user data is passed as URL-encoded query params handled by the client (S5131 fix).
+    const safeClientHost = /^[a-zA-Z0-9.\-]+$/.test(clientHost) ? clientHost : 'localhost';
+    const mobileParams = new URLSearchParams({
+      token: access.accessToken,
+      refreshToken: refresh.refreshToken,
+      userId: String(userRecord.userId),
+      name: String(userRecord.name || profile.login || 'GitHub User'),
+      email: String(userRecord.email),
+      provider: 'github',
+    });
+    const mobileAppUrl = `http://${safeClientHost}:5173/?${mobileParams.toString()}`;
+    return safeRedirect(res, mobileAppUrl, 302);
   });
 }
 
