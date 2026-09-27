@@ -1,9 +1,12 @@
 import { z } from 'zod';
 
+// Zod 4 deprecated the string-format methods (`z.string().email()`); the top-level
+// `z.email()` format is used instead. It is attached with `.check()` so that the
+// preceding `.trim()` still runs before the format is validated (behavior unchanged).
 export const RegisterSchema = z.object({
   firstName: z.string().trim().min(1, 'First name is required').max(100),
   lastName:  z.string().trim().min(1, 'Last name is required').max(100),
-  email:     z.string().trim().email('Invalid email format').max(200),
+  email:     z.string().trim().check(z.email('Invalid email format')).max(200),
   password:  z.string().min(6, 'Password must be at least 6 characters').max(120),
   phone:     z.string().trim().max(50).optional().or(z.literal('')),
   province:  z.string().trim().min(1, 'Province is required').max(100),
@@ -14,7 +17,7 @@ export const RegisterSchema = z.object({
 });
 
 export const LoginSchema = z.object({
-  email:    z.string().trim().email('Invalid email').max(200),
+  email:    z.string().trim().check(z.email('Invalid email')).max(200),
   password: z.string().min(1, 'Password is required').max(120),
 });
 
@@ -56,7 +59,7 @@ export const RewardUpdateSchema = z.object({
 export const AdminCreateSchema = z.object({
   firstName:   z.string().trim().min(1, 'First name is required').max(100),
   lastName:    z.string().trim().min(1, 'Last name is required').max(100),
-  email:       z.string().trim().email('Invalid email format').max(200),
+  email:       z.string().trim().check(z.email('Invalid email format')).max(200),
   password:    z.string().min(6, 'Password must be at least 6 characters').max(120),
   barangayId:  z.coerce.number().int().positive().optional().default(1),
   roleId:      z.coerce.number().int().positive().optional().default(1),
@@ -65,7 +68,7 @@ export const AdminCreateSchema = z.object({
 export const UserCreateSchema = z.object({
   firstName:     z.string().trim().min(1, 'First name is required').max(100),
   lastName:      z.string().trim().min(1, 'Last name is required').max(100),
-  email:         z.string().trim().email('Invalid email format').max(200),
+  email:         z.string().trim().check(z.email('Invalid email format')).max(200),
   password:      z.string().min(6, 'Password must be at least 6 characters').max(120),
   barangayId:    z.coerce.number().int().positive().optional().default(1),
   pointsBalance: z.coerce.number().int().nonnegative().optional().default(0),
@@ -79,7 +82,7 @@ export const UserCreateSchema = z.object({
 export const UserUpdateSchema = z.object({
   firstName:     z.string().trim().min(1).max(100).optional(),
   lastName:      z.string().trim().min(1).max(100).optional(),
-  email:         z.string().trim().email('Invalid email').max(200).optional(),
+  email:         z.string().trim().check(z.email('Invalid email')).max(200).optional(),
   barangayId:    z.coerce.number().int().positive().optional(),
   pointsBalance: z.coerce.number().int().nonnegative().optional(),
   phone:         z.string().trim().max(50).optional().or(z.literal('')),
