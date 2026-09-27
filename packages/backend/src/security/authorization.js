@@ -104,26 +104,14 @@ export function hasRole(user, roles) {
   return (Array.isArray(roles) ? roles : [roles]).some((allow) => normalizeRole(allow) === r);
 }
 
-export function can(user, action, resource, attributes = {}) {
-  if (!resource || !action) return false;
-  const role = normalizeRole(user?.role || ROLES.ANON);
-  const res = String(resource).toLowerCase();
-  const act = String(action).toLowerCase();
-  const row = (PERMISSION_MATRIX[role] || {})[res] || {};
-  const baseAllow = Boolean(row[act]);
-  if (!baseAllow) return { allow: false, reason: `role ${role} cannot ${act} on ${res}`, role, action: act, resource: res };
-
+function checkAttributeRestrictions(user, role, act, res, attributes) {
   const selfCheck = attributes?.resourceOwnerId && (user?.userId || user?.adminId || user?.kioskId);
-  if (selfCheck && !isOwner(user, attributes.resourceOwnerId, attributes.resourceType)) {
-    if (role === ROLES.RESIDENT || role === ROLES.KIOSK) {
-      return { allow: false, reason: `resource ownership mismatch for ${role}`, role, action: act, resource: res };
-    }
+  if (selfCheck && !isOwner(user, attributes.resourceOwnerId, attributes.resourceType) && (role === ROLES.RESIDENT || role === ROLES.KIOSK)) {
+    return { allow: false, reason: `resource ownership mismatch for ${role}`, role, action: act, resource: res };
   }
 
-  if (attributes?.barangayId && user?.barangayId && (role === ROLES.BARANGAY_ADMIN || role === ROLES.ADMIN)) {
-    if (String(attributes.barangayId) !== String(user.barangayId) && role === ROLES.BARANGAY_ADMIN) {
-      return { allow: false, reason: 'barangay scope mismatch', role, action: act, resource: res };
-    }
+  if (attributes?.barangayId && user?.barangayId && role === ROLES.BARANGAY_ADMIN && String(attributes.barangayId) !== String(user.barangayId)) {
+    return { allow: false, reason: 'barangay scope mismatch', role, action: act, resource: res };
   }
 
   if (attributes?.targetId) {
@@ -132,6 +120,22 @@ export function can(user, action, resource, attributes = {}) {
       return { allow: false, reason: 'super-admin resource protected', role, action: act, resource: res };
     }
   }
+  return null;
+}
+
+export function can(user, action, resource, attributes = {}) {
+  if (!resource || !action) {
+    return { allow: false, reason: 'missing resource or action', role: 'anon', action: String(action || ''), resource: String(resource || '') };
+  }
+  const role = normalizeRole(user?.role || ROLES.ANON);
+  const res = String(resource).toLowerCase();
+  const act = String(action).toLowerCase();
+  const row = PERMISSION_MATRIX[role]?.[res] || {};
+  const baseAllow = Boolean(row[act]);
+  if (!baseAllow) return { allow: false, reason: `role ${role} cannot ${act} on ${res}`, role, action: act, resource: res };
+
+  const attrCheck = checkAttributeRestrictions(user, role, act, res, attributes);
+  if (attrCheck) return attrCheck;
 
   return { allow: true, reason: 'allowed by permission matrix', role, action: act, resource: res };
 }
@@ -141,7 +145,7 @@ export function isOwner(user, resourceOwnerId, resourceType = null) {
   const owner = String(resourceOwnerId);
   const subIds = new Set([
     user.userId, user.adminId, user.kioskId, user.sub,
-  ].filter(Boolean).map((s) => String(s)));
+  ].filter(Boolean).map(String));
   if (subIds.has(owner)) return true;
   if (resourceType === 'notification' && user.userId && owner.endsWith(String(user.userId))) return true;
   return false;
@@ -177,7 +181,7 @@ export function requireOwnershipOrRole(rolesAllowed, ownerParamKey = 'id', idKey
     const resourceOwnerId = String(req.params?.[ownerParamKey] || req.body?.[idKey] || '');
     if (isOwner(user, resourceOwnerId)) return next();
     return res.status(403).json({
-      error: `Forbidden — requires ownership or one of: ${[].concat(rolesAllowed).join(', ')}`,
+      error: `Forbidden — requires ownership or one of: ${[rolesAllowed].flat().join(', ')}`,
       code: 'OWNER_OR_ROLE_REQUIRED',
     });
   };

@@ -2,13 +2,8 @@ import express from "express";
 import cors from "cors";
 import db from "./db.js";
 import {
-  USERS,
-  KIOSKS,
-  REWARDS,
-  TRANSACTIONS,
   WEEKLY_DATA,
   MONTHLY_DATA,
-  LEADERBOARD,
   TASKS,
   ADMIN_CREDENTIALS,
   KIOSK_PIN,
@@ -21,7 +16,23 @@ import {
 const app = express();
 const PORT = 3001;
 
-app.use(cors());
+app.disable("x-powered-by");
+
+const ALLOWED_CORS_ORIGINS = [
+  /^http:\/\/localhost(:\d+)?$/,
+  /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || ALLOWED_CORS_ORIGINS.some(regex => regex.test(origin))) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
+  credentials: true,
+}));
 app.use(express.json());
 
 // Root route - show welcome message
@@ -50,7 +61,7 @@ app.get("/", (req, res) => {
 // Simple middleware to check auth token
 const authenticate = (req, res, next) => {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+  if (!authHeader?.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
   }
   const token = authHeader.slice(7);

@@ -1,15 +1,12 @@
-import { createHash } from 'node:crypto';
 import Redis from 'ioredis';
 
 let RateLimitRedisStoreCtor = null;
-(async () => {
-  try {
-    const rlRedis = await import('rate-limit-redis');
-    RateLimitRedisStoreCtor = rlRedis.RedisStore || rlRedis.default?.RedisStore || (rlRedis.default && typeof rlRedis.default === 'function' ? rlRedis.default : null);
-  } catch {
-    RateLimitRedisStoreCtor = null;
-  }
-})();
+try {
+  const rlRedis = await import('rate-limit-redis');
+  RateLimitRedisStoreCtor = rlRedis.RedisStore || rlRedis.default?.RedisStore || (rlRedis.default && typeof rlRedis.default === 'function' ? rlRedis.default : null);
+} catch {
+  RateLimitRedisStoreCtor = null;
+}
 
 const REDIS_URL = process.env.REDIS_URL || process.env.REDIS_URI;
 const REDIS_HOST = process.env.REDIS_HOST || '127.0.0.1';
@@ -53,9 +50,9 @@ function memDel(key) {
 
 function memDelPattern(pattern) {
   const regex = new RegExp(pattern
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.'));
+    .replace(/[.+^${}()|[\]\\]/g, String.raw`\$&`)
+    .replaceAll('*', '.*')
+    .replaceAll('?', '.'));
   let count = 0;
   for (const k of memKeys()) {
     if (regex.test(k)) { memDel(k); count++; }
@@ -147,9 +144,12 @@ export async function redisSet(key, value, ttlSec = 0) {
       else await redisInstance.set(k, payload);
       return true;
     }
-  } catch (err) { lastError = err.message; }
-  memPut(k, payload, ttlSec > 0 ? ttlSec * 1000 : 0);
-  return true;
+    memPut(k, payload, ttlSec > 0 ? ttlSec * 1000 : 0);
+    return true;
+  } catch (err) {
+    lastError = err.message;
+    return false;
+  }
 }
 
 export async function redisGet(key) {
@@ -268,6 +268,7 @@ export function makeRateLimitRedisStore() {
       prefix: ns('rl:'),
     });
   } catch (_err) {
+    // Ignore optional rate-limit-redis package failure and fall back to in-memory store
     return undefined;
   }
 }

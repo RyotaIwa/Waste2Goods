@@ -1,8 +1,19 @@
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import db from '../db-mysql.js';
 
 async function hashPasswordSafe(plain) {
   return bcrypt.hash(plain, 10);
+}
+
+function secureRandomAlnum(length) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(length);
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
 }
 
 async function nextUserId() {
@@ -17,7 +28,7 @@ async function nextUserId() {
   }
 }
 
-export async function findOrCreateOAuthUser(profile, opts = {}) {
+function extractProfileDetails(profile, opts = {}) {
   const provider = String(opts.provider || 'oauth').toLowerCase();
   const providerId = String(profile.id || profile.sub || profile.providerId || `${provider}-${Date.now()}`);
   const emailRaw = String(profile.email || '').toLowerCase().trim();
@@ -33,11 +44,15 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
   const phone = String(profile.phone || opts.phone || '');
   const streetAddress = String(opts.streetAddress || profile.streetAddress || '');
 
+  return {
+    provider, providerId, email, firstName, lastName,
+    barangayId, barangayName, province, city, phone, streetAddress,
+  };
+}
+
+async function findExistingUser(email, fallbackBarangayId) {
   try {
-    const [existing] = await db.query(
-      'SELECT * FROM users WHERE email = ? LIMIT 1',
-      [email]
-    );
+    const [existing] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
     if (existing && existing.length > 0) {
       const u = existing[0];
       return {
@@ -45,7 +60,7 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
         role: 'resident',
         name: `${u.firstName} ${u.lastName}`.trim(),
         email: u.email,
-        barangayId: u.barangayId || barangayId,
+        barangayId: u.barangayId || fallbackBarangayId,
         created: false,
         userRow: u,
       };
@@ -53,10 +68,33 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
   } catch (err) {
     console.warn('[oauth-user-store] find user failed, proceeding to create:', err.message);
   }
+  return null;
+}
+
+async function findRaceUser(email, fallbackBarangayId) {
+  try {
+    const [race] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
+    if (race && race.length > 0) {
+      const u = race[0];
+      return {
+        userId: u.userId, role: 'resident',
+        name: `${u.firstName} ${u.lastName}`.trim(),
+        email: u.email, barangayId: u.barangayId || fallbackBarangayId,
+        created: false, userRow: u,
+      };
+    }
+  } catch {}
+  return null;
+}
+
+export async function findOrCreateOAuthUser(profile, opts = {}) {
+  const p = extractProfileDetails(profile, opts);
+  const existing = await findExistingUser(p.email, p.barangayId);
+  if (existing) return existing;
 
   const userId = await nextUserId();
-  const qrCode = `${userId}-${Math.random().toString(36).slice(2, 7)}`;
-  const passwordHash = await hashPasswordSafe(`${providerId}-${Date.now()}`);
+  const qrCode = `${userId}-${secureRandomAlnum(5)}`;
+  const passwordHash = await hashPasswordSafe(`${p.providerId}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`);
 
   try {
     await db.query(
@@ -64,23 +102,13 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
          (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
           total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress, createdAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 50, 50, 0, 'active', ?, ?, ?, ?, ?, NOW())`,
-      [userId, firstName, lastName, email, passwordHash, qrCode, barangayId,
-       phone, province, city, barangayName, streetAddress]
+      [userId, p.firstName, p.lastName, p.email, passwordHash, qrCode, p.barangayId,
+       p.phone, p.province, p.city, p.barangayName, p.streetAddress]
     );
   } catch (insertErr) {
     if (/Duplicate entry/.test(insertErr.message || '') && /email/.test(insertErr.message || '')) {
-      try {
-        const [race] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [email]);
-        if (race && race.length > 0) {
-          const u = race[0];
-          return {
-            userId: u.userId, role: 'resident',
-            name: `${u.firstName} ${u.lastName}`.trim(),
-            email: u.email, barangayId: u.barangayId || barangayId,
-            created: false, userRow: u,
-          };
-        }
-      } catch {}
+      const raced = await findRaceUser(p.email, p.barangayId);
+      if (raced) return raced;
     }
     throw insertErr;
   }
@@ -91,16 +119,15 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
   return {
     userId,
     role: 'resident',
-    name: `${firstName} ${lastName}`.trim(),
-    email,
-    barangayId,
+    name: `${p.firstName} ${p.lastName}`.trim(),
+    email: p.email,
+    barangayId: p.barangayId,
     created: true,
     userRow,
   };
 }
 
 export async function lookupKioskUser(kioskIdOrPin, opts = {}) {
-  const pin = String(kioskIdOrPin || '');
   try {
     const [rows] = await db.query(
       "SELECT * FROM administrators WHERE adminIdentifier = 'kiosk@waste2goods.ph' OR adminId LIKE 'K-%' LIMIT 1"

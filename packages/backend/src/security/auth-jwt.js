@@ -5,19 +5,23 @@ import {
   redisSet, redisGet, redisDel, redisDelPattern, redisBackendMode, redisExists,
 } from './redis-client.js';
 
-const DEV_FALLBACK_SECRET = 'w2g_dev_only_secret_do_not_use_in_production_f9a8c7e6b5d4c3b2a109';
 const isProduction = process.env.NODE_ENV === 'production';
+
+function generateDevJwtSecret() {
+  return 'dev_' + crypto.randomBytes(32).toString('hex');
+}
+
+const DEV_RUNTIME_SECRET = generateDevJwtSecret();
 
 if (!process.env.JWT_SECRET) {
   if (isProduction) {
     throw new Error('[auth-jwt] JWT_SECRET environment variable is required in production. Set it before starting the server.');
   } else {
-    // Development fallback only — never used in production
-    console.warn('[auth-jwt] WARNING: JWT_SECRET not set. Using insecure development fallback. Set JWT_SECRET in production.');
+    console.warn('[auth-jwt] WARNING: JWT_SECRET not set. Using ephemeral per-process runtime secret (tokens will invalidate on restart). Set JWT_SECRET for persistent sessions.');
   }
 }
 
-export const JWT_SECRET    = process.env.JWT_SECRET || DEV_FALLBACK_SECRET;
+export const JWT_SECRET    = process.env.JWT_SECRET || DEV_RUNTIME_SECRET;
 export const JWT_AUDIENCE  = process.env.JWT_AUDIENCE || 'w2g-localhost';
 export const JWT_ISSUER    = process.env.JWT_ISSUER || 'w2g-auth-server';
 export const JWT_ALGORITHM = 'HS256';
@@ -59,13 +63,20 @@ export function signToken(payload) {
   return signAccessToken(payload).accessToken;
 }
 
+const ROLE_SCOPES_MAP = {
+  admin: 'admin:read admin:write profile:read',
+  super_admin: 'super:all admin:read admin:write profile:read',
+  barangay_admin: 'barangay:read barangay:write profile:read',
+  kiosk: 'kiosk:ping kiosk:session profile:read',
+};
+
+function getBaseScopesForRole(role) {
+  return ROLE_SCOPES_MAP[role] || 'profile:read rewards:redeem transactions:read';
+}
+
 export function signAccessToken(payload, overrides = {}) {
   const role = String(payload.role || 'resident');
-  const baseScopes = role === 'admin' ? 'admin:read admin:write profile:read'
-    : role === 'super_admin' ? 'super:all admin:read admin:write profile:read'
-    : role === 'barangay_admin' ? 'barangay:read barangay:write profile:read'
-    : role === 'kiosk' ? 'kiosk:ping kiosk:session profile:read'
-    : 'profile:read rewards:redeem transactions:read';
+  const baseScopes = getBaseScopesForRole(role);
   const scope = overrides.scope || payload.scope || baseScopes;
   const jtiValue = overrides.jti || jti();
   const claims = {
@@ -197,9 +208,19 @@ export async function isJtiRevoked(jtiValue) {
   return Boolean(await redisExists(`${REVOCATION_PREFIX}${jtiValue}`));
 }
 
+function getAuthErrorMessage(err) {
+  if (err.name === 'TokenExpiredError') {
+    return 'Access token expired — use /api/auth/refresh with refresh_token';
+  }
+  if (err.name === 'JsonWebTokenError') {
+    return 'Invalid token signature or audience';
+  }
+  return 'Invalid token';
+}
+
 export function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized — missing Bearer token', code: 'AUTH_MISSING' });
   }
   const token = authHeader.slice(7);
@@ -227,9 +248,7 @@ export function authenticateJWT(req, res, next) {
       } catch { /* ignore */ }
     }
     return res.status(401).json({
-      error: err.name === 'TokenExpiredError'
-        ? 'Access token expired — use /api/auth/refresh with refresh_token'
-        : (err.name === 'JsonWebTokenError' ? 'Invalid token signature or audience' : 'Invalid token'),
+      error: getAuthErrorMessage(err),
       code: 'AUTH_' + (err.name || 'INVALID').toUpperCase(),
     });
   }
@@ -261,12 +280,12 @@ export function introspectToken(token, tokenTypeHint = null) {
 export function requireRole(...allowedRoles) {
   return (req, res, next) => {
     const user = req.user;
-    if (!user || !user.role) {
+    if (!user?.role) {
       return res.status(403).json({ error: 'Forbidden — authenticated role required', code: 'RBAC_NO_ROLE' });
     }
     const normed = String(user.role).toLowerCase();
-    const allowList = allowedRoles.map((r) => String(r).toLowerCase());
-    if (allowList.includes(normed) || (allowList.includes('admin') && normed === 'super_admin')) {
+    const allowSet = new Set(allowedRoles.map((r) => String(r).toLowerCase()));
+    if (allowSet.has(normed) || (allowSet.has('admin') && normed === 'super_admin')) {
       return next();
     }
     return res.status(403).json({
@@ -286,8 +305,11 @@ export async function comparePassword(candidatePlain, storedHash) {
   if (!storedHash) return false;
   const isLegacy = typeof storedHash === 'string' && storedHash.startsWith('hashed_');
   if (isLegacy) {
-    const legacyExpected = `hashed_${candidatePlain}`;
-    return storedHash === candidatePlain || storedHash === legacyExpected;
+    const legacyCandidate = `hashed_${candidatePlain}`;
+    const timingSafeA = Buffer.from(String(storedHash));
+    const timingSafeB = Buffer.from(String(legacyCandidate));
+    if (timingSafeA.length !== timingSafeB.length) return false;
+    return crypto.timingSafeEqual(timingSafeA, timingSafeB);
   }
   try {
     return bcrypt.compare(candidatePlain, storedHash);

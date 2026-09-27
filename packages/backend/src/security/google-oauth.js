@@ -194,6 +194,17 @@ export function attachGoogleOAuth(app) {
     return safeRedirect(res, cb, 302);
   });
 
+async function resolveGoogleProfile(code, req) {
+  const isDemoCode = code && String(code).startsWith('googled_');
+  if (googleConfigured() && code && !isDemoCode) {
+    return exchangeGoogleCode(String(code), callbackUrl(req));
+  }
+  const raw = await redisGet(`${CODE_PREFIX}${code}`);
+  if (!raw) return null;
+  await redisDel(`${CODE_PREFIX}${code}`);
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
   app.get('/api/auth/google/callback', async (req, res) => {
     const { code, error } = req.query;
     let state = String(req.query.state || '');
@@ -206,19 +217,14 @@ export function attachGoogleOAuth(app) {
     }
     await redisDel(`${STATE_PREFIX}${state}`);
 
-    let profile = DEMO_GOOGLE_USER;
-    const isDemoCode = code && String(code).startsWith('googled_');
-    if (googleConfigured() && code && !isDemoCode) {
-      try {
-        profile = await exchangeGoogleCode(String(code), callbackUrl(req));
-      } catch (err) {
-        return res.status(400).json({ error: 'google_token_exchange_failed', detail: err.message });
+    let profile;
+    try {
+      profile = await resolveGoogleProfile(code, req);
+      if (!profile) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown or expired authorization code' });
       }
-    } else {
-      const raw = await redisGet(`${CODE_PREFIX}${code}`);
-      if (!raw) return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown demo authorization code' });
-      await redisDel(`${CODE_PREFIX}${code}`);
-      profile = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (err) {
+      return res.status(400).json({ error: 'google_token_exchange_failed', detail: err.message });
     }
 
     const userRecord = await findOrCreateOAuthUser(profile, { provider: 'google' });
@@ -243,15 +249,15 @@ export function attachGoogleOAuth(app) {
     // If returnTo is an external URL (mobile app), redirect with tokens in URL
     if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
       const sep = returnTo.includes('?') ? '&' : '?';
-      const cleanName = encodeURIComponent(String(userRecord.name || 'Google User').replace(/[^a-zA-Z0-9 _\-]/g, ''));
-      const cleanEmail = encodeURIComponent(String(userRecord.email || '').replace(/[^a-zA-Z0-9@._\-]/g, ''));
+      const cleanName = encodeURIComponent(String(userRecord.name || 'Google User').replace(/[^a-zA-Z0-9 _-]/g, ''));
+      const cleanEmail = encodeURIComponent(String(userRecord.email || '').replace(/[^a-zA-Z0-9@._-]/g, ''));
       const redirectTarget = `${returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${cleanName}&email=${cleanEmail}`;
       return safeRedirect(res, redirectTarget, 302);
     }
 
 
     // Redirect directly to mobile app — no tainted data rendered into HTML (S5131 fix).
-    const safeClientHost = /^[a-zA-Z0-9.\-]+$/.test(clientHost) ? clientHost : 'localhost';
+    const safeClientHost = /^[a-zA-Z0-9.-]+$/.test(clientHost) ? clientHost : 'localhost';
     const mobileParams = new URLSearchParams({
       token: access.accessToken,
       refreshToken: refresh.refreshToken,

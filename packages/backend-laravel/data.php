@@ -91,4 +91,3 @@ $KIOSKS = [
 $POINT_RATES = [
     ["type" => "♻️ PET Plastic", "pointsPerKg" => 50, "color" => "bg-green-100 text-green-700"],
 ];
-?>

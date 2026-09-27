@@ -7,12 +7,13 @@
  */
 export function escapeHtml(value) {
   if (value == null) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  const str = typeof value === 'string' ? value : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  return str
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 /**
@@ -23,12 +24,12 @@ export function escapeHtml(value) {
  * @returns {string} Safe, validated and escaped state token
  */
 export function sanitizeOAuthState(state) {
-  if (!state) return '';
+  if (!state || typeof state === 'object') return '';
   const str = String(state).trim();
-  if (/^[a-zA-Z0-9_\-]{1,128}$/.test(str)) {
+  if (/^[a-zA-Z0-9_-]{1,128}$/.test(str)) {
     return escapeHtml(str);
   }
-  return escapeHtml(str.replace(/[^a-zA-Z0-9_\-]/g, '').slice(0, 128));
+  return escapeHtml(str.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128));
 }
 
 const ALLOWED_HOSTNAMES = new Set([
@@ -98,38 +99,53 @@ export function sanitizeRedirectUrl(targetUrl, defaultUrl = '/') {
  * @param {string} targetUrl - Destination URL
  * @param {number} [statusCode=302] - HTTP redirect status code
  */
+function tryResolveSafeRelativePath(trimmed) {
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//') || trimmed.startsWith('/\\')) return null;
+  try {
+    const parsed = new URL(trimmed, 'https://waste2goods.ph');
+    if (parsed.origin === 'https://waste2goods.ph') {
+      const safePath = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+      if (safePath.startsWith('/') && !safePath.startsWith('//') && !safePath.startsWith('/\\')) {
+        return safePath;
+      }
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function tryResolveSafeAbsoluteUrl(trimmed) {
+  try {
+    const u = new URL(trimmed);
+    if ((u.protocol === 'http:' || u.protocol === 'https:') && isHostAllowed(u.hostname)) {
+      const portPart = u.port ? `:${u.port}` : '';
+      return `${u.protocol}//${u.hostname}${portPart}${u.pathname}${u.search}${u.hash}`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Performs a validated safe redirect preventing Open Redirect (SonarQube jssecurity:S5146 / CWE-601).
+ *
+ * @param {import('express').Response} res - Express response object
+ * @param {string} targetUrl - Destination URL
+ * @param {number} [statusCode=302] - HTTP redirect status code
+ */
 export function safeRedirect(res, targetUrl, statusCode = 302) {
   if (!targetUrl || typeof targetUrl !== 'string') {
     return res.redirect(statusCode, '/');
   }
   const trimmed = targetUrl.trim();
+  const rel = tryResolveSafeRelativePath(trimmed);
+  if (rel) return res.redirect(statusCode, rel);
 
-  // Safe relative paths (e.g. "/", "/dashboard", "/#login")
-  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\')) {
-    try {
-      const parsed = new URL(trimmed, 'https://waste2goods.ph');
-      if (parsed.origin === 'https://waste2goods.ph') {
-        const safePath = `${parsed.pathname}${parsed.search}${parsed.hash}`;
-        if (safePath.startsWith('/') && !safePath.startsWith('//') && !safePath.startsWith('/\\')) {
-          return res.redirect(statusCode, safePath);
-        }
-      }
-    } catch {
-      return res.redirect(statusCode, '/');
-    }
-  }
+  const abs = tryResolveSafeAbsoluteUrl(trimmed);
+  if (abs) return res.redirect(statusCode, abs);
 
-  // Absolute URLs with verified allowed hostnames
-  try {
-    const u = new URL(trimmed);
-    if ((u.protocol === 'http:' || u.protocol === 'https:') && isHostAllowed(u.hostname)) {
-      const portPart = u.port ? `:${u.port}` : '';
-      const safeUrl = `${u.protocol}//${u.hostname}${portPart}${u.pathname}${u.search}${u.hash}`;
-      return res.redirect(statusCode, safeUrl);
-    }
-  } catch {
-    /* fallback to safe default */
-  }
   return res.redirect(statusCode, '/');
 }
 
@@ -142,8 +158,9 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
  */
 export function sanitizeLog(value) {
   if (value == null) return '';
-  return String(value)
-    .replace(/[\r\n\x00-\x1F\x7F-\x9F]+/g, ' ')
+  const str = typeof value === 'string' ? value : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  return str
+    .replace(/[\x00-\x1F\x7F-\x9F]+/g, ' ')
     .trim();
 }
 

@@ -70,6 +70,21 @@ function ChartContainer({
   );
 }
 
+// Safe CSS color value: allow hex, rgb/rgba/hsl/hsla, named colors, and CSS variable references.
+// This prevents CSS injection if chart config values ever come from external data.
+function sanitizeCssValue(value: string): string {
+  // Allow: hex colors, rgb/rgba/hsl/hsla functions, named colors (letters only), CSS vars
+  if (/^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s,.%]+\)|hsla?\([\d\s,.%]+\)|var\(--[\w-]+\)|[a-zA-Z]+)$/.test(value.trim())) {
+    return value.trim();
+  }
+  return 'transparent'; // safe fallback for unexpected values
+}
+
+// Sanitize an ID or key for use in a CSS selector or property name.
+function sanitizeCssId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme || config.color,
@@ -79,19 +94,27 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null;
   }
 
+  const safeId = sanitizeCssId(id);
+
   return (
+    // dangerouslySetInnerHTML is required here because React cannot set CSS custom properties
+    // (--color-*) via JSX style props. All dynamic values are sanitized before insertion:
+    // - id is restricted to [a-zA-Z0-9_-]
+    // - keys are restricted to [a-zA-Z0-9_-]
+    // - color values are validated against a strict CSS color pattern
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart=${safeId}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const rawColor =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ||
       itemConfig.color;
-    return color ? `  --color-${key}: ${color};` : null;
+    const color = rawColor ? sanitizeCssValue(rawColor) : null;
+    return color ? `  --color-${sanitizeCssId(key)}: ${color};` : null;
   })
   .join("\n")}
 }

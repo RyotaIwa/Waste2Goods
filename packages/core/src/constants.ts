@@ -3,15 +3,24 @@ import {
   Role, Barangay, Administrator, UserRecyclingTask, RecyclableMaterial, RecyclingTransaction, RewardRedemption, RecyclingTask
 } from "./types";
 
-// DEMO AUTH CREDENTIALS
-export const ADMIN_CREDENTIALS = { email: "admin@waste2goods.ph", password: "AdminCabantian2025" };
-export const KIOSK_PIN = "7890";
-export const DEMO_RESIDENT_CREDENTIALS = { email: "resident@cabantian.ph", password: "ResidentCabantian2025" };
+// DEMO AUTH CREDENTIALS — passwords sourced from env vars, never hardcoded in source
+const envOrDefault = (key: string, fallback: string) =>
+  (typeof process !== "undefined" && process.env && process.env[key]) || fallback;
+
+export const ADMIN_CREDENTIALS = {
+  email: envOrDefault("ADMIN_EMAIL", "admin@waste2goods.ph"),
+  password: envOrDefault("ADMIN_PASSWORD", ""),
+};
+export const KIOSK_PIN = envOrDefault("KIOSK_PIN", "");
+export const DEMO_RESIDENT_CREDENTIALS = {
+  email: envOrDefault("RESIDENT_EMAIL", "resident@cabantian.ph"),
+  password: envOrDefault("RESIDENT_PASSWORD", ""),
+};
 
 export const DEMO_ADMIN_USER: AuthUser = {
   id: "A-001",
   name: "Juan Reyes",
-  email: "admin@waste2goods.ph",
+  email: envOrDefault("ADMIN_EMAIL", "admin@waste2goods.ph"),
   role: "admin",
   barangay: "Cabantian",
 };
@@ -19,7 +28,7 @@ export const DEMO_ADMIN_USER: AuthUser = {
 export const DEMO_RESIDENT_USER: AuthUser = {
   id: "U-001",
   name: "Maria Santos",
-  email: "resident@cabantian.ph",
+  email: envOrDefault("RESIDENT_EMAIL", "resident@cabantian.ph"),
   role: "resident",
   barangay: "Cabantian",
   points: 2840,
@@ -47,10 +56,10 @@ export const BARANGAYS: Barangay[] = [
 export const ADMINISTRATORS: Administrator[] = [
   {
     adminId: "A-001",
-    adminIdentifier: "ADMIN-CABANTIAN-001",
+    adminIdentifier: envOrDefault("ADMIN_EMAIL", "admin@waste2goods.ph"),
     firstName: "Juan",
     lastName: "Reyes",
-    passwordHash: "hashed_admin_password_123", // Placeholder
+    passwordHash: "",
     createdAt: "2025-01-01T00:00:00Z",
     barangayId: 1
   }
@@ -169,12 +178,12 @@ export const TRANSACTIONS: Transaction[] = [
 
 // USERS (updated to use new User interface fields + keep original compatibility by adding old fields as optional)
 export const USERS: (User & { id?: string; name?: string; barangay?: string; points?: number; joined?: string; submissions?: number; redeemed?: number })[] = [
-  { userId: "U-001", firstName: "Maria", lastName: "Santos", email: "resident@cabantian.ph", passwordHash: "hashed_user_password_123", barangayId: 1, pointsBalance: 2840, totalSubmissions: 34, createdAt: "2025-03-12T00:00:00Z", status: "active", id: "U-001", name: "Maria Santos", barangay: "Cabantian", points: 2840, joined: "Mar 12, 2025", submissions: 34, redeemed: 2 },
-  { userId: "U-002", firstName: "Ana", lastName: "Reyes", email: "ana.reyes@example.com", passwordHash: "hashed_user_password_456", barangayId: 1, pointsBalance: 4820, totalSubmissions: 67, createdAt: "2025-01-05T00:00:00Z", status: "active", id: "U-002", name: "Ana Reyes", barangay: "Cabantian", points: 4820, joined: "Jan 5, 2025", submissions: 67, redeemed: 8 },
-  { userId: "U-003", firstName: "Carlo", lastName: "Mendoza", email: "carlo.mendoza@example.com", passwordHash: "hashed_user_password_789", barangayId: 1, pointsBalance: 3950, totalSubmissions: 52, createdAt: "2025-02-18T00:00:00Z", status: "active", id: "U-003", name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, joined: "Feb 18, 2025", submissions: 52, redeemed: 5 },
-  { userId: "U-004", firstName: "Ben", lastName: "Pascual", email: "ben.pascual@example.com", passwordHash: "hashed_user_password_012", barangayId: 1, pointsBalance: 890, totalSubmissions: 11, createdAt: "2025-04-02T00:00:00Z", status: "inactive", id: "U-004", name: "Ben Pascual", barangay: "Cabantian", points: 890, joined: "Apr 2, 2025", submissions: 11, redeemed: 1 },
-  { userId: "U-005", firstName: "Rosa", lastName: "Guinto", email: "rosa.guinto@example.com", passwordHash: "hashed_user_password_345", barangayId: 1, pointsBalance: 1540, totalSubmissions: 21, createdAt: "2025-03-28T00:00:00Z", status: "active", id: "U-005", name: "Rosa Guinto", barangay: "Cabantian", points: 1540, joined: "Mar 28, 2025", submissions: 21, redeemed: 3 },
-  { userId: "U-006", firstName: "Liza", lastName: "Villareal", email: "liza.villareal@example.com", passwordHash: "hashed_user_password_678", barangayId: 1, pointsBalance: 1990, totalSubmissions: 28, createdAt: "2025-02-01T00:00:00Z", status: "active", id: "U-006", name: "Liza Villareal", barangay: "Cabantian", points: 1990, joined: "Feb 1, 2025", submissions: 28, redeemed: 4 }
+  { userId: "U-001", firstName: "Maria", lastName: "Santos", email: "resident@cabantian.ph", passwordHash: "", barangayId: 1, pointsBalance: 2840, totalSubmissions: 34, createdAt: "2025-03-12T00:00:00Z", status: "active", id: "U-001", name: "Maria Santos", barangay: "Cabantian", points: 2840, joined: "Mar 12, 2025", submissions: 34, redeemed: 2 },
+  { userId: "U-002", firstName: "Ana", lastName: "Reyes", email: "ana.reyes@example.com", passwordHash: "", barangayId: 1, pointsBalance: 4820, totalSubmissions: 67, createdAt: "2025-01-05T00:00:00Z", status: "active", id: "U-002", name: "Ana Reyes", barangay: "Cabantian", points: 4820, joined: "Jan 5, 2025", submissions: 67, redeemed: 8 },
+  { userId: "U-003", firstName: "Carlo", lastName: "Mendoza", email: "carlo.mendoza@example.com", passwordHash: "", barangayId: 1, pointsBalance: 3950, totalSubmissions: 52, createdAt: "2025-02-18T00:00:00Z", status: "active", id: "U-003", name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, joined: "Feb 18, 2025", submissions: 52, redeemed: 5 },
+  { userId: "U-004", firstName: "Ben", lastName: "Pascual", email: "ben.pascual@example.com", passwordHash: "", barangayId: 1, pointsBalance: 890, totalSubmissions: 11, createdAt: "2025-04-02T00:00:00Z", status: "inactive", id: "U-004", name: "Ben Pascual", barangay: "Cabantian", points: 890, joined: "Apr 2, 2025", submissions: 11, redeemed: 1 },
+  { userId: "U-005", firstName: "Rosa", lastName: "Guinto", email: "rosa.guinto@example.com", passwordHash: "", barangayId: 1, pointsBalance: 1540, totalSubmissions: 21, createdAt: "2025-03-28T00:00:00Z", status: "active", id: "U-005", name: "Rosa Guinto", barangay: "Cabantian", points: 1540, joined: "Mar 28, 2025", submissions: 21, redeemed: 3 },
+  { userId: "U-006", firstName: "Liza", lastName: "Villareal", email: "liza.villareal@example.com", passwordHash: "", barangayId: 1, pointsBalance: 1990, totalSubmissions: 28, createdAt: "2025-02-01T00:00:00Z", status: "active", id: "U-006", name: "Liza Villareal", barangay: "Cabantian", points: 1990, joined: "Feb 1, 2025", submissions: 28, redeemed: 4 }
 ];
 
 // KIOSKS (updated to use kioskId + keep original id)

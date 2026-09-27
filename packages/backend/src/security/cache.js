@@ -1,6 +1,6 @@
 import {
-  redisSet, redisGet, redisGetJson, redisDel, redisDelPattern,
-  redisBackendMode, redisStats, redisExists, redisExpire, redisTtl,
+  redisSet, redisGetJson, redisDelPattern,
+  redisBackendMode, redisStats, redisExpire, redisTtl,
 } from './redis-client.js';
 
 const DEFAULT_TTL_SEC = 60;
@@ -92,12 +92,6 @@ export async function warmCacheEntry(path, body, ttlSec = DEFAULT_TTL_SEC, scope
 export async function cacheStats() {
   try {
     const stats = await redisStats();
-    const patterns = [
-      { name: 'public',   match: `${NAMESPACE_CACHE}pub:*` },
-      { name: 'resident', match: `${NAMESPACE_CACHE}res:*` },
-      { name: 'admin',    match: `${NAMESPACE_CACHE}adm:*` },
-      { name: 'kiosk',    match: `${NAMESPACE_CACHE}kio:*` },
-    ];
     return {
       backend: redisBackendMode(),
       totalKeys: stats.namespacedKeys,

@@ -1,5 +1,5 @@
 import { URL } from 'node:url';
-import { randomBytes, createHash } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   issueAuthorizationCode, consumeAuthorizationCode,
   signAccessToken, issueRefreshToken, rotateRefreshToken,
@@ -11,6 +11,8 @@ import {
   oauthAuthorizeLimiter, oauthTokenLimiter,
 } from './rate-limit.js';
 import { escapeHtml, sanitizeOAuthState, safeRedirect, isSafeRedirectUrl } from './escape-html.js';
+
+const envSecret = (key, fallback) => (process.env[key] && String(process.env[key]).trim() !== '') ? String(process.env[key]) : fallback;
 
 const CLIENT_REGISTRY = [
   {
@@ -27,11 +29,11 @@ const CLIENT_REGISTRY = [
       'waste2goods://oauth/callback',
     ],
     allowedCorsOrigins: [
-      /^http:\/\/localhost(:[0-9]+)?$/,
-      /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+      /^http:\/\/localhost(:\d+)?$/,
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
     ],
     logo: '📱',
   },
@@ -39,7 +41,7 @@ const CLIENT_REGISTRY = [
     clientId: 'admin-panel',
     clientName: 'Waste2Goods Admin Panel',
     clientType: 'confidential',
-    clientSecret: 'admin-panel-secret-local-only',
+    clientSecret: envSecret('OAUTH_ADMIN_SECRET', 'admin-panel-secret-local-only'),
     pkceRequired: false,
     allowedGrantTypes: ['authorization_code', 'refresh_token', 'client_credentials'],
     allowedScopes: ['admin:read', 'admin:write', 'profile:read', 'analytics:read'],
@@ -50,11 +52,11 @@ const CLIENT_REGISTRY = [
       'http://localhost:3001/api/oauth2/demo/callback',
     ],
     allowedCorsOrigins: [
-      /^http:\/\/localhost(:[0-9]+)?$/,
-      /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+      /^http:\/\/localhost(:\d+)?$/,
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
     ],
     logo: '🛡️',
   },
@@ -71,11 +73,11 @@ const CLIENT_REGISTRY = [
       'http://localhost:5175/auth/oauth/callback',
     ],
     allowedCorsOrigins: [
-      /^http:\/\/localhost(:[0-9]+)?$/,
-      /^http:\/\/127\.0\.0\.1(:[0-9]+)?$/,
-      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
-      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:[0-9]+)?$/,
+      /^http:\/\/localhost(:\d+)?$/,
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/,
+      /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
+      /^http:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
     ],
     logo: '🖥️',
   },
@@ -83,7 +85,7 @@ const CLIENT_REGISTRY = [
     clientId: 'waste2goods-docs',
     clientName: 'Waste2Goods Documentation / Demo',
     clientType: 'confidential',
-    clientSecret: 'docs-demo-secret',
+    clientSecret: envSecret('OAUTH_DOCS_SECRET', 'docs-demo-secret'),
     pkceRequired: true,
     allowedGrantTypes: ['authorization_code', 'refresh_token'],
     allowedScopes: ['profile:read'],
@@ -91,7 +93,7 @@ const CLIENT_REGISTRY = [
       'urn:ietf:wg:oauth:2.0:oob',
       'http://localhost:3001/api/oauth2/demo/callback',
     ],
-    allowedCorsOrigins: [/^http:\/\/localhost(:[0-9]+)?$/],
+    allowedCorsOrigins: [/^http:\/\/localhost(:\d+)?$/],
     logo: '📘',
   },
 ];
@@ -102,18 +104,24 @@ function findClient(clientId) {
   return CLIENT_REGISTRY.find((c) => c.clientId === String(clientId || '').trim());
 }
 
+function checkRedirectRule(rule, str) {
+  if (typeof rule === 'string') return rule === str ? rule : null;
+  if (rule instanceof RegExp && rule.test(str)) {
+    try {
+      const u = new URL(str);
+      if (isHostAllowed(u.hostname)) return str;
+    } catch { /* ignore */ }
+  }
+  if (typeof rule === 'function' && rule(str)) return str;
+  return null;
+}
+
 function matchAllowedRedirectUri(allowedList, incoming) {
   if (!incoming || !Array.isArray(allowedList)) return null;
   const str = String(incoming).trim();
   for (const a of allowedList) {
-    if (typeof a === 'string' && a === str) return a;
-    if (a instanceof RegExp && a.test(str)) {
-      try {
-        const u = new URL(str);
-        if (isHostAllowed(u.hostname)) return str;
-      } catch { /* ignore */ }
-    }
-    if (typeof a === 'function' && a(str)) return str;
+    const matched = checkRedirectRule(a, str);
+    if (matched) return matched;
   }
   return null;
 }
@@ -172,7 +180,7 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
   // Build hidden inputs: skip null/undefined values to avoid literal "null" strings.
   const hiddenInputs = Object.entries(authorizeQuery || {})
     .filter(([, v]) => v != null)
-    .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(String(v))}"/>`)
+    .map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(encodeURIComponent(String(v)))}"/>`)
     .join('');
 
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
@@ -279,9 +287,13 @@ export function handleAuthorizeGet(req, res, sessionUser) {
     return res.status(400).json({ error: 'invalid_request', error_description: `PKCE code_challenge required for ${client.clientId}. Use code_challenge + code_challenge_method=S256.` });
   }
   const cleanScope = buildScopeList(client, scope);
-  const html = consentScreenHtml(client, cleanScope, state, {
-    response_type, client_id, redirect_uri: safeRedirectUri, scope: cleanScope, state, nonce,
-    code_challenge: code_challenge || null, code_challenge_method: code_challenge_method || (client.pkceRequired ? 'S256' : null),
+  const safeState = sanitizeOAuthState(state);
+  const safeNonce = nonce ? String(nonce).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128) : null;
+  const safeChallenge = code_challenge ? String(code_challenge).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 128) : null;
+  const safeChallengeMethod = code_challenge_method === 'plain' ? 'plain' : (code_challenge ? 'S256' : null);
+  const html = consentScreenHtml(client, cleanScope, safeState, {
+    response_type: 'code', client_id: client.clientId, redirect_uri: safeRedirectUri, scope: cleanScope, state: safeState, nonce: safeNonce,
+    code_challenge: safeChallenge, code_challenge_method: safeChallengeMethod,
   }, sessionUser);
   res.type('text/html; charset=utf-8');
   return res.status(200).send(html);
@@ -289,7 +301,7 @@ export function handleAuthorizeGet(req, res, sessionUser) {
 
 export async function handleAuthorizeConsentPost(req, res, sessionUser) {
   const {
-    response_type, client_id, redirect_uri, scope, state, nonce,
+    client_id, redirect_uri, scope, state, nonce,
     code_challenge, code_challenge_method, decision,
   } = { ...req.query, ...req.body };
   const client = findClient(client_id);
@@ -323,95 +335,116 @@ export async function handleAuthorizeConsentPost(req, res, sessionUser) {
   }
 }
 
-export async function handleTokenPost(req, res) {
-  const {
-    grant_type, code, redirect_uri, client_id, client_secret,
-    refresh_token, code_verifier,
-  } = { ...req.query, ...req.body };
 
-  if (!GRANT_TYPES.includes(String(grant_type || ''))) {
+function verifyClientAuth(client_id, client_secret) {
+  if (!client_id) return { ok: true, client: null };
+  const client = findClient(client_id);
+  if (!client) return { ok: false, status: 401, error: 'invalid_client' };
+  if (client.clientType === 'confidential' && client.clientSecret && client_secret !== client.clientSecret) {
+    return { ok: false, status: 401, error: 'invalid_client', description: 'Bad client_secret' };
+  }
+  return { ok: true, client };
+}
+
+async function handleAuthCodeGrant(params, res) {
+  const { code, redirect_uri, client_id, client_secret, code_verifier } = params;
+  const auth = verifyClientAuth(client_id, client_secret);
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error, error_description: auth.description });
+  try {
+    const tokens = await consumeAuthorizationCode(code || '', {
+      redirectUri: redirect_uri || null,
+      codeVerifier: code_verifier || null,
+    });
+    return res.json({
+      access_token: tokens.accessToken,
+      token_type: tokens.tokenType || 'Bearer',
+      expires_in: Number(tokens.expiresIn),
+      refresh_token: tokens.refreshToken,
+      refresh_expires_in: Number(tokens.expiresInRefresh || 604800),
+      scope: tokens.scope || null,
+      jti: tokens.jti || null,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
+  }
+}
+
+async function handleRefreshTokenGrant(params, res) {
+  const { refresh_token } = params;
+  try {
+    const tokens = await rotateRefreshToken(refresh_token || '');
+    return res.json({
+      access_token: tokens.accessToken,
+      token_type: tokens.tokenType || 'Bearer',
+      expires_in: Number(tokens.expiresIn),
+      refresh_token: tokens.refreshToken,
+      refresh_expires_in: Number(tokens.expiresInRefresh || 604800),
+      scope: tokens.scope || null,
+      jti: tokens.jti || null,
+    });
+  } catch (err) {
+    return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
+  }
+}
+
+function handleClientCredentialsGrant(params, res) {
+  const { client_id, client_secret } = params;
+  const client = findClient(client_id);
+  if (!client) return res.status(400).json({ error: 'invalid_client' });
+  if (client.clientType !== 'confidential' || client.clientSecret !== client_secret) {
+    return res.status(401).json({ error: 'invalid_client', error_description: 'Confidential client credentials required' });
+  }
+  if (!client.allowedGrantTypes.includes('client_credentials')) {
+    return res.status(400).json({ error: 'unauthorized_client' });
+  }
+  const token = signAccessToken({ role: 'kiosk', kioskId: `CC-${client.clientId}`, name: client.clientName, clientId: client.clientId }, { clientId: client.clientId, scope: buildScopeList(client, '') });
+  return res.json({
+    access_token: token.accessToken,
+    token_type: token.tokenType || 'Bearer',
+    expires_in: Number(token.expiresIn),
+    scope: token.scope || null,
+    jti: token.jti || null,
+  });
+}
+
+async function handlePinExtensionGrant(params, res, req) {
+  const { client_id } = params;
+  const kioskPin = String(req.body?.pin || req.query?.pin || '');
+  const expectedPin = String(process.env.KIOSK_PIN || '');
+  if (expectedPin === '' || kioskPin !== expectedPin) {
+    return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid kiosk PIN' });
+  }
+  const token = signAccessToken({ role: 'kiosk', kioskId: 'KIOSK-01', name: 'Kiosk PIN Session', clientId: client_id || 'kiosk-app' }, { clientId: client_id || 'kiosk-app', scope: 'kiosk:ping kiosk:session transactions:write profile:read' });
+  const refresh = await issueRefreshToken({ role: 'kiosk', kioskId: 'KIOSK-01', name: 'Kiosk PIN Session' }, { clientId: client_id || 'kiosk-app' });
+  return res.json({
+    access_token: token.accessToken,
+    token_type: token.tokenType || 'Bearer',
+    expires_in: Number(token.expiresIn),
+    refresh_token: refresh.refreshToken,
+    refresh_expires_in: Number(refresh.expiresIn),
+    scope: token.scope,
+    jti: token.jti,
+  });
+}
+export async function handleTokenPost(req, res) {
+  const params = { ...req.query, ...req.body };
+  const grantType = String(params.grant_type || '');
+
+  if (!GRANT_TYPES.includes(grantType)) {
     return res.status(400).json({ error: 'unsupported_grant_type', error_description: `Supported: ${GRANT_TYPES.join(', ')}` });
   }
 
-  if (grant_type === 'authorization_code') {
-    const client = findClient(client_id);
-    if (!client) return res.status(400).json({ error: 'invalid_client' });
-    if (client.clientType === 'confidential') {
-      if (client.clientSecret && client_secret && client_secret !== client.clientSecret) {
-        return res.status(400).json({ error: 'invalid_client', error_description: 'Bad client_secret' });
-      }
-    }
-    try {
-      const tokens = await consumeAuthorizationCode(code || '', {
-        redirectUri: redirect_uri || null,
-        codeVerifier: code_verifier || null,
-      });
-      return res.json({
-        access_token: tokens.accessToken,
-        token_type: tokens.tokenType || 'Bearer',
-        expires_in: Number(tokens.expiresIn),
-        refresh_token: tokens.refreshToken,
-        refresh_expires_in: Number(tokens.expiresInRefresh || 604800),
-        scope: tokens.scope || null,
-        jti: tokens.jti || null,
-      });
-    } catch (err) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
-    }
+  if (grantType === 'authorization_code') {
+    return handleAuthCodeGrant(params, res);
   }
-
-  if (grant_type === 'refresh_token') {
-    try {
-      const tokens = await rotateRefreshToken(refresh_token || '');
-      return res.json({
-        access_token: tokens.accessToken,
-        token_type: tokens.tokenType || 'Bearer',
-        expires_in: Number(tokens.expiresIn),
-        refresh_token: tokens.refreshToken,
-        refresh_expires_in: Number(tokens.expiresInRefresh || 604800),
-        scope: tokens.scope || null,
-        jti: tokens.jti || null,
-      });
-    } catch (err) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: err.message });
-    }
+  if (grantType === 'refresh_token') {
+    return handleRefreshTokenGrant(params, res);
   }
-
-  if (grant_type === 'client_credentials') {
-    const client = findClient(client_id);
-    if (!client) return res.status(400).json({ error: 'invalid_client' });
-    if (client.clientType !== 'confidential' || client.clientSecret !== client_secret) {
-      return res.status(401).json({ error: 'invalid_client', error_description: 'Confidential client credentials required' });
-    }
-    if (!client.allowedGrantTypes.includes('client_credentials')) {
-      return res.status(400).json({ error: 'unauthorized_client' });
-    }
-    const token = signAccessToken({ role: 'kiosk', kioskId: `CC-${client.clientId}`, name: client.clientName, clientId: client.clientId }, { clientId: client.clientId, scope: buildScopeList(client, '') });
-    return res.json({
-      access_token: token.accessToken,
-      token_type: token.tokenType || 'Bearer',
-      expires_in: Number(token.expiresIn),
-      scope: token.scope || null,
-      jti: token.jti || null,
-    });
+  if (grantType === 'client_credentials') {
+    return handleClientCredentialsGrant(params, res);
   }
-
-  if (grant_type === 'pin_extension') {
-    const kioskPin = String(req.body?.pin || req.query?.pin || '');
-    if (kioskPin !== String(process.env.KIOSK_PIN || '7890')) {
-      return res.status(400).json({ error: 'invalid_grant', error_description: 'Invalid kiosk PIN' });
-    }
-    const token = signAccessToken({ role: 'kiosk', kioskId: 'KIOSK-01', name: 'Kiosk PIN Session', clientId: client_id || 'kiosk-app' }, { clientId: client_id || 'kiosk-app', scope: 'kiosk:ping kiosk:session transactions:write profile:read' });
-    const refresh = await issueRefreshToken({ role: 'kiosk', kioskId: 'KIOSK-01', name: 'Kiosk PIN Session' }, { clientId: client_id || 'kiosk-app' });
-    return res.json({
-      access_token: token.accessToken,
-      token_type: token.tokenType || 'Bearer',
-      expires_in: Number(token.expiresIn),
-      refresh_token: refresh.refreshToken,
-      refresh_expires_in: Number(refresh.expiresIn),
-      scope: token.scope,
-      jti: token.jti,
-    });
+  if (grantType === 'pin_extension') {
+    return handlePinExtensionGrant(params, res, req);
   }
 
   return res.status(400).json({ error: 'invalid_grant' });
@@ -440,13 +473,9 @@ export async function handleIntrospectPost(req, res) {
 
 export async function handleRevokePost(req, res) {
   const { token, token_type_hint, client_id, client_secret } = { ...req.query, ...req.body };
-  if (client_id) {
-    const client = findClient(client_id);
-    if (!client) return res.status(401).json({ error: 'invalid_client' });
-    if (client.clientType === 'confidential' && client.clientSecret !== client_secret) {
-      return res.status(401).json({ error: 'invalid_client' });
-    }
-  }
+  const auth = verifyClientAuth(client_id, client_secret);
+  if (!auth.ok) return res.status(401).json({ error: 'invalid_client' });
+
   if (!token) return res.status(200).json({ revoked: false, reason: 'no token provided' });
   if (token_type_hint === 'access_token' || !token_type_hint) {
     try {
@@ -513,32 +542,25 @@ export function oauth2RouterAttach(app, opts = {}) {
   });
 
   app.get('/api/oauth2/demo/callback', (req, res) => {
-    const code = req.query?.code ? String(req.query.code).replace(/[^a-zA-Z0-9_\-]/g, '') : null;
+    const code = req.query?.code ? String(req.query.code).replace(/[^a-zA-Z0-9_-]/g, '') : null;
     const state = sanitizeOAuthState(req.query?.state);
-    const error = req.query?.error ? escapeHtml(req.query.error) : null;
-    res.type('text/html');
+    const error = req.query?.error ? String(req.query.error).replace(/[^a-zA-Z0-9_-]/g, '') : null;
     if (error) {
-      return res.status(400).send(`<!doctype html><title>OAuth Error</title><body style="font-family:sans-serif;padding:24px"><h2 style="color:#a33">❌ OAuth error: ${error}</h2><pre style="background:#f5f5f5;padding:12px;border-radius:8px">${escapeHtml(JSON.stringify(req.query, null, 2))}</pre><a href="/api/oauth2/clients">Back to clients</a></body></html>`);
+      return res.status(400).json({ error, error_description: 'OAuth authorization failed', state: state || null });
     }
-    res.status(200).send(`<!doctype html><title>OAuth Callback — Demo</title><body style="font-family:sans-serif;padding:24px;max-width:720px;margin:0 auto">
-      <h1 style="color:#0a6a3b">🎯 Authorization Code Issued</h1>
-      <p><strong>Next step:</strong> Exchange this <code>code</code> for tokens via POST /api/oauth2/token (grant_type=authorization_code). If PKCE was used, include the matching <code>code_verifier</code>.</p>
-      <h3>Query received:</h3><pre style="background:#0e1b15;color:#39ff9a;padding:14px;border-radius:10px">${escapeHtml(JSON.stringify({ code, state }, null, 2))}</pre>
-      <hr/>
-      <h3>Quick curl command (no PKCE — client <code>admin-panel</code> confidential):</h3>
-<pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;overflow:auto">curl -X POST http://localhost:3001/api/oauth2/token \\
-  -H "Content-Type: application/json" \\
-  -d '{"grant_type":"authorization_code","code":"${escapeHtml(code || '<YOUR_CODE>')}","redirect_uri":"http://localhost:3001/api/oauth2/demo/callback","client_id":"admin-panel","client_secret":"admin-panel-secret-local-only","code_verifier":"&lt;YOUR_VERIFIER_IF_PKCE&gt;"}'</pre>
-      <p><a href="/api/oauth2/clients">← OAuth clients list</a></p></body></html>`);
+    return res.status(200).json({
+      status: 'success',
+      message: 'Authorization Code Issued',
+      code,
+      state: state || null,
+      instructions: 'Exchange this code for tokens via POST /api/oauth2/token (grant_type=authorization_code). If PKCE was used, include matching code_verifier.',
+    });
   });
 }
 
 function expressUrlEncoded() {
-  try {
-    const express = require ? null : null;
-  } catch { /* ignore */ }
   return (req, res, next) => {
-    if (req.headers['content-type'] && req.headers['content-type'].startsWith('application/x-www-form-urlencoded')) {
+    if (req.headers['content-type']?.startsWith('application/x-www-form-urlencoded')) {
       let chunks = [];
       req.on('data', (c) => chunks.push(c));
       req.on('end', () => {

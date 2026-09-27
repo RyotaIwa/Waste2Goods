@@ -1,9 +1,8 @@
 import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
-import {
-  isRedisEnabled, redisBackendMode, redisIncr, redisExpire, redisGet,
+import redisClientModule, {
+  isRedisEnabled, redisBackendMode, redisIncr, redisGet,
 } from './redis-client.js';
-import redisClientModule from './redis-client.js';
 
 function buildRedisStore(prefix) {
   if (!isRedisEnabled()) return undefined;

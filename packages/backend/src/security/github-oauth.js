@@ -185,6 +185,17 @@ export function attachGitHubOAuth(app) {
     return safeRedirect(res, cb, 302);
   });
 
+async function resolveGitHubProfile(code, req) {
+  const isDemoCode = code && String(code).startsWith('ghd_');
+  if (githubConfigured() && code && !isDemoCode) {
+    return exchangeGitHubCode(String(code), callbackUrl(req));
+  }
+  const raw = await redisGet(`${CODE_PREFIX}${code}`);
+  if (!raw) return null;
+  await redisDel(`${CODE_PREFIX}${code}`);
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code, error } = req.query;
     let state = String(req.query.state || '');
@@ -197,19 +208,14 @@ export function attachGitHubOAuth(app) {
     }
     await redisDel(`${STATE_PREFIX}${state}`);
 
-    let profile = DEMO_USER;
-    const isDemoCode = code && String(code).startsWith('ghd_');
-    if (githubConfigured() && code && !isDemoCode) {
-      try {
-        profile = await exchangeGitHubCode(String(code), callbackUrl(req));
-      } catch (err) {
-        return res.status(400).json({ error: 'github_token_exchange_failed', detail: err.message });
+    let profile;
+    try {
+      profile = await resolveGitHubProfile(code, req);
+      if (!profile) {
+        return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown demo authorization code' });
       }
-    } else {
-      const raw = await redisGet(`${CODE_PREFIX}${code}`);
-      if (!raw) return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown demo authorization code' });
-      await redisDel(`${CODE_PREFIX}${code}`);
-      profile = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    } catch (err) {
+      return res.status(400).json({ error: 'github_token_exchange_failed', detail: err.message });
     }
 
     const userRecord = await findOrCreateOAuthUser(profile, { provider: 'github' });
@@ -236,8 +242,8 @@ export function attachGitHubOAuth(app) {
     if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
       try {
         const u = new URL(returnTo);
-        const cleanName = String(userRecord.name || profile.login || 'GitHub User').replace(/[^a-zA-Z0-9 _\-]/g, '');
-        const cleanEmail = String(userRecord.email || '').replace(/[^a-zA-Z0-9@._\-]/g, '');
+        const cleanName = String(userRecord.name || profile.login || 'GitHub User').replace(/[^a-zA-Z0-9 _-]/g, '');
+        const cleanEmail = String(userRecord.email || '').replace(/[^a-zA-Z0-9@._-]/g, '');
         u.searchParams.set('token', access.accessToken);
         u.searchParams.set('refreshToken', refresh.refreshToken);
         u.searchParams.set('userId', userRecord.userId);
@@ -254,7 +260,7 @@ export function attachGitHubOAuth(app) {
 
     // Redirect directly to the mobile app — no server-side HTML interpolation of tainted values.
     // All user data is passed as URL-encoded query params handled by the client (S5131 fix).
-    const safeClientHost = /^[a-zA-Z0-9.\-]+$/.test(clientHost) ? clientHost : 'localhost';
+    const safeClientHost = /^[a-zA-Z0-9.-]+$/.test(clientHost) ? clientHost : 'localhost';
     const mobileParams = new URLSearchParams({
       token: access.accessToken,
       refreshToken: refresh.refreshToken,

@@ -119,7 +119,6 @@ function mapAppwriteUserToProfile(user) {
 }
 
 export async function syncAppwriteSessionToPlatform(appwriteJwt, { provider, userIdOverride } = {}) {
-  const cfg = getAppwriteConfig();
   // JWT-only verification: API key not required, JWT itself authenticates the session.
   const verified = await verifyAppwriteJwt(appwriteJwt);
   if (!verified.ok) throw new Error(`APPWRITE_JWT_INVALID: ${verified.error}`);
@@ -168,14 +167,6 @@ export async function buildAppwriteOAuthInitiateUrl(provider, opts = {}) {
     github: ['read:user', 'user:email'],
   };
   const scopes = opts.scopes && Array.isArray(opts.scopes) ? opts.scopes : (scopesMap[p] || []);
-  const query = new URLSearchParams({
-    project: cfg.projectId,
-    provider: p,
-    success,
-    failure,
-    state,
-    ...(scopes.length ? { scopes: JSON.stringify(scopes) } : {}),
-  });
   const callbackUri = cfg.callbackUrl || opts.callbackUri || (success && new URL(success).origin + '/api/auth/appwrite/callback');
   const authorizeBase = `${cfg.endpoint}/account/sessions/oauth2/${p}/${cfg.projectId}`;
   const finalUrl = `${authorizeBase}?${new URLSearchParams({
@@ -220,7 +211,6 @@ export function attachAppwriteAuth(app) {
       const state = String(req.query.state || '');
       const code = String(req.query.code || req.query.appwrite_code || '');
       const userId = String(req.query.userId || req.query.appwriteUserId || '');
-      const provider = String(req.query.provider || 'google');
       const saved = await loadState(state);
       if (state) await deleteState(state);
       const failureUrl = sanitizeRedirectUrl(saved?.failure, '/');

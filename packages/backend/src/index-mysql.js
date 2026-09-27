@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import crypto from 'node:crypto';
 import db from './db-mysql.js';
 import {
   ADMIN_CREDENTIALS,
@@ -77,6 +78,24 @@ function buildCorsOrigins() {
 
 const CORS_ALLOWED = buildCorsOrigins();
 const isProd = process.env.NODE_ENV === 'production';
+
+function secureRandomAlnum(length) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(length);
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
+
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -281,7 +300,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
     }
 
     const userId = await getNextUserId();
-    const qrCode = `${userId}-${Math.random().toString(36).slice(2, 7)}`;
+    const qrCode = `${userId}-${secureRandomAlnum(5)}`;
 
     const passwordHash = await hashPassword(password);
 
@@ -345,7 +364,8 @@ app.post('/api/auth/login', authLimiter, authFailureLimiter, validateBody(LoginS
 
 app.post('/api/auth/kiosk-login', authLimiter, kioskLimiter, async (req, res) => {
   const { pin } = req.body;
-  if (pin === KIOSK_PIN) {
+  const expectedPin = String(KIOSK_PIN || '');
+  if (expectedPin !== '' && pin && timingSafeEqual(String(pin), expectedPin)) {
     const kiosk = await lookupKioskUser(pin);
     const access = signAccessToken({ kioskId: kiosk.kioskId, role: 'kiosk', name: kiosk.name });
     const refresh = await issueRefreshToken({ kioskId: kiosk.kioskId, role: 'kiosk', name: kiosk.name });
@@ -586,7 +606,9 @@ async function tryDbAdminLogin(normalizedEmail, password) {
     if (adminRows.length === 0) return null;
     const adm = adminRows[0];
     const pwOk = await comparePassword(password, String(adm.passwordHash || ''));
-    if (!pwOk && password !== ADMIN_CREDENTIALS.password) return null;
+    const fallbackPassword = String(ADMIN_CREDENTIALS.password || '');
+    const fallbackOk = fallbackPassword !== '' && timingSafeEqual(String(password), fallbackPassword);
+    if (!pwOk && !fallbackOk) return null;
     const adminUser = buildAdminUserFromDb(adm, normalizedEmail);
     const adminId = adm.adminId || 'A-001';
     const access = signAccessToken({ adminId, role: 'admin', name: adminUser.name, barangayId: adm.barangayId || null });
@@ -748,6 +770,21 @@ function deriveTierFromPoints(ptsBal) {
   return 'Bronze';
 }
 
+async function queryUserWithoutTier(userId) {
+  try {
+    const [rows] = await db.query(
+      "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, phone FROM users WHERE userId = ? LIMIT 1",
+      [userId]
+    );
+    if (!rows || !rows.length || !rows[0]) return null;
+    const u = rows[0];
+    u.tier = deriveTierFromPoints(Number(u.pointsBalance || 0));
+    return u;
+  } catch {
+    return null;
+  }
+}
+
 async function safeLoadUserWithTier(userId) {
   try {
     const [rows] = await db.query(
@@ -761,16 +798,8 @@ async function safeLoadUserWithTier(userId) {
     }
     return null;
   } catch (tierErr) {
-    if (tierErr.code === 'ER_BAD_FIELD_ERROR' && /'tier'/.test(tierErr.sqlMessage || '')) {
-      const [rows] = await db.query(
-        "SELECT userId, firstName, lastName, createdAt, pointsBalance, totalSubmissions, phone FROM users WHERE userId = ? LIMIT 1",
-        [userId]
-      );
-      if (!rows || !rows.length || !rows[0]) return null;
-      const u = rows[0];
-      u.tier = deriveTierFromPoints(Number(u.pointsBalance || 0));
-      return u;
-    }
+    const isMissingTier = tierErr.code === 'ER_BAD_FIELD_ERROR' && /'tier'/.test(tierErr.sqlMessage || '');
+    if (isMissingTier) return queryUserWithoutTier(userId);
     throw tierErr;
   }
 }
@@ -895,6 +924,56 @@ function buildRewardCompatRow(r, rdByReward) {
     isSeasonal: Boolean(r.isSeasonal),
     seasonal: Boolean(r.isSeasonal),
   };
+}
+
+const TASKS_COMMON_SELECT = "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM ";
+const TASKS_COMMON_WHERE = " WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50";
+
+async function queryRecyclingTasksTable() {
+  try {
+    const [rows] = await db.query(TASKS_COMMON_SELECT + 'recycling_tasks' + TASKS_COMMON_WHERE);
+    return rows && rows.length ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+async function queryFallbackTasksTable() {
+  try {
+    const [rows] = await db.query(TASKS_COMMON_SELECT + 'tasks' + TASKS_COMMON_WHERE);
+    return rows && rows.length ? rows : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadActiveTasks() {
+  const recyclingRows = await queryRecyclingTasksTable();
+  if (recyclingRows) return recyclingRows;
+  const fallbackRows = await queryFallbackTasksTable();
+  return fallbackRows || [];
+}
+
+async function deleteRewardWithSoftFallback(id) {
+  try {
+    await db.query('DELETE FROM rewards WHERE rewardId = ?', [id]);
+    return true;
+  } catch {
+    await db.query("UPDATE rewards SET status = 'inactive' WHERE rewardId = ?", [id]);
+    return false;
+  }
+}
+
+async function loadNotificationsTasks(limit) {
+  try {
+    const [tasks] = await db.query(
+      "SELECT taskId, taskName, description, pointsReward, status, startDate, endDate FROM tasks WHERE (status = 'active' OR status = '1' OR status = 1) ORDER BY startDate DESC LIMIT ?",
+      [limit]
+    );
+    return tasks;
+  } catch {
+    return [];
+  }
 }
 
 function buildLeaderboardRow(user, index) {
@@ -1178,20 +1257,7 @@ app.get('/api/leaderboard', authenticate, requirePermission('list', 'leaderboard
 
 app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRoute(120), async (req, res) => {
   try {
-    let rows = [];
-    try {
-      [rows] = await db.query(
-        "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM recycling_tasks WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50"
-      );
-    } catch (tasksErr) {
-      try {
-        [rows] = await db.query(
-          "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM tasks WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50"
-        );
-      } catch {
-        rows = [];
-      }
-    }
+    const rows = await loadActiveTasks();
     if (rows.length === 0) {
       return res.json([
         { id: 1, title: 'Submit 2kg of PET bottles', reward: 100, progress: 0, goal: 2, unit: 'kg', type: 'daily', done: false },

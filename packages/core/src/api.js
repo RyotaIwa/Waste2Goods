@@ -8,11 +8,7 @@ import {
   MONTHLY_DATA,
   LEADERBOARD,
   TASKS,
-  ADMIN_CREDENTIALS,
   KIOSK_PIN,
-  DEMO_RESIDENT_CREDENTIALS,
-  DEMO_ADMIN_USER,
-  DEMO_RESIDENT_USER,
   DEMO_KIOSK_USER,
 } from "./constants.js";
 
@@ -30,7 +26,11 @@ function parseHostAndPort(rawInput) {
     proto = "http";
     str = str.replace(/^http:\/\//i, "");
   }
-  str = str.replace(/\/.*$/, "").trim();
+  const slashIdx = str.indexOf('/');
+  if (slashIdx !== -1) {
+    str = str.slice(0, slashIdx);
+  }
+  str = str.trim();
 
   let host = str || "localhost";
   let port = "3001";
@@ -39,9 +39,7 @@ function parseHostAndPort(rawInput) {
     const parts = str.split(":").filter(Boolean);
     host = parts[0] || "localhost";
     const lastPort = parts[parts.length - 1];
-    if (lastPort === "5173" || lastPort === "5174") {
-      port = "3001";
-    } else if (lastPort && /^\d+$/.test(lastPort)) {
+    if (lastPort && lastPort !== "5173" && lastPort !== "5174" && /^\d+$/.test(lastPort)) {
       port = lastPort;
     }
   }
@@ -52,7 +50,7 @@ export function getApiHost() {
   try {
     const hn = (typeof window !== "undefined" && window.location ? window.location.hostname || "" : "").toLowerCase();
     const stored = localStorage.getItem(API_HOST_STORAGE_KEY);
-    if (stored && stored.trim()) {
+    if (stored?.trim()) {
       const parsed = parseHostAndPort(stored).host;
       if (hn && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1") {
         if (parsed === "localhost" || parsed === "127.0.0.1" || parsed === "::1") {
@@ -171,17 +169,25 @@ async function fetchApi(endpoint, options) {
 }
 
 // Mock Data Resolver
+const MOCK_DATA_MAP = {
+  "/users": USERS,
+  "/kiosks": KIOSKS,
+  "/rewards": REWARDS,
+  "/transactions": TRANSACTIONS,
+  "/analytics/weekly": WEEKLY_DATA,
+  "/analytics/monthly": MONTHLY_DATA,
+  "/leaderboard": LEADERBOARD,
+  "/tasks": TASKS,
+};
+
 function getMockData(endpoint) {
-  if (endpoint === "/users") return USERS;
-  if (endpoint.startsWith("/users/")) return USERS[0]; // default user for demo
-  if (endpoint === "/kiosks") return KIOSKS;
-  if (endpoint === "/rewards") return REWARDS;
-  if (endpoint === "/transactions") return TRANSACTIONS;
-  if (endpoint === "/analytics/weekly") return WEEKLY_DATA;
-  if (endpoint === "/analytics/monthly") return MONTHLY_DATA;
-  if (endpoint === "/leaderboard") return LEADERBOARD;
-  if (endpoint === "/tasks") return TASKS;
-  return null;
+  let result = null;
+  if (endpoint.startsWith("/users/")) {
+    result = USERS[0];
+  } else if (Object.prototype.hasOwnProperty.call(MOCK_DATA_MAP, endpoint)) {
+    result = MOCK_DATA_MAP[endpoint];
+  }
+  return result;
 }
 
 // ——— refreshCurrentUser helpers (extracted to reduce Cognitive Complexity ≤ 15) ———
@@ -388,9 +394,9 @@ export const Waste2GoodsAPI = {
     if (!auth?.isAuthenticated || !auth?.user) return false;
     const userId = auth.user.id || auth.user.userId;
     if (!userId) return false;
+    // Send 'password' as a plain field — backend is responsible for hashing it with bcrypt.
+    // Never construct fake "passwordHash" values client-side.
     const body = { ...patches };
-    if (patches.password) body.passwordHash = `hashed_${patches.password}`;
-    delete body.password;
     const result = await fetchApi(`/users/${userId}`, {
       method: "PUT",
       body: JSON.stringify(body),
@@ -477,7 +483,6 @@ export const Waste2GoodsAPI = {
 
   // Users CRUD / Points Adjust (Admin)
   createUser: (data) => fetchApi("/users", { method: "POST", body: JSON.stringify(data) }),
-  updateUser: (userId, data) => fetchApi(`/users/${userId}`, { method: "PUT", body: JSON.stringify(data) }),
   adjustUserPoints: (userId, delta, reason, adminId) =>
     fetchApi(`/users/${userId}/points`, { method: "PUT", body: JSON.stringify({ delta, reason, adminId }) }),
 
