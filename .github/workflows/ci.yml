@@ -14,7 +14,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm install
+      - run: npm install --ignore-scripts
       - name: Unit tests
         run: npm test --workspace=@waste2goods/backend
       - name: ESLint
