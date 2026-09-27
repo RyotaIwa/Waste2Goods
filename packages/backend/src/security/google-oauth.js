@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
+import { escapeHtml, sanitizeOAuthState, sanitizeRedirectUrl } from './escape-html.js';
 
 const STATE_PREFIX = 'google:oauth:state:';
 const CODE_PREFIX = 'google:oauth:code:';
@@ -62,7 +63,7 @@ function isLanRequest(req) {
 export function attachGoogleOAuth(app) {
   app.get('/api/auth/google', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
-    let returnTo = String(req.query.return_to || '/security-dashboard');
+    let returnTo = sanitizeRedirectUrl(String(req.query.return_to || '/security-dashboard'), '/security-dashboard');
     try {
       if (returnTo.startsWith('http://') || returnTo.startsWith('https://')) {
         const u = new URL(returnTo);
@@ -71,6 +72,7 @@ export function attachGoogleOAuth(app) {
         }
       }
     } catch { /* ignore */ }
+    returnTo = sanitizeRedirectUrl(returnTo, '/security-dashboard');
     await saveState(state, { returnTo, createdAt: Date.now() });
 
     if (googleConfigured() && process.env.USE_DEMO_OAUTH !== 'true') {
@@ -83,14 +85,14 @@ export function attachGoogleOAuth(app) {
         access_type: 'offline',
         prompt: 'select_account',
       });
-      return res.redirect(302, `https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+      return safeRedirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302);
     }
 
-    return res.redirect(302, `/api/auth/google/demo?state=${encodeURIComponent(state)}`);
+    return safeRedirect(res, `/api/auth/google/demo?state=${encodeURIComponent(state)}`, 302);
   });
 
   app.get('/api/auth/google/demo', (req, res) => {
-    const state = String(req.query.state || '');
+    const safeState = sanitizeOAuthState(req.query.state);
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Sign in – Google accounts</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -130,7 +132,7 @@ export function attachGoogleOAuth(app) {
   <p class="sub">to continue to <strong>Waste2Goods</strong></p>
   
   <form method="post" action="/api/auth/google/demo/approve" id="authForm">
-    <input type="hidden" name="state" value="${state.replace(/"/g, '')}"/>
+    <input type="hidden" name="state" value="${safeState}"/>
     
     <div class="field-group">
       <label for="emailInput">Email or phone</label>
@@ -188,7 +190,7 @@ export function attachGoogleOAuth(app) {
     const code = `googled_${crypto.randomBytes(12).toString('hex')}`;
     await redisSet(`${CODE_PREFIX}${code}`, userPayload, 10 * 60);
     const cb = `/api/auth/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
-    return res.redirect(302, cb);
+    return safeRedirect(res, cb, 302);
   });
 
   app.get('/api/auth/google/callback', async (req, res) => {
@@ -234,18 +236,32 @@ export function attachGoogleOAuth(app) {
     });
 
     // Determine redirect target
-    const returnTo = saved?.returnTo || '/';
+    const returnTo = sanitizeRedirectUrl(saved?.returnTo, '/');
     const clientHost = req.hostname || 'localhost';
 
     // If returnTo is an external URL (mobile app), redirect with tokens in URL
     if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
       const sep = returnTo.includes('?') ? '&' : '?';
-      const redirectTarget = `${returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
-      return res.redirect(302, redirectTarget);
+      const cleanName = encodeURIComponent(String(userRecord.name || 'Google User').replace(/[^a-zA-Z0-9 _\-]/g, ''));
+      const cleanEmail = encodeURIComponent(String(userRecord.email || '').replace(/[^a-zA-Z0-9@._\-]/g, ''));
+      const redirectTarget = `${returnTo}${sep}token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${cleanName}&email=${cleanEmail}`;
+      return safeRedirect(res, redirectTarget, 302);
     }
+
 
     // Mobile app redirect: redirect to mobile app origin with tokens
     const mobileAppUrl = `http://${clientHost}:5173/?token=${encodeURIComponent(access.accessToken)}&refreshToken=${encodeURIComponent(refresh.refreshToken)}&userId=${encodeURIComponent(userRecord.userId)}&name=${encodeURIComponent(userRecord.name)}&email=${encodeURIComponent(userRecord.email)}`;
+
+    const safeUserName = escapeHtml(userRecord.name);
+    const safeUserEmail = escapeHtml(userRecord.email);
+    const safeUserId = escapeHtml(userRecord.userId);
+    const safeMobileUrl = escapeHtml(mobileAppUrl);
+    const safeJsonPayload = escapeHtml(JSON.stringify({
+      user: { userId: userRecord.userId, name: userRecord.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
+      access_token: access.accessToken,
+      token_type: 'Bearer',
+      expires_in: access.expiresIn,
+    }, null, 2));
 
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Google OAuth Complete</title>
 <style>body{font-family:ui-sans-serif,system-ui,sans-serif;max-width:600px;margin:24px auto;padding:0 16px;color:#0f172a;line-height:1.5}
@@ -257,21 +273,16 @@ pre{background:#0f172a;color:#86efac;padding:12px;border-radius:10px;overflow:au
 </style></head><body>
 <div class="card">
   <h1>✅ Google Sign-In Successful!</h1>
-  <p>Signed in as <strong>${userRecord.name}</strong> (<code>${userRecord.email}</code>).</p>
+  <p>Signed in as <strong>${safeUserName}</strong> (<code>${safeUserEmail}</code>).</p>
   
-  <a class="btn-mobile" href="${mobileAppUrl}">📱 Open Waste2Goods Mobile App</a>
+  <a class="btn-mobile" href="${safeMobileUrl}">📱 Open Waste2Goods Mobile App</a>
   
-  <p style="margin-top:16px;font-size:13px;color:#64748b">OAuth JWT Token generated (userId: <code>${userRecord.userId}</code>):</p>
-  <pre>${JSON.stringify({
-      user: { userId: userRecord.userId, name: userRecord.name, email: userRecord.email, role: userRecord.role, created: userRecord.created },
-      access_token: access.accessToken,
-      token_type: 'Bearer',
-      expires_in: access.expiresIn,
-    }, null, 2)}</pre>
+  <p style="margin-top:16px;font-size:13px;color:#64748b">OAuth JWT Token generated (userId: <code>${safeUserId}</code>):</p>
+  <pre>${safeJsonPayload}</pre>
   
   <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
     <a class="btn-sub" href="/security-dashboard">🛡️ Security Dashboard</a>
-    <a class="btn-sub" href="http://${clientHost}:5174">🖥️ Admin Panel</a>
+    <a class="btn-sub" href="http://${escapeHtml(clientHost)}:5174">🖥️ Admin Panel</a>
   </div>
 </div>
 </body></html>`);

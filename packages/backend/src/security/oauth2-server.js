@@ -10,6 +10,7 @@ import { redisBackendMode } from './redis-client.js';
 import {
   oauthAuthorizeLimiter, oauthTokenLimiter,
 } from './rate-limit.js';
+import { escapeHtml, sanitizeOAuthState, safeRedirect } from './escape-html.js';
 
 const CLIENT_REGISTRY = [
   {
@@ -197,13 +198,13 @@ function consentScreenHtml(client, requestedScope, state, authorizeQuery, sessio
         <ul class="scope-list">${scopeHtml || '<li class="scope-row"><em>No scopes requested.</em></li>'}</ul>
         ${userHtml}
         <form class="form" method="POST" action="/api/oauth2/authorize/consent">
-          ${Object.entries(authorizeQuery || {}).map(([k, v]) => `<input type="hidden" name="${k}" value="${String(v || '').replace(/"/g, '&quot;')}"/>`).join('')}
+          ${Object.entries(authorizeQuery || {}).map(([k, v]) => `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}"/>`).join('')}
           <div class="actions">
             <button type="submit" class="deny" name="decision" value="deny">Cancel / Deny</button>
             <button type="submit" class="allow" name="decision" value="allow">✅ Allow — Issue Authorization Code</button>
           </div>
         </form>
-        <div class="meta"><strong>state:</strong> ${state || '(none)'} · <strong>redirect_uri:</strong> ${authorizeQuery?.redirect_uri || ''}</div>
+        <div class="meta"><strong>state:</strong> ${escapeHtml(state) || '(none)'} · <strong>redirect_uri:</strong> ${escapeHtml(authorizeQuery?.redirect_uri || '')}</div>
       </div></div></body></html>`;
 }
 
@@ -285,7 +286,7 @@ export async function handleAuthorizeConsentPost(req, res, sessionUser) {
     });
     const sep = String(redirect_uri).includes('?') ? '&' : '?';
     const redirectTo = `${redirect_uri}${sep}code=${encodeURIComponent(authorizationCode)}&state=${encodeURIComponent(state || '')}`;
-    return res.redirect(302, redirectTo);
+    return safeRedirect(res, redirectTo, 302);
   } catch (err) {
     return callbackError(res, redirect_uri, 'server_error', state || null, err.message);
   }
@@ -433,7 +434,7 @@ function callbackError(res, redirectUri, error, state, description) {
   const sep = String(redirectUri).includes('?') ? '&' : '?';
   const q = new URLSearchParams({ error, state: state || '' });
   if (description) q.set('error_description', String(description));
-  return res.redirect(302, `${redirectUri}${sep}${q.toString()}`);
+  return safeRedirect(res, `${redirectUri}${sep}${q.toString()}`, 302);
 }
 
 export function oauth2RouterAttach(app, opts = {}) {
@@ -470,22 +471,22 @@ export function oauth2RouterAttach(app, opts = {}) {
   });
 
   app.get('/api/oauth2/demo/callback', (req, res) => {
-    const code = req.query?.code || null;
-    const state = req.query?.state || null;
-    const error = req.query?.error || null;
+    const code = req.query?.code ? String(req.query.code).replace(/[^a-zA-Z0-9_\-]/g, '') : null;
+    const state = sanitizeOAuthState(req.query?.state);
+    const error = req.query?.error ? escapeHtml(req.query.error) : null;
     res.type('text/html');
     if (error) {
-      return res.status(400).send(`<!doctype html><title>OAuth Error</title><body style="font-family:sans-serif;padding:24px"><h2 style="color:#a33">❌ OAuth error: ${error}</h2><pre style="background:#f5f5f5;padding:12px;border-radius:8px">${JSON.stringify(req.query, null, 2)}</pre><a href="/api/oauth2/clients">Back to clients</a></body></html>`);
+      return res.status(400).send(`<!doctype html><title>OAuth Error</title><body style="font-family:sans-serif;padding:24px"><h2 style="color:#a33">❌ OAuth error: ${error}</h2><pre style="background:#f5f5f5;padding:12px;border-radius:8px">${escapeHtml(JSON.stringify(req.query, null, 2))}</pre><a href="/api/oauth2/clients">Back to clients</a></body></html>`);
     }
     res.status(200).send(`<!doctype html><title>OAuth Callback — Demo</title><body style="font-family:sans-serif;padding:24px;max-width:720px;margin:0 auto">
       <h1 style="color:#0a6a3b">🎯 Authorization Code Issued</h1>
       <p><strong>Next step:</strong> Exchange this <code>code</code> for tokens via POST /api/oauth2/token (grant_type=authorization_code). If PKCE was used, include the matching <code>code_verifier</code>.</p>
-      <h3>Query received:</h3><pre style="background:#0e1b15;color:#39ff9a;padding:14px;border-radius:10px">${JSON.stringify({ code, state }, null, 2)}</pre>
+      <h3>Query received:</h3><pre style="background:#0e1b15;color:#39ff9a;padding:14px;border-radius:10px">${escapeHtml(JSON.stringify({ code, state }, null, 2))}</pre>
       <hr/>
       <h3>Quick curl command (no PKCE — client <code>admin-panel</code> confidential):</h3>
 <pre style="background:#0f172a;color:#e2e8f0;padding:14px;border-radius:10px;overflow:auto">curl -X POST http://localhost:3001/api/oauth2/token \\
   -H "Content-Type: application/json" \\
-  -d '{"grant_type":"authorization_code","code":"${code || '<YOUR_CODE>'}","redirect_uri":"http://localhost:3001/api/oauth2/demo/callback","client_id":"admin-panel","client_secret":"admin-panel-secret-local-only","code_verifier":"<YOUR_VERIFIER_IF_PKCE>"}'</pre>
+  -d '{"grant_type":"authorization_code","code":"${escapeHtml(code || '<YOUR_CODE>')}","redirect_uri":"http://localhost:3001/api/oauth2/demo/callback","client_id":"admin-panel","client_secret":"admin-panel-secret-local-only","code_verifier":"&lt;YOUR_VERIFIER_IF_PKCE&gt;"}'</pre>
       <p><a href="/api/oauth2/clients">← OAuth clients list</a></p></body></html>`);
   });
 }

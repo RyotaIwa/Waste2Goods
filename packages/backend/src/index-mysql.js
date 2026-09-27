@@ -42,6 +42,7 @@ import { attachGoogleOAuth, googleOAuthInfo } from './security/google-oauth.js';
 import { attachAppwriteAuth, appwriteInfo, syncAppwriteSessionToPlatform } from './security/appwrite-auth.js';
 import { attachCdnStatic, cdnInfo } from './security/cdn.js';
 import { lookupKioskUser } from './security/oauth-user-store.js';
+import { sanitizeLog } from './security/escape-html.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -590,7 +591,7 @@ async function tryDbAdminLogin(normalizedEmail, password) {
     const adminId = adm.adminId || 'A-001';
     const access = signAccessToken({ adminId, role: 'admin', name: adminUser.name, barangayId: adm.barangayId || null });
     const refresh = await issueRefreshToken({ adminId, role: 'admin', name: adminUser.name, barangayId: adm.barangayId || null });
-    console.log(`🔐 Admin logged in from DB: ${adminUser.name} (${adminUser.id})`);
+    console.log(`🔐 Admin logged in from DB: ${sanitizeLog(adminUser.name)} (${sanitizeLog(adminUser.id)})`);
     return buildHardenedAuthResponse(access, refresh, adminUser);
   } catch (_) {
     return null;
@@ -610,7 +611,7 @@ async function tryResidentDbLogin(normalizedEmail, password) {
   const userWithCompat = buildResidentUserFromDb(user);
   const access = signAccessToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
   const refresh = await issueRefreshToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
-  console.log(`🔐 Resident logged in from DB: ${userWithCompat.name} (${user.userId})`);
+  console.log(`🔐 Resident logged in from DB: ${sanitizeLog(userWithCompat.name)} (${sanitizeLog(user.userId)})`);
   return buildHardenedAuthResponse(access, refresh, userWithCompat);
 }
 

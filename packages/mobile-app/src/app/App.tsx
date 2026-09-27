@@ -2730,7 +2730,8 @@ export default function App() {
         const token = params.get("token") || params.get("accessToken");
         if (token) {
           const userId = params.get("userId") || "U-001";
-          const name = params.get("name") || "Google User";
+          const provider = params.get("provider") || "oauth";
+          const name = params.get("name") || (provider === "github" ? "GitHub User" : "Resident");
           const email = params.get("email") || "";
           const role = params.get("role") || "resident";
           const refreshToken = params.get("refreshToken") || "";

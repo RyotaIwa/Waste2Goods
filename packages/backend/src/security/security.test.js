@@ -68,3 +68,62 @@ test('Zod login schema rejects injection-like garbage', () => {
   const good = LoginSchema.safeParse({ email: 'resident@cabantian.ph', password: 'ResidentCabantian2025' });
   assert.equal(good.success, true);
 });
+
+test('GitHub OAuth info returns valid authorization and callback endpoint metadata', async () => {
+  const { githubOAuthInfo } = await import('./github-oauth.js');
+  const info = githubOAuthInfo();
+  assert.equal(info.authorize, 'GET /api/auth/github');
+  assert.equal(info.callback, 'GET /api/auth/github/callback');
+  assert.ok(typeof info.configured === 'boolean');
+});
+
+test('Google OAuth info returns valid authorization and callback endpoint metadata', async () => {
+  const { googleOAuthInfo } = await import('./google-oauth.js');
+  const info = googleOAuthInfo();
+  assert.equal(info.authorize, 'GET /api/auth/google');
+  assert.equal(info.callback, 'GET /api/auth/google/callback');
+  assert.ok(typeof info.configured === 'boolean');
+});
+
+test('XSS sanitization: escapeHtml neutralizes HTML/script injection payloads', async () => {
+  const { escapeHtml, sanitizeOAuthState } = await import('./escape-html.js');
+  const attack = '<script>alert("XSS")</script>&foo=\'bar\'';
+  const escaped = escapeHtml(attack);
+  assert.equal(escaped, '&lt;script&gt;alert(&quot;XSS&quot;)&lt;/script&gt;&amp;foo=&#39;bar&#39;');
+  assert.ok(!escaped.includes('<script>'));
+  assert.ok(!escaped.includes('"'));
+
+  const maliciousState = '12345"><script>alert(1)</script>';
+  const cleanState = sanitizeOAuthState(maliciousState);
+  assert.equal(cleanState, '12345scriptalert1script');
+  assert.ok(!cleanState.includes('<'));
+  assert.ok(!cleanState.includes('>'));
+  assert.ok(!cleanState.includes('"'));
+});
+
+test('Log injection defense: sanitizeLog strips carriage returns and newlines', async () => {
+  const { sanitizeLog } = await import('./escape-html.js');
+  const attack = 'resident@example.com\r\n[CRITICAL] Fake forged admin log entry\n';
+  const clean = sanitizeLog(attack);
+  assert.equal(clean, 'resident@example.com [CRITICAL] Fake forged admin log entry');
+  assert.ok(!clean.includes('\r'));
+  assert.ok(!clean.includes('\n'));
+});
+
+test('Open redirect defense: sanitizeRedirectUrl blocks hostile phishing URLs', async () => {
+  const { isSafeRedirectUrl, sanitizeRedirectUrl } = await import('./escape-html.js');
+  assert.equal(isSafeRedirectUrl('http://localhost:5173/'), true);
+  assert.equal(isSafeRedirectUrl('http://192.168.1.10:5173/'), true);
+  assert.equal(isSafeRedirectUrl('/security-dashboard'), true);
+  assert.equal(isSafeRedirectUrl('https://evil-phishing-site.com/steal-token'), false);
+  assert.equal(isSafeRedirectUrl('javascript:alert(1)'), false);
+  assert.equal(isSafeRedirectUrl('//evil.com'), false);
+
+  assert.equal(sanitizeRedirectUrl('https://evil.com/login', '/'), '/');
+  assert.equal(sanitizeRedirectUrl('http://localhost:5173/', '/'), 'http://localhost:5173/');
+});
+
+
+
+
+

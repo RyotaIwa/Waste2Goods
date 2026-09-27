@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
 import { redisSet, redisGet, redisDel } from './redis-client.js';
+import { safeRedirect, sanitizeRedirectUrl } from './escape-html.js';
 
 const STATE_PREFIX = 'appwrite:oauth:state:';
 const APPWRITE_ENDPOINT_DEFAULT = 'https://cloud.appwrite.io/v1';
@@ -205,10 +206,10 @@ export function attachAppwriteAuth(app) {
       const failure = String(req.query.failure || success || '/');
       if (!cfg.isConfigured) {
         const fallback = `/api/auth/google?return_to=${encodeURIComponent(returnTo)}`;
-        return res.redirect(302, fallback);
+        return safeRedirect(res, fallback, 302);
       }
       const { url } = await buildAppwriteOAuthInitiateUrl(provider, { returnTo, success, failure });
-      return res.redirect(302, url);
+      return safeRedirect(res, url, 302);
     } catch (err) {
       return res.status(400).json({ error: err?.message || String(err), code: 'APPWRITE_INITIATE_FAILED' });
     }
@@ -222,19 +223,19 @@ export function attachAppwriteAuth(app) {
       const provider = String(req.query.provider || 'google');
       const saved = await loadState(state);
       if (state) await deleteState(state);
-      const failureUrl = saved?.failure || '/';
-      const successUrl = saved?.success || saved?.returnTo || '/';
+      const failureUrl = sanitizeRedirectUrl(saved?.failure, '/');
+      const successUrl = sanitizeRedirectUrl(saved?.success || saved?.returnTo, '/');
       if (!userId && !code) {
         const failUrl = new URL(failureUrl || '/', req.protocol + '://' + req.get('host'));
         failUrl.searchParams.set('error', 'appwrite_callback_missing_identity');
-        return res.redirect(302, failUrl.toString());
+        return safeRedirect(res, failUrl.toString(), 302);
       }
-      const returnBase = new URL(successUrl);
+      const returnBase = new URL(successUrl, req.protocol + '://' + req.get('host'));
       returnBase.hash = '';
-      return res.redirect(302, returnBase.toString());
+      return safeRedirect(res, returnBase.toString(), 302);
     } catch (err) {
       const failBack = `/?error=${encodeURIComponent(err?.message || String(err))}`;
-      return res.redirect(302, failBack);
+      return safeRedirect(res, failBack, 302);
     }
   });
 
