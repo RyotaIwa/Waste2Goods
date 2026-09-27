@@ -1006,6 +1006,17 @@ function AdminDashboard({
   const [kioskFilter, setKioskFilter] = useState<string>("all");
   const [periodFilter, setPeriodFilter] = useState<string>("7d");
 
+  // Maps each waste material to its pie chart colour
+  const getWastePieColor = (material: string): string => {
+    const palette: Record<string, string> = {
+      "PET Plastic":   "#16a34a",
+      "Cardboard":     "#f59e0b",
+      "Aluminum Cans": "#3b82f6",
+      "Glass Bottles": "#8b5cf6",
+    };
+    return palette[material] ?? "#6b7280";
+  };
+
   // Dynamic filter multiplier based on material/kiosk selection
   const materialMultipliers: Record<string, number> = {
     all: 1.0,
