@@ -103,16 +103,29 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
     return res.redirect(statusCode, '/');
   }
   const trimmed = targetUrl.trim();
+
+  // Safe relative paths (e.g. "/", "/dashboard", "/#login")
   if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.startsWith('/\\')) {
-    return res.redirect(statusCode, trimmed);
+    try {
+      const parsed = new URL(trimmed, 'https://waste2goods.ph');
+      if (parsed.origin === 'https://waste2goods.ph') {
+        const safePath = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        if (safePath.startsWith('/') && !safePath.startsWith('//') && !safePath.startsWith('/\\')) {
+          return res.redirect(statusCode, safePath);
+        }
+      }
+    } catch {
+      return res.redirect(statusCode, '/');
+    }
   }
+
+  // Absolute URLs with verified allowed hostnames
   try {
     const u = new URL(trimmed);
     if ((u.protocol === 'http:' || u.protocol === 'https:') && isHostAllowed(u.hostname)) {
       const portPart = u.port ? `:${u.port}` : '';
-      const hashPart = u.hash || '';
-      const rebuilt = `${u.protocol}//${u.hostname}${portPart}${u.pathname}${u.search}${hashPart}`;
-      return res.redirect(statusCode, rebuilt);
+      const safeUrl = `${u.protocol}//${u.hostname}${portPart}${u.pathname}${u.search}${u.hash}`;
+      return res.redirect(statusCode, safeUrl);
     }
   } catch {
     /* fallback to safe default */

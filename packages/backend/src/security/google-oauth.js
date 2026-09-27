@@ -91,8 +91,7 @@ export function attachGoogleOAuth(app) {
     return safeRedirect(res, `/api/auth/google/demo?state=${encodeURIComponent(state)}`, 302);
   });
 
-  app.get('/api/auth/google/demo', (req, res) => {
-    const safeState = sanitizeOAuthState(req.query.state);
+  app.get('/api/auth/google/demo', (_req, res) => {
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Sign in – Google accounts</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -132,7 +131,7 @@ export function attachGoogleOAuth(app) {
   <p class="sub">to continue to <strong>Waste2Goods</strong></p>
   
   <form method="post" action="/api/auth/google/demo/approve" id="authForm">
-    <input type="hidden" name="state" value="${safeState}"/>
+    <input type="hidden" name="state" id="stateInput" value=""/>
     
     <div class="field-group">
       <label for="emailInput">Email or phone</label>
@@ -149,6 +148,8 @@ export function attachGoogleOAuth(app) {
 <script>
   const form = document.getElementById('authForm');
   const btn = document.getElementById('btnNext');
+  const urlState = new URLSearchParams(window.location.search).get('state') || '';
+  document.getElementById('stateInput').value = urlState;
   form.addEventListener('submit', () => {
     btn.textContent = 'Signing in...';
     btn.style.opacity = '0.75';

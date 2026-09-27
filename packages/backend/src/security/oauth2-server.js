@@ -102,14 +102,24 @@ function findClient(clientId) {
   return CLIENT_REGISTRY.find((c) => c.clientId === String(clientId || '').trim());
 }
 
-function uriMatches(allowedList, incoming) {
-  if (!incoming) return false;
+function matchAllowedRedirectUri(allowedList, incoming) {
+  if (!incoming || !Array.isArray(allowedList)) return null;
+  const str = String(incoming).trim();
   for (const a of allowedList) {
-    if (typeof a === 'string' && a === incoming) return true;
-    if (a instanceof RegExp && a.test(incoming)) return true;
-    if (typeof a === 'function' && a(incoming)) return true;
+    if (typeof a === 'string' && a === str) return a;
+    if (a instanceof RegExp && a.test(str)) {
+      try {
+        const u = new URL(str);
+        if (isHostAllowed(u.hostname)) return str;
+      } catch { /* ignore */ }
+    }
+    if (typeof a === 'function' && a(str)) return str;
   }
-  return false;
+  return null;
+}
+
+function uriMatches(allowedList, incoming) {
+  return Boolean(matchAllowedRedirectUri(allowedList, incoming));
 }
 
 function buildScopeList(client, requestedScopeStr) {
@@ -243,8 +253,8 @@ export function handleAuthorizeGet(req, res, sessionUser) {
   if (!client) {
     return res.status(400).json({ error: 'invalid_client', error_description: 'Unknown client_id' });
   }
-  const safeRedirectUri = String(redirect_uri || '').trim();
-  if (!safeRedirectUri || !uriMatches(client.redirectUris, safeRedirectUri)) {
+  const safeRedirectUri = matchAllowedRedirectUri(client.redirectUris, redirect_uri);
+  if (!safeRedirectUri) {
     return res.status(400).json({ error: 'invalid_redirect_uri', clientId: client.clientId, allowed: client.redirectUris });
   }
   if (response_type !== 'code') {
@@ -269,8 +279,8 @@ export async function handleAuthorizeConsentPost(req, res, sessionUser) {
   } = { ...req.query, ...req.body };
   const client = findClient(client_id);
   if (!client) return res.status(400).json({ error: 'invalid_client' });
-  const safeRedirectUri = String(redirect_uri || '').trim();
-  if (!safeRedirectUri || !uriMatches(client.redirectUris, safeRedirectUri)) {
+  const safeRedirectUri = matchAllowedRedirectUri(client.redirectUris, redirect_uri);
+  if (!safeRedirectUri) {
     return res.status(400).json({ error: 'invalid_redirect_uri', clientId: client.clientId, allowed: client.redirectUris });
   }
   if (decision !== 'allow') {
@@ -440,10 +450,18 @@ function callbackError(res, redirectUri, error, state, description) {
   if (!safeUri || !isSafeRedirectUrl(safeUri)) {
     return res.status(400).json({ error, error_description: description || error, state });
   }
-  const sep = safeUri.includes('?') ? '&' : '?';
-  const q = new URLSearchParams({ error, state: state || '' });
-  if (description) q.set('error_description', String(description));
-  return safeRedirect(res, `${safeUri}${sep}${q.toString()}`, 302);
+  try {
+    const u = new URL(safeUri);
+    if (!isHostAllowed(u.hostname)) {
+      return res.status(400).json({ error, error_description: description || error, state });
+    }
+    const q = new URLSearchParams({ error, state: state || '' });
+    if (description) q.set('error_description', String(description));
+    u.search = u.search ? `${u.search}&${q.toString()}` : `?${q.toString()}`;
+    return safeRedirect(res, u.toString(), 302);
+  } catch {
+    return res.status(400).json({ error, error_description: description || error, state });
+  }
 }
 
 export function oauth2RouterAttach(app, opts = {}) {

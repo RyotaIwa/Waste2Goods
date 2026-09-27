@@ -77,8 +77,7 @@ export function attachGitHubOAuth(app) {
     return safeRedirect(res, `/api/auth/github/demo?state=${encodeURIComponent(state)}`, 302);
   });
 
-  app.get('/api/auth/github/demo', (req, res) => {
-    const safeState = sanitizeOAuthState(req.query.state);
+  app.get('/api/auth/github/demo', (_req, res) => {
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Authorize Waste2Goods · GitHub</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -127,14 +126,14 @@ export function attachGitHubOAuth(app) {
   </div>
 
   <form method="post" action="/api/auth/github/demo/approve" id="authForm">
-    <input type="hidden" name="state" value="${safeState}"/>
+    <input type="hidden" name="state" id="stateInput" value=""/>
     <div class="form-group">
       <label for="loginInput">GitHub Username / Login</label>
-      <input id="loginInput" type="text" name="login" value="${escapeHtml(DEMO_USER.login)}" required />
+      <input id="loginInput" type="text" name="login" value="${DEMO_USER.login}" required />
     </div>
     <div class="form-group">
       <label for="emailInput">Email Address</label>
-      <input id="emailInput" type="email" name="email" value="${escapeHtml(DEMO_USER.email)}" required />
+      <input id="emailInput" type="email" name="email" value="${DEMO_USER.email}" required />
     </div>
     <button class="btn-auth" id="btnAuth" type="submit">
       <span>Authorize waste2goods-ph</span>
@@ -147,6 +146,8 @@ export function attachGitHubOAuth(app) {
 <script>
   const form = document.getElementById('authForm');
   const btn = document.getElementById('btnAuth');
+  const urlState = new URLSearchParams(window.location.search).get('state') || '';
+  document.getElementById('stateInput').value = urlState;
   form.addEventListener('submit', () => {
     btn.textContent = 'Authorizing...';
     btn.style.opacity = '0.75';
