@@ -312,7 +312,7 @@ export async function comparePassword(candidatePlain, storedHash) {
     return crypto.timingSafeEqual(timingSafeA, timingSafeB);
   }
   try {
-    return bcrypt.compare(candidatePlain, storedHash);
+    return await bcrypt.compare(candidatePlain, storedHash);
   } catch {
     return false;
   }
