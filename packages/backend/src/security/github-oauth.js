@@ -81,6 +81,7 @@ export function attachGitHubOAuth(app) {
         scope: 'read:user user:email',
         state,
         allow_signup: 'true',
+        prompt: 'select_account',
       });
       return safeRedirect(res, `https://github.com/login/oauth/authorize?${params}`, 302);
     }

@@ -258,14 +258,22 @@ export async function redisStats() {
   };
 }
 
-export function makeRateLimitRedisStore() {
+/**
+ * Build a shared-storage rate-limit store backed by Redis.
+ *
+ * `prefix` MUST be unique per limiter tier. rate-limit-redis derives each key as
+ * `<prefix><clientKey>`, so a single shared prefix across tiers would make two
+ * different limiters count the same client into the same bucket (one tier would
+ * silently consume another tier's quota).
+ */
+export function makeRateLimitRedisStore(prefix = 'rl:') {
   if (!isRedisEnabled() || !redisInstance) return undefined;
   try {
     const Ctor = RateLimitRedisStoreCtor;
     if (!Ctor) return undefined;
     return new Ctor({
       sendCommand: (...args) => redisInstance.call(...args),
-      prefix: ns('rl:'),
+      prefix: ns(prefix),
     });
   } catch (err) {
     // Optional rate-limit-redis store could not be created: remember the cause and fall back to the in-memory store
