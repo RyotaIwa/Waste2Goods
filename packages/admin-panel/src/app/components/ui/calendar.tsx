@@ -10,14 +10,14 @@ import { buttonVariants } from "./button";
 function CalendarIconLeft({
   className,
   ...props
-}: React.ComponentProps<typeof ChevronLeft>) {
+}: Readonly<React.ComponentProps<typeof ChevronLeft>>) {
   return <ChevronLeft className={cn("size-4", className)} {...props} />;
 }
 
 function CalendarIconRight({
   className,
   ...props
-}: React.ComponentProps<typeof ChevronRight>) {
+}: Readonly<React.ComponentProps<typeof ChevronRight>>) {
   return <ChevronRight className={cn("size-4", className)} {...props} />;
 }
 
@@ -31,7 +31,7 @@ function Calendar({
   classNames,
   showOutsideDays = true,
   ...props
-}: React.ComponentProps<typeof DayPicker>) {
+}: Readonly<React.ComponentProps<typeof DayPicker>>) {
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
