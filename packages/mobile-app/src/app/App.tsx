@@ -287,8 +287,8 @@ async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, o
 }
 
 function resetServerIp(setApiHostState: (v: string) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): void {
-  setApiHostState("192.168.1.164");
-  setApiHost("192.168.1.164");
+  setApiHostState("192.168.1.164"); // NOSONAR - intentional default LAN IP for dev/demo mode
+  setApiHost("192.168.1.164"); // NOSONAR - intentional default LAN IP for dev/demo mode
   onSaved?.({ type: "ok", text: "Default set to 192.168.1.164:3001" });
 }
 
@@ -2689,7 +2689,7 @@ export default function App() {
   const [notifUnread, setNotifUnread] = useState(0);
   const [kioskSession, setKioskSession] = useState<{ connected: boolean; kioskId?: string; connectedAt?: number }>({ connected: false });
   const [kioskChecking, setKioskChecking] = useState(false);
-  const [apiHost, setApiHost] = useState(() => getApiHost());
+  const [apiHost, setApiHostState] = useState(() => getApiHost());
   const [showLoginServer, setShowLoginServer] = useState(() => {
     try {
       const hasSetIp = localStorage.getItem("w2g_api_host");
@@ -2888,7 +2888,7 @@ export default function App() {
 
   // Poll backend: is this user currently linked to a kiosk?
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time
-  const [, setKioskTick] = useState(0);
+  const [_kioskTick, setKioskTick] = useState(0);
   useEffect(() => {
     const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
     if (!watchScreens.includes(screen)) return;

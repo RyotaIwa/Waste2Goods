@@ -611,7 +611,7 @@ async function tryDbAdminLogin(normalizedEmail, password) {
     const refresh = await issueRefreshToken({ adminId, role: 'admin', name: adminUser.name, barangayId: adm.barangayId || null });
     console.log(`🔐 Admin logged in from DB: ${sanitizeLog(adminUser.name)} (${sanitizeLog(adminUser.id)})`);
     return buildHardenedAuthResponse(access, refresh, adminUser);
-  } catch (_) {
+  } catch (_err) {
     // Database connection or table error; return null to fall back to static credentials
     return null;
   }
@@ -935,7 +935,7 @@ const TASKS_COMMON_WHERE = " WHERE status = 'active' OR status = 1 ORDER BY task
 async function queryRecyclingTasksTable() {
   try {
     const [rows] = await db.query(TASKS_COMMON_SELECT + 'recycling_tasks' + TASKS_COMMON_WHERE);
-    return rows && rows.length ? rows : null;
+    return rows?.length ? rows : null;
   } catch {
     return null;
   }
@@ -944,7 +944,7 @@ async function queryRecyclingTasksTable() {
 async function queryFallbackTasksTable() {
   try {
     const [rows] = await db.query(TASKS_COMMON_SELECT + 'tasks' + TASKS_COMMON_WHERE);
-    return rows && rows.length ? rows : null;
+    return rows?.length ? rows : null;
   } catch {
     return null;
   }
@@ -1601,7 +1601,7 @@ app.get('/api/notifications', authenticate, requirePermission('list', 'notificat
     sortNotificationsByTime(notifications);
     const unread = notifications.filter(n => n.type === 'redemption' && (n.meta?.status === 'pending' || n.meta?.status === 'ready')).length;
     res.json({ count: notifications.length, unread: Math.max(0, unread), items: notifications });
-  } catch (err) {
+  } catch (_err) {
     // Failed to query database notifications; return empty response
     res.json({ count: 0, unread: 0, items: [] });
   }

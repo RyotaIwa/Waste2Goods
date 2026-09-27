@@ -531,7 +531,7 @@ export const Waste2GoodsAPI = {
           const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
           window.location.href = fallbackUrl;
           return fallbackUrl;
-        } catch { return null; }
+        } catch { return null; } // Fallback failed — suppress and return null
       }
     },
 

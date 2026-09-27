@@ -60,6 +60,17 @@ function isLanRequest(req) {
   );
 }
 
+async function resolveGoogleProfile(code, req) {
+  const isDemoCode = code && String(code).startsWith('googled_');
+  if (googleConfigured() && code && !isDemoCode) {
+    return exchangeGoogleCode(String(code), callbackUrl(req));
+  }
+  const raw = await redisGet(`${CODE_PREFIX}${code}`);
+  if (!raw) return null;
+  await redisDel(`${CODE_PREFIX}${code}`);
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
 export function attachGoogleOAuth(app) {
   app.get('/api/auth/google', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
@@ -193,17 +204,6 @@ export function attachGoogleOAuth(app) {
     const cb = `/api/auth/google/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
     return safeRedirect(res, cb, 302);
   });
-
-async function resolveGoogleProfile(code, req) {
-  const isDemoCode = code && String(code).startsWith('googled_');
-  if (googleConfigured() && code && !isDemoCode) {
-    return exchangeGoogleCode(String(code), callbackUrl(req));
-  }
-  const raw = await redisGet(`${CODE_PREFIX}${code}`);
-  if (!raw) return null;
-  await redisDel(`${CODE_PREFIX}${code}`);
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
-}
 
   app.get('/api/auth/google/callback', async (req, res) => {
     const { code, error } = req.query;

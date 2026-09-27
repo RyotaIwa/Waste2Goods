@@ -1,7 +1,7 @@
 
 // DEMO AUTH CREDENTIALS — passwords sourced from env vars, never hardcoded in source
 const envOrDefault = (key, fallback) =>
-  (typeof process !== "undefined" && process.env && process.env[key]) || fallback;
+  (typeof process !== "undefined" && process.env?.[key]) || fallback;
 
 export const ADMIN_CREDENTIALS = {
   email: envOrDefault("ADMIN_EMAIL", "admin@waste2goods.ph"),

@@ -48,6 +48,17 @@ export function githubOAuthInfo() {
   };
 }
 
+async function resolveGitHubProfile(code, req) {
+  const isDemoCode = code && String(code).startsWith('ghd_');
+  if (githubConfigured() && code && !isDemoCode) {
+    return exchangeGitHubCode(String(code), callbackUrl(req));
+  }
+  const raw = await redisGet(`${CODE_PREFIX}${code}`);
+  if (!raw) return null;
+  await redisDel(`${CODE_PREFIX}${code}`);
+  return typeof raw === 'string' ? JSON.parse(raw) : raw;
+}
+
 export function attachGitHubOAuth(app) {
   app.get('/api/auth/github', async (req, res) => {
     const state = crypto.randomBytes(16).toString('hex');
@@ -184,17 +195,6 @@ export function attachGitHubOAuth(app) {
     const cb = `/api/auth/github/callback?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
     return safeRedirect(res, cb, 302);
   });
-
-async function resolveGitHubProfile(code, req) {
-  const isDemoCode = code && String(code).startsWith('ghd_');
-  if (githubConfigured() && code && !isDemoCode) {
-    return exchangeGitHubCode(String(code), callbackUrl(req));
-  }
-  const raw = await redisGet(`${CODE_PREFIX}${code}`);
-  if (!raw) return null;
-  await redisDel(`${CODE_PREFIX}${code}`);
-  return typeof raw === 'string' ? JSON.parse(raw) : raw;
-}
 
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code, error } = req.query;

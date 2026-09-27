@@ -2322,11 +2322,14 @@ function AdminAdmins({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
 
   const activeAdmins = searchFilteredAdmins.filter(a => (a.status || "active") === "active");
   const archivedAdmins = searchFilteredAdmins.filter(a => (a.status || "active") === "archived");
-  const displayedAdmins = tabFilter === "all"
-    ? searchFilteredAdmins
-    : tabFilter === "active"
-      ? activeAdmins
-      : archivedAdmins;
+  let displayedAdmins;
+  if (tabFilter === "all") {
+    displayedAdmins = searchFilteredAdmins;
+  } else if (tabFilter === "active") {
+    displayedAdmins = activeAdmins;
+  } else {
+    displayedAdmins = archivedAdmins;
+  }
 
   return (
     <div className="space-y-5">

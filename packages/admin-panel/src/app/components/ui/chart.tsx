@@ -73,9 +73,13 @@ function ChartContainer({
 // Safe CSS color value: allow hex, rgb/rgba/hsl/hsla, named colors, and CSS variable references.
 // This prevents CSS injection if chart config values ever come from external data.
 function sanitizeCssValue(value: string): string {
-  // Allow: hex colors, rgb/rgba/hsl/hsla functions, named colors (letters only), CSS vars
-  if (/^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s,.%]+\)|hsla?\([\d\s,.%]+\)|var\(--[\w-]+\)|[a-zA-Z]+)$/.test(value.trim())) {
-    return value.trim();
+  // Allow: hex colors, named colors (letters only), CSS variable references
+  const simplePattern = /^(#[0-9a-fA-F]{3,8}|var\(--[\w-]+\)|[a-zA-Z]+)$/;
+  // Allow: rgb/rgba/hsl/hsla functional color notations
+  const funcPattern = /^(rgba?|hsla?)\([\d\s,.%]+\)$/;
+  const trimmed = value.trim();
+  if (simplePattern.test(trimmed) || funcPattern.test(trimmed)) {
+    return trimmed;
   }
   return 'transparent'; // safe fallback for unexpected values
 }

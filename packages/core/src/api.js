@@ -184,7 +184,7 @@ function getMockData(endpoint) {
   let result = null;
   if (endpoint.startsWith("/users/")) {
     result = USERS[0];
-  } else if (Object.prototype.hasOwnProperty.call(MOCK_DATA_MAP, endpoint)) {
+  } else if (Object.hasOwn(MOCK_DATA_MAP, endpoint)) {
     result = MOCK_DATA_MAP[endpoint];
   }
   return result;

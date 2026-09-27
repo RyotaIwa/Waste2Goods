@@ -7,7 +7,14 @@
  */
 export function escapeHtml(value) {
   if (value == null) return '';
-  const str = typeof value === 'string' ? value : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  let str;
+  if (typeof value === 'string') {
+    str = value;
+  } else if (typeof value === 'object') {
+    str = JSON.stringify(value);
+  } else {
+    str = String(value);
+  }
   return str
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -24,7 +31,7 @@ export function escapeHtml(value) {
  * @returns {string} Safe, validated and escaped state token
  */
 export function sanitizeOAuthState(state) {
-  if (!state || typeof state === 'object') return '';
+  if (!state || typeof state === 'object' || typeof state === 'undefined') return '';
   const str = String(state).trim();
   if (/^[a-zA-Z0-9_-]{1,128}$/.test(str)) {
     return escapeHtml(str);
@@ -158,7 +165,14 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
  */
 export function sanitizeLog(value) {
   if (value == null) return '';
-  const str = typeof value === 'string' ? value : (typeof value === 'object' ? JSON.stringify(value) : String(value));
+  let str;
+  if (typeof value === 'string') {
+    str = value;
+  } else if (typeof value === 'object') {
+    str = JSON.stringify(value);
+  } else {
+    str = String(value);
+  }
   return str
     .replace(/[\x00-\x1F\x7F-\x9F]+/g, ' ')
     .trim();
