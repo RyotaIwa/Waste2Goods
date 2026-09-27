@@ -267,8 +267,10 @@ export function makeRateLimitRedisStore() {
       sendCommand: (...args) => redisInstance.call(...args),
       prefix: ns('rl:'),
     });
-  } catch (_err) {
-    // Ignore optional rate-limit-redis package failure and fall back to in-memory store
+  } catch (err) {
+    // Optional rate-limit-redis store could not be created: remember the cause and fall back to the in-memory store
+    lastError = err?.message || 'rate-limit-redis store unavailable';
+    console.warn(`⚠️ ${lastError} — using in-memory rate-limit store`);
     return undefined;
   }
 }

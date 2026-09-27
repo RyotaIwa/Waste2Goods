@@ -525,13 +525,18 @@ export const Waste2GoodsAPI = {
         const url = await (this.account as any).createOAuth2Session(provider, success, failure, opts.scopes);
         if (url?.toString) window.location.href = url.toString();
         return url;
-      } catch (err: any) {
-        // Fallback to backend OAuth endpoint if Appwrite SDK throws
+      } catch (err) {
+        // Appwrite SDK session could not be created — log the cause, then fall back to the backend OAuth endpoint
+        console.warn("Appwrite OAuth session failed, falling back to backend OAuth:", err);
         try {
           const fallbackUrl = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(opts.success || window.location.origin + "/")}`;
           window.location.href = fallbackUrl;
           return fallbackUrl;
-        } catch { return null; } // Fallback failed — suppress and return null
+        } catch (fallbackErr) {
+          // Both Appwrite and the backend OAuth endpoint failed — nothing left to try, so return null
+          console.warn("Backend OAuth fallback failed:", fallbackErr);
+          return null;
+        }
       }
     },
 

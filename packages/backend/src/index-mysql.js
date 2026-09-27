@@ -611,8 +611,9 @@ async function tryDbAdminLogin(normalizedEmail, password) {
     const refresh = await issueRefreshToken({ adminId, role: 'admin', name: adminUser.name, barangayId: adm.barangayId || null });
     console.log(`🔐 Admin logged in from DB: ${sanitizeLog(adminUser.name)} (${sanitizeLog(adminUser.id)})`);
     return buildHardenedAuthResponse(access, refresh, adminUser);
-  } catch (_err) {
-    // Database connection or table error; return null to fall back to static credentials
+  } catch (err) {
+    // Database connection or table error: log the cause (log-injection safe), then fall back to static credentials
+    console.warn(`⚠️ Admin DB lookup failed, falling back to static credentials: ${sanitizeLog(err?.message || 'unknown error')}`);
     return null;
   }
 }
@@ -1601,8 +1602,9 @@ app.get('/api/notifications', authenticate, requirePermission('list', 'notificat
     sortNotificationsByTime(notifications);
     const unread = notifications.filter(n => n.type === 'redemption' && (n.meta?.status === 'pending' || n.meta?.status === 'ready')).length;
     res.json({ count: notifications.length, unread: Math.max(0, unread), items: notifications });
-  } catch (_err) {
-    // Failed to query database notifications; return empty response
+  } catch (err) {
+    // Failed to query database notifications: log the cause (log-injection safe), then return an empty list
+    console.warn(`⚠️ Notifications query failed, returning empty list: ${sanitizeLog(err?.message || 'unknown error')}`);
     res.json({ count: 0, unread: 0, items: [] });
   }
 });

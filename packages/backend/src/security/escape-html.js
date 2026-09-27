@@ -1,4 +1,30 @@
 /**
+ * Converts an unknown value into a primitive string representation.
+ * Objects are JSON-encoded instead of using Object's default `[object Object]` stringification
+ * (SonarQube javascript:S6551).
+ *
+ * @param {unknown} value - Value to convert
+ * @returns {string} Safe string representation ('' for null/undefined/functions/symbols)
+ */
+function toPrimitiveString(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return `${value}`;
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value) ?? '';
+    } catch (err) {
+      // Circular references / BigInt payloads cannot be JSON-encoded — log it and skip the value.
+      console.warn(`⚠️ escape-html: value could not be serialized (${err instanceof Error ? err.message : 'unknown error'})`);
+      return '';
+    }
+  }
+  return ''; // functions & symbols have no safe string form for HTML or log output
+}
+
+/**
  * Sanitizes and escapes user/query input to prevent Reflected Cross-Site Scripting (XSS) (SonarQube jssecurity:S5131).
  * Replaces HTML special characters with their corresponding safe HTML entities.
  *
@@ -6,16 +32,7 @@
  * @returns {string} HTML-escaped string
  */
 export function escapeHtml(value) {
-  if (value == null) return '';
-  let str;
-  if (typeof value === 'string') {
-    str = value;
-  } else if (typeof value === 'object') {
-    str = JSON.stringify(value);
-  } else {
-    str = String(value);
-  }
-  return str
+  return toPrimitiveString(value)
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
@@ -31,8 +48,16 @@ export function escapeHtml(value) {
  * @returns {string} Safe, validated and escaped state token
  */
 export function sanitizeOAuthState(state) {
-  if (!state || typeof state === 'object' || typeof state === 'undefined') return '';
-  const str = String(state).trim();
+  if (!state) return '';
+  let raw;
+  if (typeof state === 'string') {
+    raw = state;
+  } else if (typeof state === 'number' || typeof state === 'boolean' || typeof state === 'bigint') {
+    raw = `${state}`;
+  } else {
+    return ''; // objects, functions and symbols can never be a valid state token
+  }
+  const str = raw.trim();
   if (/^[a-zA-Z0-9_-]{1,128}$/.test(str)) {
     return escapeHtml(str);
   }
@@ -164,16 +189,7 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
  * @returns {string} Single-line sanitized string safe for log outputs
  */
 export function sanitizeLog(value) {
-  if (value == null) return '';
-  let str;
-  if (typeof value === 'string') {
-    str = value;
-  } else if (typeof value === 'object') {
-    str = JSON.stringify(value);
-  } else {
-    str = String(value);
-  }
-  return str
+  return toPrimitiveString(value)
     .replace(/[\x00-\x1F\x7F-\x9F]+/g, ' ')
     .trim();
 }

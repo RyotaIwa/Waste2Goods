@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Waste2GoodsAPI, getApiHost, setApiHost, getApiBaseUrl, testApiConnection } from "@waste2goods/core";
+import { Waste2GoodsAPI, getApiHost, setApiHost as persistApiHost, getApiBaseUrl, testApiConnection } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   Monitor, Recycle, Home, QrCode, Gift,
@@ -21,6 +21,11 @@ type MobileScreen =
   | "rewards" | "redeem-confirm" | "redeem-history"
   | "tasks" | "profile" | "history" | "settings" | "notifications"
   | "leaderboard";
+
+// Default LAN address of the local development backend (offline demo fallback only).
+// This is a private RFC-1918 address (192.168.0.0/16) used as a convenience default for
+// instructor/demo setups on a local network — it is never a production endpoint.
+const DEFAULT_DEV_API_HOST = "192.168.1.164"; // NOSONAR - intentional private-range dev/demo default (typescript:S1313)
 
 const weeklyData = [
   { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
@@ -254,7 +259,7 @@ function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; tex
     onSaved?.({ type: "err", text: "Please enter an IP address or hostname" });
     return null;
   }
-  setApiHost(trimmed);
+  persistApiHost(trimmed);
   const cleanHost = getApiHost();
   const url = getApiBaseUrl().replace(/\/api$/, "");
   onSaved?.({ type: "ok", text: `✅ Server saved: ${url} — setting saved on device.` });
@@ -280,26 +285,26 @@ async function testServerIp(apiHost: string, setTesting: (v: boolean) => void, o
     return;
   }
   setTesting(true);
-  setApiHost(trimmed);
+  persistApiHost(trimmed);
   const result = await testApiConnection();
   onSaved?.({ type: result.ok ? "ok" : "err", text: result.message });
   setTesting(false);
 }
 
-function resetServerIp(setApiHostState: (v: string) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): void {
-  setApiHostState("192.168.1.164"); // NOSONAR - intentional default LAN IP for dev/demo mode
-  setApiHost("192.168.1.164"); // NOSONAR - intentional default LAN IP for dev/demo mode
-  onSaved?.({ type: "ok", text: "Default set to 192.168.1.164:3001" });
+function resetServerIp(setApiHost: (v: string) => void, onSaved?: (msg: { type: "ok" | "err"; text: string }) => void): void {
+  setApiHost(DEFAULT_DEV_API_HOST);
+  persistApiHost(DEFAULT_DEV_API_HOST);
+  onSaved?.({ type: "ok", text: `Default set to ${DEFAULT_DEV_API_HOST}:3001` });
 }
 
 function ServerIpPanel({
   apiHost,
-  setApiHostState,
+  setApiHost,
   onSaved,
   compact,
 }: Readonly<{
   apiHost: string;
-  setApiHostState: (v: string) => void;
+  setApiHost: (v: string) => void;
   onSaved?: (msg: { type: "ok" | "err"; text: string }) => void;
   compact?: boolean;
 }>) {
@@ -311,7 +316,7 @@ function ServerIpPanel({
     await testServerIp(apiHost, setTesting, onSaved);
   };
   const resetToDefault = () => {
-    resetServerIp(setApiHostState, onSaved);
+    resetServerIp(setApiHost, onSaved);
   };
   return (
     <div className={`rounded-2xl bg-blue-50 border border-blue-200 space-y-2.5 ${compact ? "p-2.5" : "p-4"}`}>
@@ -330,7 +335,7 @@ function ServerIpPanel({
           id="server-ip-addr-input"
           type="text"
           value={apiHost}
-          onChange={e => setApiHostState(e.target.value)}
+          onChange={e => setApiHost(e.target.value)}
           placeholder="e.g. 192.168.1.100 or localhost"
           autoCapitalize="none"
           autoCorrect="off"
@@ -993,6 +998,7 @@ type MobileAppRouterProps = Readonly<{
   notifUnread: number;
   kioskSession: { connected: boolean; kioskId?: string; connectedAt?: number };
   kioskChecking: boolean;
+  kioskElapsedLabel?: string;
   apiHost: string;
   showLoginServer: boolean;
   loginServerBanner: { type: "ok" | "err"; text: string } | null;
@@ -1031,7 +1037,7 @@ type MobileAppRouterProps = Readonly<{
   setSetCity: SetState<string>;
   setSetProvince: SetState<string>;
   setLoginServerBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
-  setApiHostState: SetState<string>;
+  setApiHost: SetState<string>;
   handleSaveProfile: () => Promise<void>;
   handleDisconnectKiosk: () => Promise<void>;
   onLogin: () => Promise<void>;
@@ -1087,7 +1093,7 @@ function MobileScreenContent(p: MobileAppRouterProps) {
           email={p.email} password={p.password} loginError={p.loginError} loginLoading={p.loginLoading}
           setEmail={p.setEmail} setPassword={p.setPassword}
           showLoginServer={p.showLoginServer} loginServerBanner={p.loginServerBanner}
-          apiHost={p.apiHost} setApiHostState={p.setApiHostState}
+          apiHost={p.apiHost} setApiHost={p.setApiHost}
           onToggleLoginServer={p.onToggleLoginServer} onLogin={p.onLogin}
           setLoginServerBanner={p.setLoginServerBanner} go={p.go}
         />
@@ -1361,7 +1367,7 @@ type ScreenLoginProps = Readonly<{
   email: string; password: string; loginError: string; loginLoading: boolean;
   setEmail: SetState<string>; setPassword: SetState<string>;
   showLoginServer: boolean; loginServerBanner: { type: "ok" | "err"; text: string } | null;
-  apiHost: string; setApiHostState: SetState<string>;
+  apiHost: string; setApiHost: SetState<string>;
   onToggleLoginServer: () => void; onLogin: () => Promise<void>;
   setLoginServerBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
   go: (s: MobileScreen) => void;
@@ -1397,7 +1403,7 @@ function ScreenLogin(p: ScreenLoginProps) {
             {p.loginServerBanner && (
               <div className={`rounded-xl px-3 py-2 text-xs font-bold ${p.loginServerBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{p.loginServerBanner.text}</div>
             )}
-            <ServerIpPanel apiHost={p.apiHost} setApiHostState={p.setApiHostState} onSaved={p.setLoginServerBanner} compact />
+            <ServerIpPanel apiHost={p.apiHost} setApiHost={p.setApiHost} onSaved={p.setLoginServerBanner} compact />
           </div>
         )}
         <div className="mt-auto space-y-2.5 pt-2 shrink-0">
@@ -1817,7 +1823,7 @@ function ScreenHome(p: MobileAppRouterProps) {
               <div className="w-9 h-9 rounded-xl bg-emerald-400 flex items-center justify-center"><Cable className="w-4 h-4 text-emerald-900" /></div>
               <div className="text-left">
                 <p className="text-xs font-black">Linked to {p.kioskSession.kioskId || "kiosk"}</p>
-                <p className="text-[10px] text-emerald-700 font-semibold">{elapsedFromTs(p.kioskSession.connectedAt) || "Active session"}{p.kioskChecking ? " · checking..." : ""}</p>
+                <p className="text-[10px] text-emerald-700 font-semibold">{p.kioskElapsedLabel || "Active session"}{p.kioskChecking ? " · checking..." : ""}</p>
               </div>
             </div>
             <span className="text-[10px] font-bold bg-emerald-400 text-emerald-900 px-2 py-1 rounded-full">Tap to disconnect</span>
@@ -2321,7 +2327,7 @@ function ScreenSettings(p: MobileAppRouterProps) {
             </div>
             <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><Globe className="w-4 h-4 text-blue-600" /></div>
           </div>
-          <ServerIpPanel apiHost={p.apiHost} setApiHostState={p.setApiHostState} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
+          <ServerIpPanel apiHost={p.apiHost} setApiHost={p.setApiHost} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
         </div>
       </div>
     </div>
@@ -2689,7 +2695,7 @@ export default function App() {
   const [notifUnread, setNotifUnread] = useState(0);
   const [kioskSession, setKioskSession] = useState<{ connected: boolean; kioskId?: string; connectedAt?: number }>({ connected: false });
   const [kioskChecking, setKioskChecking] = useState(false);
-  const [apiHost, setApiHostState] = useState(() => getApiHost());
+  const [apiHost, setApiHost] = useState(() => getApiHost());
   const [showLoginServer, setShowLoginServer] = useState(() => {
     try {
       const hasSetIp = localStorage.getItem("w2g_api_host");
@@ -2888,7 +2894,7 @@ export default function App() {
 
   // Poll backend: is this user currently linked to a kiosk?
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time
-  const [_kioskTick, setKioskTick] = useState(0);
+  const [kioskTick, setKioskTick] = useState(0);
   useEffect(() => {
     const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
     if (!watchScreens.includes(screen)) return;
@@ -2933,6 +2939,12 @@ export default function App() {
     } catch { /* ignore */ }
   };
 
+  // Live "time since kiosk link" label for the kiosk badge. Recomputed on every second-tick
+  // (kioskTick) so the elapsed text stays current without restarting the polling interval.
+  const kioskElapsedLabel = useMemo(
+    () => elapsedFromTs(kioskSession.connectedAt),
+    [kioskSession.connectedAt, kioskTick],
+  );
   // Seed the settings form inputs from currentUser whenever the screen opens
   useEffect(() => {
     if (screen !== "settings") return;
@@ -2948,7 +2960,7 @@ export default function App() {
     setSetCity(currentUser.city || "");
     setSetProvince(currentUser.province || "");
     setProfileBanner(null);
-    setApiHostState(getApiHost());
+    setApiHost(getApiHost());
   }, [screen, currentUser.id]);
 
   // Build the "Since Month Year" string from the user's actual createdAt row
@@ -3215,6 +3227,7 @@ export default function App() {
         weight={weight}
         kioskSession={kioskSession}
         kioskChecking={kioskChecking}
+        kioskElapsedLabel={kioskElapsedLabel}
         mergedLeaderboard={mergedLeaderboard}
         currentUser={currentUser}
         notifItems={notifItems}
@@ -3251,7 +3264,7 @@ export default function App() {
         setSetCity={setSetCity}
         setSetBrgy={setSetBrgy}
         setLoginServerBanner={setLoginServerBanner}
-        setApiHostState={setApiHostState}
+        setApiHost={setApiHost}
         handleSaveProfile={handleSaveProfile}
         handleDisconnectKiosk={handleDisconnectKiosk}
         onLogin={onLogin}
