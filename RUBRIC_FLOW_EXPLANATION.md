@@ -442,12 +442,22 @@ If Redis is off, everything falls back to in-memory JavaScript Maps. The app nev
 ### Start Redis (Docker on Windows)
 
 ```powershell
-# Start Redis
-docker run -d -p 6379:6379 --name w2g-redis redis:alpine
+cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype"
 
-# Verify it's running
-docker ps
-redis-cli ping
+# Start Docker Desktop if needed, then create/start the w2g-redis container
+pwsh -File scripts/redis.ps1 up
+
+# Verify it's running (PING must return PONG)
+pwsh -File scripts/redis.ps1 status
+docker exec w2g-redis redis-cli ping
+```
+
+> `packages/backend/.env` must have `REDIS_ENABLED=true` (already set) — the flag is read at startup, so restart the backend after changing it.
+
+Confirm the backend is really using Redis (round-trip through `redis-client.js`):
+
+```powershell
+npm run redis:check
 ```
 
 ### Demo: API Cache MISS → HIT
@@ -561,7 +571,7 @@ npm run audit:ci
 # Terminal 1: XAMPP → Start MySQL
 
 # Terminal 2: Start Redis
-docker run -d -p 6379:6379 --name w2g-redis redis:alpine
+pwsh -File scripts/redis.ps1 up
 
 # Terminal 3: Start backend
 cd "c:\Users\USER\Downloads\Gamified Recycling Platform Prototype"

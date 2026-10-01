@@ -1,0 +1,237 @@
+# ════════════════════════════════════════════════════════════════════
+# Waste2Goods — DigitalOcean App Platform app spec
+#
+#   doctl apps create --spec app.yaml
+#
+# Deploys:
+#   1 service  (api)     → Node/Express backend, built from ./Dockerfile
+#   3 static sites       → mobile PWA, admin panel, kiosk terminal (FREE tier)
+#   2 managed databases  → MySQL + Valkey/Redis (REQUIRED: App Platform has
+#                          no persistent volumes, so you cannot run your own
+#                          db/redis containers here)
+#
+# ⚠️ TWO THINGS TO VERIFY ON YOUR FIRST DEPLOY:
+#      1. The Redis/Valkey engine slug (REDIS vs VALKEY) in your account.
+#      2. Static-site sub-path behaviour (the `--base=` values below must match
+#         the ingress prefixes). Fallback: give each site its own domain.
+#    See DEPLOYMENT.md → "DigitalOcean App Platform".
+# ════════════════════════════════════════════════════════════════════
+
+name: waste2goods
+region: sgp
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+  - rule: DEPLOYMENT_LIVE
+
+features:
+  - buildpack-stack=ubuntu-22
+
+# ── Managed data stores (no volumes on App Platform) ────────────────
+databases:
+  - name: db
+    engine: MYSQL
+    production: true
+    # cluster_name: <existing-managed-mysql-cluster>   # omit to create new
+  - name: redis
+    engine: VALKEY          # DigitalOcean's Redis-compatible managed service.
+    production: true        # Change to REDIS if your account only offers that.
+
+# ── Path routing across components ─────────────────────────────────
+ingress:
+  rules:
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /api
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /health
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /security-dashboard
+    - component:
+        name: api
+      match:
+        path:
+          prefix: /cdn
+    - component:
+        name: admin
+      match:
+        path:
+          prefix: /admin
+    - component:
+        name: kiosk
+      match:
+        path:
+          prefix: /kiosk
+    - component:
+        name: mobile
+      match:
+        path:
+          prefix: /
+
+# ════════════════════════════════════════════════════════════════════
+# The API service — built from the LAST stage of ./Dockerfile (which is
+# the `api` stage by design; App Platform has no build-target selector).
+# ════════════════════════════════════════════════════════════════════
+services:
+  - name: api
+    dockerfile_path: Dockerfile
+    source_dir: /
+    github:
+      repo: RyotaIwa/Waste2Goods
+      branch: main
+      deploy_on_push: true
+    http_port: 3001
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-1gb      # 512 MiB OOMs on Node+Express
+    # App Platform restarts the container when this fails, so point it at the
+    # LIVENESS probe (not /health/ready) — otherwise a transient DB blip causes
+    # a restart loop.
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 20
+      period_seconds: 30
+      timeout_seconds: 5
+      failure_threshold: 3
+    envs:
+      - key: NODE_ENV
+        value: production
+        scope: RUN_TIME
+
+      # ── Database (bound to the managed MySQL above) ──
+      - key: DB_HOST
+        value: ${db.HOSTNAME}
+        scope: RUN_TIME
+      - key: DB_PORT
+        value: ${db.PORT}
+        scope: RUN_TIME
+      - key: DB_USER
+        value: ${db.USERNAME}
+        scope: RUN_TIME
+      - key: DB_PASSWORD
+        value: ${db.PASSWORD}
+        scope: RUN_TIME
+      - key: DB_NAME
+        value: ${db.DATABASE}
+        scope: RUN_TIME
+      # Managed MySQL requires TLS. Either import DO's CA into the image and
+      # set DB_SSL_CA, or accept the risk and disable verification over the
+      # private VPC network (simplest for a capstone).
+      - key: DB_SSL
+        value: "true"
+        scope: RUN_TIME
+      - key: DB_SSL_REJECT_UNAUTHORIZED
+        value: "0"
+        scope: RUN_TIME
+      # The app only ALTERs columns — it does NOT create tables. Import
+      # packages/backend/database/schema-mysql.sql ONCE before first boot.
+      - key: DB_RUN_MIGRATIONS
+        value: "true"
+        scope: RUN_TIME
+
+      # ── Redis / Valkey ──
+      - key: REDIS_ENABLED
+        value: "true"
+        scope: RUN_TIME
+      - key: REDIS_HOST
+        value: ${redis.HOSTNAME}
+        scope: RUN_TIME
+      - key: REDIS_PORT
+        value: ${redis.PORT}
+        scope: RUN_TIME
+      - key: REDIS_PASSWORD
+        value: ${redis.PASSWORD}
+        scope: RUN_TIME
+
+      # ── Auth (SECRET: set real values, never commit them) ──
+      - key: JWT_SECRET
+        value: "<CHANGE_ME: openssl rand -hex 48>"
+        type: SECRET
+        scope: RUN_TIME
+      - key: JWT_REFRESH_SECRET
+        value: "<CHANGE_ME: openssl rand -hex 48>"
+        type: SECRET
+        scope: RUN_TIME
+      - key: JWT_ISSUER
+        value: waste2goods
+        scope: RUN_TIME
+      - key: JWT_AUDIENCE
+        value: waste2goods-app
+        scope: RUN_TIME
+
+      # ── Demo accounts: keep OFF in production ──
+      - key: SEED_DEMO_DATA
+        value: "false"
+        scope: RUN_TIME
+      - key: ADMIN_EMAIL
+        value: admin@waste2goods.ph
+        scope: RUN_TIME
+      - key: ADMIN_PASSWORD
+        value: "<CHANGE_ME>"
+        type: SECRET
+        scope: RUN_TIME
+      - key: KIOSK_PIN
+        value: "<CHANGE_ME>"
+        type: SECRET
+        scope: RUN_TIME
+
+      # ── Edge behaviour ──
+      # All components share one domain here → same-origin → CORS can stay empty.
+      - key: TRUST_PROXY
+        value: "1"
+        scope: RUN_TIME
+      - key: CORS_ORIGINS
+        value: ""
+        scope: RUN_TIME
+
+# ════════════════════════════════════════════════════════════════════
+# Static sites (App Platform's free tier).
+# Each is built with a vite --base matching the ingress prefix it is served
+# from. NOTE: verify on first deploy — if the SPA loads a blank page, the
+# ingress prefix is being stripped; either set the base back to "/" or give
+# this component its own domain instead of a path prefix.
+# ════════════════════════════════════════════════════════════════════
+static_sites:
+  - name: mobile
+    environment_slug: node-js
+    source_dir: /
+    build_command: npm run build --workspace=@waste2goods/mobile-app -- --base=/
+    output_dir: packages/mobile-app/dist
+    index_document: index.html
+    catchall_document: index.html
+    github:
+      repo: RyotaIwa/Waste2Goods
+      branch: main
+      deploy_on_push: true
+
+  - name: admin
+    environment_slug: node-js
+    source_dir: /
+    build_command: npm run build --workspace=@waste2goods/admin-panel -- --base=/admin/
+    output_dir: packages/admin-panel/dist
+    index_document: index.html
+    catchall_document: index.html
+    github:
+      repo: RyotaIwa/Waste2Goods
+      branch: main
+      deploy_on_push: true
+
+  - name: kiosk
+    environment_slug: node-js
+    source_dir: /
+    build_command: npm run build --workspace=@waste2goods/kiosk-app -- --base=/kiosk/
+    output_dir: packages/kiosk-app/dist
+    index_document: index.html
+    catchall_document: index.html
+    github:
+      repo: RyotaIwa/Waste2Goods
+      branch: main
+      deploy_on_push: true

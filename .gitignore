@@ -8,6 +8,8 @@ yarn.lock
 .env
 .env.local
 .env.*.local
+!.env.example
+!.env.docker.example
 *.pem
 *.crt
 *.key

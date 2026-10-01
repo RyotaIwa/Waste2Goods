@@ -103,8 +103,18 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
 }));
-if (isProd) app.set('trust proxy', 2);
-else app.set('trust proxy', 1);
+// Trust-proxy hop count. This drives req.ip, which the rate limiters and cache keys
+// depend on. Get it wrong and either every user shares one bucket (DoS) or the limiter
+// keys on the proxy's address.
+//   • Droplet + Caddy/Nginx in front            → 1 hop  (default)
+//   • DigitalOcean App Platform                 → 1 hop
+//   • An extra external load balancer in front  → 2 hops
+// Override with TRUST_PROXY (a number of hops, or "false" to disable).
+const TRUST_PROXY_RAW = process.env.TRUST_PROXY;
+const trustProxyValue = TRUST_PROXY_RAW === undefined
+  ? 1
+  : (TRUST_PROXY_RAW === 'false' ? false : (Number.isNaN(Number(TRUST_PROXY_RAW)) ? TRUST_PROXY_RAW : Number(TRUST_PROXY_RAW)));
+app.set('trust proxy', trustProxyValue);
 app.use(globalLimiter);
 app.use(gatewayLogger);
 app.use(cors({
@@ -2000,6 +2010,42 @@ body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-seri
 <div class="footer">Waste2Goods API · D2-P2 DevSecOps Hardened · Backend :${PORT} · OAuth 2.0 + ABAC + Rate-Limit + Cache + SonarQube</div>
 </div></body></html>`;
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Health probes — unauthenticated, expose no data. Used by Docker
+// HEALTHCHECK, Caddy, DigitalOcean health checks and uptime monitors.
+// ════════════════════════════════════════════════════════════════════
+// Liveness: is the process up? Never touches the DB (fast, no false negatives).
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'waste2goods-api',
+    env: process.env.NODE_ENV || 'development',
+    uptimeSec: Math.round(process.uptime()),
+    redis: redisBackendMode(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness: can we actually serve traffic? Pings MySQL + reports Redis.
+app.get('/health/ready', async (_req, res) => {
+  const checks = { database: 'unknown', redis: redisBackendMode() };
+  let healthy = true;
+  try {
+    await db.query('SELECT 1');
+    checks.database = 'ok';
+  } catch (err) {
+    checks.database = 'error';
+    checks.databaseError = err.message;
+    healthy = false;
+  }
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'ready' : 'not-ready',
+    service: 'waste2goods-api',
+    checks,
+    timestamp: new Date().toISOString(),
+  });
+});
 
 // ── D2 P2: API Gateway fallbacks ─────────────────────────────────────
 app.use(apiNotFound);

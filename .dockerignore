@@ -1,0 +1,49 @@
+# ── Build context exclusions ────────────────────────────────────────
+# Keep the image build fast and small by never sending these to the daemon.
+# NOTE: do NOT exclude *.png or *.sql — frontend assets and the MySQL schema
+# (packages/backend/database/schema-mysql.sql) are required by the build/init.
+
+node_modules
+**/node_modules
+**/dist
+**/build
+**/.dart_tool
+**/ephemeral
+**/ios/Pods
+**/.gradle
+
+# The Flutter app is not part of the container build
+waste2goods_mobile
+
+# Git + tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+.trae
+.specstory
+.cursorindexingignore
+*.tsbuildinfo
+
+# Secrets — never bake .env files into an image. Inject them at runtime.
+.env
+.env.*
+!.env.example
+!.env.docker.example
+*.pem
+*.crt
+*.key
+
+# Docs, logs and local artefacts
+*.log
+coverage
+sonar-issues.json
+sonar-project.properties
+*.docx
+*.exe
+*.db
+**/*.db
+Screenshot*
+chat*.txt
+

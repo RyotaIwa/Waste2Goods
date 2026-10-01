@@ -1,0 +1,67 @@
+# ════════════════════════════════════════════════════════════════════
+# Waste2Goods — edge router
+#   • Serves the three Vite SPAs
+#   • Reverse-proxies the API + security dashboard + CDN
+#   • Terminates TLS automatically (Let's Encrypt)
+#
+# DOMAIN comes from docker-compose .env:
+#   DOMAIN=waste2goods.example.com   → real certificate (needs DNS + ports 80/443)
+#   DOMAIN unset                     → falls back to localhost (Caddy internal cert)
+# ════════════════════════════════════════════════════════════════════
+
+{$DOMAIN:localhost} {
+	encode gzip zstd
+
+	# ── API, security dashboard, CDN → Node backend (compose service "api") ──
+	handle /api/* {
+		reverse_proxy api:3001
+	}
+	handle /health {
+		reverse_proxy api:3001
+	}
+	handle /security-dashboard {
+		reverse_proxy api:3001
+	}
+	handle /devsecops {
+		reverse_proxy api:3001
+	}
+	handle /cdn/* {
+		reverse_proxy api:3001
+	}
+	handle /.well-known/* {
+		reverse_proxy api:3001
+	}
+
+	# ── Admin panel — built with VITE_BASE_PATH=/admin/ ─────────────
+	handle_path /admin/* {
+		root * /srv/admin
+		try_files {path} /index.html
+		file_server
+	}
+
+	# ── Kiosk terminal — built with VITE_BASE_PATH=/kiosk/ ──────────
+	handle_path /kiosk/* {
+		root * /srv/kiosk
+		try_files {path} /index.html
+		file_server
+	}
+
+	# ── Mobile PWA at the site root (catch-all, must stay last) ─────
+	handle {
+		root * /srv/mobile
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options SAMEORIGIN
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

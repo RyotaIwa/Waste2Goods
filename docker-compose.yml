@@ -1,0 +1,140 @@
+# ════════════════════════════════════════════════════════════════════
+# Waste2Goods — full stack for a DigitalOcean Droplet
+#
+#   docker compose up -d --build
+#
+# Services:  web (Caddy/TLS)  →  api (Node)  →  db (MySQL 8) + redis
+# Copy .env.docker.example to .env and fill it in BEFORE the first run.
+# ════════════════════════════════════════════════════════════════════
+
+name: waste2goods
+
+services:
+  # ── MySQL 8 ───────────────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set in .env}
+      MYSQL_DATABASE: ${DB_NAME:-waste2goods}
+      MYSQL_USER: ${DB_USER:-w2g}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Runs ONCE, only when the data directory is first created.
+      # The entrypoint selects $MYSQL_DATABASE, so the dump lands in the right DB.
+      - ./packages/backend/database/schema-mysql.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    networks: [w2g]
+
+  # ── Redis: sessions, refresh tokens, rate limits, cache ────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [w2g]
+
+  # ── API (Node/Express) ────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+
+      # Database
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: ${DB_NAME:-waste2goods}
+      DB_USER: ${DB_USER:-w2g}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      DB_SSL: "false"                 # same Docker network — no TLS needed
+      DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-true}
+
+      # Redis
+      REDIS_ENABLED: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+
+      # Auth / tokens
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-}
+      JWT_ISSUER: ${JWT_ISSUER:-waste2goods}
+      JWT_AUDIENCE: ${JWT_AUDIENCE:-waste2goods-app}
+
+      # Demo accounts — keep SEED_DEMO_DATA=false on a public deployment
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@waste2goods.ph}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      RESIDENT_EMAIL: ${RESIDENT_EMAIL:-resident@cabantian.ph}
+      RESIDENT_PASSWORD: ${RESIDENT_PASSWORD:-}
+      KIOSK_PIN: ${KIOSK_PIN:-}
+
+      # Edge / platform
+      TRUST_PROXY: ${TRUST_PROXY:-1}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      CSRF_ORIGINS: ${CSRF_ORIGINS:-}
+      BODY_LIMIT: ${BODY_LIMIT:-100kb}
+
+      # External IdPs (optional)
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_CALLBACK_URL: ${GITHUB_CALLBACK_URL:-}
+      APPWRITE_PROJECT_ID: ${APPWRITE_PROJECT_ID:-}
+      APPWRITE_API_KEY: ${APPWRITE_API_KEY:-}
+      APPWRITE_ENDPOINT: ${APPWRITE_ENDPOINT:-https://cloud.appwrite.io/v1}
+      APPWRITE_REGION: ${APPWRITE_REGION:-fra}
+      APPWRITE_CALLBACK_URL: ${APPWRITE_CALLBACK_URL:-}
+    networks: [w2g]
+
+  # ── Caddy: TLS + static SPAs + reverse proxy ──────────────────────
+  web:
+    build:
+      context: .
+      target: web
+    restart: unless-stopped
+    depends_on: [api]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - caddy_data:/data       # certificates (must persist or you'll hit LE rate limits)
+      - caddy_config:/config
+    networks: [w2g]
+
+volumes:
+  db_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  w2g:
+    driver: bridge

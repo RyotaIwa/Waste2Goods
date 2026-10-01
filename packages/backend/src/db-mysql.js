@@ -1,4 +1,5 @@
 import mysql from 'mysql2/promise';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import bcrypt from 'bcryptjs';
@@ -7,14 +8,43 @@ import { ADMIN_CREDENTIALS, DEMO_RESIDENT_CREDENTIALS } from '@waste2goods/core'
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const KIOSK_PIN = process.env.KIOSK_PIN || '7890';
+const IS_PROD = process.env.NODE_ENV === 'production';
+const truthy = (v) => ['1', 'true', 'yes', 'on'].includes(String(v).toLowerCase());
+
+// Kiosk PIN — never fall back to a publicly-known value in production.
+// An empty PIN disables kiosk-login entirely (see index-mysql.js /api/auth/kiosk-login).
+const KIOSK_PIN = process.env.KIOSK_PIN || (IS_PROD ? '' : '7890');
+
+// ── Production safety switches ──────────────────────────────────────
+// Column migrations + reference/lookup seeds (roles, materials, tasks, rewards).
+// Keep true for the first boot, then set DB_RUN_MIGRATIONS=false to freeze the schema
+// and drop DDL privileges from the app's MySQL user.
+const RUN_SCHEMA_MIGRATIONS = process.env.DB_RUN_MIGRATIONS !== undefined
+  ? truthy(process.env.DB_RUN_MIGRATIONS)
+  : true;
+
+// Demo accounts (admin A-001 "Juan Reyes" + resident "Maria Santos") and the
+// password-hash re-sync that runs against them. These MUST NOT be recreated or
+// reset against a production database, so they default OFF when NODE_ENV=production.
+const SEED_DEMO_DATA = process.env.SEED_DEMO_DATA !== undefined
+  ? truthy(process.env.SEED_DEMO_DATA)
+  : !IS_PROD;
 
 const DB_HOST = process.env.DB_HOST || 'localhost';
 const DB_PORT = Number(process.env.DB_PORT || 3306);
 const DB_USER = process.env.DB_USER || 'root';
 const DB_PASSWORD = process.env.DB_PASSWORD || '';
 const DB_NAME = process.env.DB_NAME || 'waste2goods';
-const DB_SSL = process.env.DB_SSL === '1' || process.env.DB_SSL === 'true' ? { rejectUnauthorized: true } : undefined;
+
+// ── TLS ─────────────────────────────────────────────────────────────
+// DigitalOcean Managed MySQL presents a CA certificate. With rejectUnauthorized:true
+// and no CA supplied, the connection fails with a self-signed-certificate error.
+//   • Set DB_SSL_CA=/path/to/ca-certificate.crt for a verified connection (preferred)
+//   • Or set DB_SSL_REJECT_UNAUTHORIZED=0 when talking over the private VPC network
+const DB_SSL_ENABLED = truthy(process.env.DB_SSL) || truthy(process.env.DB_SSL_ENABLED);
+const DB_SSL_REJECT_UNAUTHORIZED = process.env.DB_SSL_REJECT_UNAUTHORIZED !== undefined
+  ? truthy(process.env.DB_SSL_REJECT_UNAUTHORIZED)
+  : true;
 
 const poolConfig = {
   host: DB_HOST,
@@ -26,7 +56,21 @@ const poolConfig = {
   connectionLimit: Number(process.env.DB_CONN_LIMIT || 10),
   queueLimit: 0,
 };
-if (DB_SSL) poolConfig.ssl = DB_SSL;
+
+if (DB_SSL_ENABLED) {
+  poolConfig.ssl = { rejectUnauthorized: DB_SSL_REJECT_UNAUTHORIZED };
+  const caPath = process.env.DB_SSL_CA;
+  if (caPath) {
+    try {
+      poolConfig.ssl.ca = fs.readFileSync(caPath, 'utf8');
+      console.log(`🔐 MySQL TLS enabled (CA loaded from ${caPath})`);
+    } catch (err) {
+      console.warn(`⚠️  DB_SSL_CA set to "${caPath}" but could not be read: ${err.message}`);
+    }
+  } else {
+    console.log('🔐 MySQL TLS enabled (no CA supplied — relying on system trust store)');
+  }
+}
 
 const db = mysql.createPool(poolConfig);
 
@@ -42,16 +86,33 @@ async function precomputeHash(plain) {
 async function init() {
   try {
     const connection = await db.getConnection();
-    const tag = process.env.NODE_ENV === 'production' ? 'DigitalOcean' : 'XAMPP';
+    const tag = IS_PROD ? 'DigitalOcean' : 'XAMPP';
     console.log(`✅ Connected to MySQL database (${tag}) ${DB_HOST}:${DB_PORT}/${DB_NAME} as ${DB_USER}`);
     connection.release();
-    
-    await applySchemaMigrations();
-    await insertInfrastructureData();
-    await insertAdminData();
-    await insertResidentData();
+
+    if (RUN_SCHEMA_MIGRATIONS) {
+      await applySchemaMigrations();
+      await insertInfrastructureData();
+      console.log('🔧 Schema + reference data: migrations enabled (DB_RUN_MIGRATIONS=true)');
+    } else {
+      console.log('⏭️  DB_RUN_MIGRATIONS=false — schema/reference migrations skipped (frozen schema)');
+    }
+
+    if (SEED_DEMO_DATA) {
+      await insertAdminData();
+      await insertResidentData();
+      console.log('⚠️  SEED_DEMO_DATA=true — demo accounts are present. Never enable this on a public deployment.');
+    } else {
+      console.log('🔒 SEED_DEMO_DATA disabled — demo accounts (A-001 / Maria Santos) were NOT created or reset');
+    }
   } catch (err) {
-    console.error('❌ Error connecting to MySQL:', err);
+    console.error('❌ Error connecting to MySQL:', err.message);
+    if (IS_PROD) {
+      // Fail fast so the orchestrator marks the container unhealthy and restarts it,
+      // instead of serving traffic against a database that was never reachable.
+      console.error('💥 NODE_ENV=production and the database is unreachable — exiting.');
+      process.exit(1);
+    }
     console.log('💡 Make sure XAMPP is running and you created the "waste2goods" database in phpMyAdmin!');
     console.log('💡 Also ensure you imported schema-mysql.sql to create the required tables.');
   }
@@ -214,7 +275,12 @@ async function ensureRolesSeed() {
 
 async function ensureKioskAdminSeed() {
   try {
-    const pwPlain = KIOSK_PIN || '7890';
+    // No PIN configured (the production default) -> never create or reset a kiosk admin.
+    if (!KIOSK_PIN) {
+      console.debug('Kiosk admin seed skipped: KIOSK_PIN is not set');
+      return 0;
+    }
+    const pwPlain = KIOSK_PIN;
     const [rows] = await db.query(
       "SELECT adminId, passwordHash FROM administrators WHERE adminIdentifier = 'kiosk@waste2goods.ph' OR adminId = 'K-001' LIMIT 1"
     );

@@ -10,7 +10,8 @@
     "start": "node src/index.js",
     "start-mysql": "node src/index-mysql.js",
     "test": "node --test src/security/security.test.js",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "redis:check": "node redis-check.mjs"
   },
   "devDependencies": {
     "eslint": "^9.35.0"

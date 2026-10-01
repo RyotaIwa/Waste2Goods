@@ -8,9 +8,36 @@ const DEFAULT_ORIGINS = [
   /^https?:\/\/172\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
 ];
 
+/**
+ * Extra origins allowed to drive mutating requests, from CSRF_ORIGINS
+ * (comma-separated). Mirrors the CORS_ORIGINS handling in index-mysql.js so the
+ * two allowlists cannot drift apart.
+ *
+ * Required whenever the frontends are served from a DIFFERENT host than the API,
+ * e.g. Cloudflare Pages + a separate API host, or a Vercel/Netlify SPA calling a
+ * DigitalOcean backend. Same-origin deployments (Caddy serving the SPA and the
+ * API on one domain) need nothing here — origin === hostOrigin short-circuits
+ * in csrfOriginGuard below.
+ *
+ * Each entry is an exact origin, or a /regex/ if wrapped in slashes.
+ */
+const EXTRA_ORIGINS = (process.env.CSRF_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((raw) => {
+    if (raw.startsWith('/') && raw.endsWith('/')) {
+      try { return new RegExp(raw.slice(1, -1)); } catch { return null; }
+    }
+    // Escape regex metacharacters so a literal domain stays literal.
+    return new RegExp(`^${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
+  })
+  .filter(Boolean);
+
 export function originAllowed(origin) {
   if (!origin) return true;
-  return DEFAULT_ORIGINS.some((re) => re.test(origin));
+  if (DEFAULT_ORIGINS.some((re) => re.test(origin))) return true;
+  return EXTRA_ORIGINS.some((re) => re.test(origin));
 }
 
 const NULL_ORIGIN = 'null';

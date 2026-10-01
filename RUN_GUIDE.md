@@ -19,6 +19,7 @@
 | **Mobile App (PWA)** | `5173` | `http://localhost:5173` | `http://192.168.1.164:5173` | Resident gamified recycling & rewards interface |
 | **Admin Panel** | `5174` | `http://localhost:5174` | `http://192.168.1.164:5174` | Barangay staff analytics, user management, redemption workflow |
 | **Kiosk App** | `5175` | `http://localhost:5175` | `http://192.168.1.164:5175` | On-site kiosk terminal interface for bottle drop-off & weighing |
+| **Redis** (Docker) | `6379` | `127.0.0.1:6379` | — | Shared cache, rate-limit counters, refresh tokens & OAuth state (optional — auto-falls back to in-memory) |
 
 ---
 
@@ -105,7 +106,38 @@ cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype"
 npm install
 ```
 
-### 3️⃣ Allow LAN Inbound Traffic (Firewall Rule)
+### 3️⃣ Start Redis (Shared Cache & Rate-Limit Store)
+
+> Optional but required for the "Availability, Caching & CDN" rubric column — without it the backend silently uses an in-memory fallback.
+
+```powershell
+cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype"
+
+# Starts Docker Desktop if needed, then creates/starts the w2g-redis container
+pwsh -File scripts/redis.ps1 up
+
+# Anytime: is it running and reachable?
+pwsh -File scripts/redis.ps1 status
+```
+
+`packages/backend/.env` must contain `REDIS_ENABLED=true` (already set). Then confirm the app is really using it:
+
+```powershell
+npm run redis:check
+```
+
+**Expected output:**
+```
+Connection state:
+  backend mode        : redis
+  host                : 127.0.0.1:6379
+Result:
+  [ok] Redis backend ACTIVE at 127.0.0.1:6379 (db 0) - all round-trip checks passed.
+```
+
+Other actions: `pwsh -File scripts/redis.ps1 down | logs | reset` (reset wipes cached data).
+
+### 4️⃣ Allow LAN Inbound Traffic (Firewall Rule)
 If your phone cannot reach your PC, run this once in PowerShell **as Administrator**:
 ```powershell
 $ports = @(3001, 5173, 5174, 5175)
@@ -193,6 +225,35 @@ Open **`http://localhost:5175`** in your browser.
 ---
 
 ## 🧪 Testing & DevSecOps Commands
+
+### Verify Redis is Actually Being Used
+```powershell
+cd "C:\Users\USER\Downloads\Gamified Recycling Platform Prototype"
+
+# 1. Container up + reachable?
+pwsh -File scripts/redis.ps1 status
+
+# 2. App-side round-trip through the real redis-client.js
+npm run redis:check
+
+# 3. Keys the app has written into Redis (namespace w2g:)
+docker exec w2g-redis redis-cli --scan --pattern 'w2g:*'
+```
+Expected `w2g:*` key families:
+| Key pattern | What it proves |
+|---|---|
+| `w2g:cache:*` | Response cache (3-tier) is in Redis |
+| `w2g:rl:*` | All 8 rate-limit tiers share counters via Redis |
+| `w2g:rt:*` | Refresh tokens (JWT rotation) stored in Redis |
+| `w2g:jti:revoked:*` | Logout/JWT revocation blacklist |
+| `w2g:ac:*` | OAuth authorization codes |
+
+Also check the live API (admin token required):
+```powershell
+curl.exe -s http://localhost:3001/api/security/redis-stats -H "Authorization: Bearer $t"
+# → "backend":"redis","connected":true,"host":"127.0.0.1:6379"
+```
+If Redis is stopped, the same endpoint reports `"backend":"memory"` and the app keeps working (graceful fallback).
 
 ### Run Unit Tests (8/8 Pass)
 ```powershell

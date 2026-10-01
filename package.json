@@ -19,6 +19,7 @@
     "build:kiosk": "cd packages/kiosk-app && npm run build",
     "build:mobile": "cd packages/mobile-app && npm run build",
     "test": "npm test --workspace=@waste2goods/backend",
+    "redis:check": "npm run redis:check --workspace=@waste2goods/backend",
     "test:coverage": "c8 --reporter=lcov --reporter=text-summary npm test",
     "lint": "npm run lint --workspace=@waste2goods/backend",
     "audit:ci": "npm audit --omit=dev --audit-level=high"
