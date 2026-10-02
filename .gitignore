@@ -40,9 +40,9 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# XAMPP / local DB dumps
+# XAMPP / local DB dumps — NEVER track data dumps (they contain password
+# hashes, phone numbers, emails). Schema templates stay tracked.
 *.sql
-!waste2goods.sql
 !packages/backend/database/*.sql
 
 # Chat exports, temporary files & binaries
