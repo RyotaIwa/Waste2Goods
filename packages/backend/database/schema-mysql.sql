@@ -41,15 +41,17 @@ CREATE TABLE `administrators` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Dumping data for table `administrators`
+-- No data for table `administrators`.
 --
-
-INSERT INTO `administrators` (`adminId`, `email`, `adminIdentifier`, `firstName`, `lastName`, `passwordHash`, `barangayId`, `roleId`, `createdAt`, `status`) VALUES
-('A-001', 'admin@waste2goods.ph', 'admin@waste2goods.ph', 'Juan', 'Reyes', '$2b$10$qnruxAhxIyuYN.m3AG6w7OmgqaayY3OIanhtQ2ZYVTcJ4LKWOufYy', 1, 1, '2026-07-26 19:00:00', 'active'),
-('A-002', 'jose@waste2goods.ph', 'jose@waste2goods.ph', 'Jose', 'Manaloto', 'hashed_AdminCabantian2025', 1, 2, '2026-07-26 20:02:18', 'active'),
-('A-003', 'jakecy@gmail.com', 'jakecy@gmail.com', 'jake', 'cyrus', 'hashed_123456', 1, 1, '2026-07-27 19:42:31', 'active'),
-('A-004', 'pedro@gmail.com', 'pedro@gmail.com', 'pedro', 'siga', 'hashed_123456', 1, 1, '2026-07-27 19:47:07', 'active'),
-('K-001', 'kiosk@waste2goods.ph', 'kiosk@waste2goods.ph', 'Kiosk', 'Terminal', '$2b$10$mkHi8L5Nd3Qp2HwqDkDJWOuv4iTtq84KXISwpDOcWxJkyShgzaqBS', 1, 5, '2026-09-15 02:30:24', 'active');
+-- Admin rows are deliberately NOT kept in this tracked file: they carry bcrypt
+-- password hashes and real personal emails, and this repository is public.
+-- Live data reaches a deployment separately — see DEPLOYMENT.md →
+-- "Importing the real data dump".
+--
+-- On a completely fresh install the first admin comes from the seeder instead:
+-- set SEED_DEMO_DATA=true plus ADMIN_EMAIL / ADMIN_PASSWORD, boot once, change
+-- the password in the UI, then set SEED_DEMO_DATA=false again.
+--
 
 -- --------------------------------------------------------
 
@@ -329,29 +331,17 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
--- Dumping data for table `users`
+-- No data for table `users`.
 --
-
-INSERT INTO `users` (`userId`, `firstName`, `lastName`, `email`, `passwordHash`, `qr_code`, `barangayId`, `total_points`, `pointsBalance`, `totalSubmissions`, `createdAt`, `status`, `phone`, `province`, `city`, `barangayName`, `streetAddress`, `tier`) VALUES
-('U-001', 'jq', 'lag', 'jq@gmail.com', '$2b$10$8RDf4L0Uqxj1ViNCEESrTuO4Zz2YB.G4/IC/8BrJFIWguBuAi5nQ2', 'U-001-8xJKz', 1, 50, 1050, 0, '2026-07-26 19:14:40', 'active', '09943211341', 'Davao del Sur', 'Davao City', 'Cabantian', NULL, 'Bronze'),
-('U-002', 'dm', 'cb', 'dmcb@gmail.com', 'hashed_123333', 'U-002-7cTba', 1, 50, 50, 0, '2026-07-26 19:17:43', 'active', '092222222', 'Davao del Sur', 'Davao City', 'Cabantian', NULL, 'Bronze'),
-('U-003', 'kuya', 'hapon', 'hapon@gmail.com', 'hashed_123456', 'U-003-9pMne', 1, 50, 50, 0, '2026-07-26 20:04:17', 'active', '0909090909', 'Davao del Sur', 'Davao City', 'Cabantian', NULL, 'Bronze'),
-('U-004', 'komi', 'sama', 'komisama@gmail.com', 'hashed_111111', 'U-004-2sWpr', 1, 50, 50, 0, '2026-07-27 16:41:52', 'active', '0912345678', 'Davao del Sur', 'Davao City', 'Cabantian', 'rizal street', 'Bronze'),
-('U-005', 'tide', 'hunter', 'tide@gmail.com', 'hashed_123456', '', 1, 0, 50, 0, '2026-07-27 19:49:20', 'active', '0909090909', 'Davao del Sur', 'Davao City', 'Cabantian', 'street', 'Bronze'),
-('U-007', 'Daniella', 'Marie C. Bello', 'dvo.dmcb.smiling@gmail.com', 'hashed_esmiringhoy23', 'U-007-40okq', 1, 50, 50, 0, '2026-07-31 02:59:18', 'active', '09364575307', 'Davao del Sur', 'Davao City', 'Cabantian', 'Country homes village ', 'Bronze'),
-('U-008', 'Ryota', 'J. Iwamoto', 'ryota.iwamoto@jmc.edu.ph', 'hashed_rsyiwamoto', 'U-008-gbl34', 1, 50, 50, 0, '2026-07-31 03:02:56', 'active', '9762656880', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-009', 'Sheandrew', 'Otomawi', 'ryota.ajinomoto@jmc.edu.ph', 'hashed_rsyiwamoto', 'U-009-y9vxt', 1, 50, 50, 0, '2026-08-07 09:35:24', 'active', '9762656880', 'Davao del Sur', 'Davao City', 'Buhangin', '', 'Bronze'),
-('U-010', 'Maria', 'Santos', 'resident@cabantian.ph', '$2b$10$lYb.yHVwNP8YO/5FhHYpEeEo/UT/PqZUQhWOyXlW1XavvQfnRZHk2', 'U-010-QRSA1', 1, 50, 50, 0, '2026-09-15 02:58:53', 'active', '+63 917 123 4567', 'Davao del Sur', 'Davao City', 'Cabantian', 'Cabantian Road', 'Bronze'),
-('U-011', 'Lagrama', 'Koikois', 'lagramakoikois@gmail.com', '$2b$10$rkSUoolnz1EXChfRBmWcvu.i/.CyMDJpaTdn0xTwrt0OkSPIfxP3y', 'U-011-wt3ij', 1, 50, 50, 0, '2026-09-15 04:42:07', 'active', '', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-012', 'Alice', 'Google', 'alice.google@gmail.com', '$2b$10$cmaLzvJPazsMNa8dCBM7Xud26yA7K0q5ePWQX5YyX12p9doZH73kq', 'U-012-hol0j', 1, 50, 50, 0, '2026-09-15 04:46:08', 'active', '', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-013', 'jaya', 'Lastname', 'harubochi004@gmail.com', '$2b$10$EP7b2ZwPJXcwmRhYsTJkleQ7oNyZH267g8GXkTs3YtXAwv8Fc7Rny', 'U-013-qe1yb', 1, 50, 50, 0, '2026-09-15 04:52:36', 'active', '09943211341', 'Davao de Oro', 'Compostela', 'Poblacion', 'block 15', 'Bronze'),
-('U-014', 'eren', 'yeager', 'harubochi2@gmail.com', '$2b$10$FZemVO1/ZkI9p7H9pADT3eSFBvaLghoTaJ92ElszfmNq2dGo782Lq', 'U-014-d8osb', 1, 50, 50, 0, '2026-09-15 05:10:30', 'active', '0909090909', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-015', 'lily', 'cruz', 'lily@gmail.com', '$2b$10$u5KaxXMxoT3t3cUtYyNfQ.Q.hnH3xozfBER3XuTHQAwa2ChPfOLI2', 'U-015-9u3o1', 1, 50, 50, 0, '2026-09-15 06:36:22', 'active', '09945678901', 'Davao de Oro', 'Compostela', 'Moncado', 'block 16', 'Bronze'),
-('U-016', 'daniella', 'bello', 'daniella.bello@jmc.edu.ph', '$2b$10$st0rOc3reXBdAn2XFDsjTu9AzG5BFLRfVaUcx1XOU1z3xi./Cy03e', 'U-016-nut7s', 1, 50, 50, 0, '2026-09-15 06:43:24', 'active', '', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-017', 'Juan', 'Dela Cruz', 'juan.test.1789454802690@cabantian.ph', '$2b$10$BrQowJcTVMQnRVrGHLUzpeA56zuhGGqe19ATAtgoZ2qQIoGowZHb.', 'U-017-9imok', 1, 50, 50, 0, '2026-09-15 06:46:43', 'active', '09123456789', 'Davao del Sur', 'Davao City', 'Cabantian', 'Purok 5', 'Bronze'),
-('U-018', 'juan', 'tamad', 'juan@gmail.com', '$2b$10$gtASU7gEP.yK18S0ugXrNuWAN6DOp1XaHzik9ZuWhg48T8N/2mzLC', 'U-018-xcje9', 1, 50, 50, 0, '2026-09-15 06:54:17', 'active', '09943211341', 'Davao del Sur', 'Davao City', 'Tugbok', 'block 16', 'Bronze'),
-('U-019', 'Jayquio', 'Lagrama', 'jayquio.lagrama@jmc.edu.ph', '$2b$10$9qC0Yee1HuL8i8oR7EMOc.zETdQmCMdp3fUd/3zS0wU8LtMmA5f.K', 'U-019-u3qqg', 1, 50, 50, 0, '2026-09-17 16:42:34', 'active', '', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze'),
-('U-020', 'haru', 'bochi1', 'harubochi1@gmail.com', '$2b$10$QLeSqdmmb1f6MCumL5ltveH0eN4wKrXs0Lvo0qX7hJrb8HX6sUTvu', 'U-020-kj3yp', 1, 50, 50, 0, '2026-09-27 18:22:20', 'active', '', 'Davao del Sur', 'Davao City', 'Cabantian', '', 'Bronze');
+-- Resident rows are deliberately NOT kept in this tracked file: they carry
+-- bcrypt / `hashed_*` password hashes, real names, emails and phone numbers,
+-- and this repository is public. Live data reaches a deployment separately —
+-- see DEPLOYMENT.md → "Importing the real data dump".
+--
+-- On a completely fresh install the demo resident (U-010 / Maria Santos) comes
+-- from the seeder instead: set SEED_DEMO_DATA=true plus RESIDENT_EMAIL /
+-- RESIDENT_PASSWORD, boot once, then set SEED_DEMO_DATA=false again.
+--
 
 -- --------------------------------------------------------
 
@@ -376,7 +366,15 @@ CREATE TABLE `user_task_progress` (
 --
 DROP TABLE IF EXISTS `tasks`;
 
-CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `tasks`  AS SELECT `recycling_tasks`.`taskId` AS `taskId`, `recycling_tasks`.`taskName` AS `taskName`, `recycling_tasks`.`description` AS `description`, `recycling_tasks`.`bonus_points` AS `bonus_points`, `recycling_tasks`.`bonusPoints` AS `bonusPoints`, `recycling_tasks`.`targetKg` AS `targetKg`, `recycling_tasks`.`startDate` AS `startDate`, `recycling_tasks`.`endDate` AS `endDate`, `recycling_tasks`.`progress` AS `progress`, `recycling_tasks`.`target` AS `target`, `recycling_tasks`.`frequency` AS `frequency`, `recycling_tasks`.`barangayId` AS `barangayId`, `recycling_tasks`.`materialId` AS `materialId`, `recycling_tasks`.`status` AS `status` FROM `recycling_tasks` ;
+-- NOTE: the hardcoded `DEFINER=root@localhost` from the phpMyAdmin dump was
+-- removed on purpose. That account does not exist everywhere this file is
+-- imported (it does not exist for a TCP import into the mysql:8 container, nor
+-- on DigitalOcean Managed MySQL), which produced
+-- "ERROR 1449 (HY000): The user specified as a definer does not exist".
+-- With the clause omitted, MySQL records the importing user as the definer,
+-- which always exists. `ensureTasksView()` in db-mysql.js creates an identical
+-- view when one is missing, so behaviour is unchanged.
+CREATE ALGORITHM=UNDEFINED SQL SECURITY DEFINER VIEW `tasks`  AS SELECT `recycling_tasks`.`taskId` AS `taskId`, `recycling_tasks`.`taskName` AS `taskName`, `recycling_tasks`.`description` AS `description`, `recycling_tasks`.`bonus_points` AS `bonus_points`, `recycling_tasks`.`bonusPoints` AS `bonusPoints`, `recycling_tasks`.`targetKg` AS `targetKg`, `recycling_tasks`.`startDate` AS `startDate`, `recycling_tasks`.`endDate` AS `endDate`, `recycling_tasks`.`progress` AS `progress`, `recycling_tasks`.`target` AS `target`, `recycling_tasks`.`frequency` AS `frequency`, `recycling_tasks`.`barangayId` AS `barangayId`, `recycling_tasks`.`materialId` AS `materialId`, `recycling_tasks`.`status` AS `status` FROM `recycling_tasks` ;
 
 --
 -- Indexes for dumped tables

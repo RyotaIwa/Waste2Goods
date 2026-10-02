@@ -238,6 +238,53 @@ You should see `users`, `administrators`, `rewards`, `recycling_transactions`, �
 > To re-import from scratch: `docker compose down -v` (⚠️ destroys all data) then
 > `docker compose up -d --build`.
 
+### Importing the real data dump (resident + admin accounts)
+
+`schema-mysql.sql` is intentionally **schema only** — it creates the 11 tables and
+the `tasks` view but contains **no** `users` or `administrators` rows, because
+those carry bcrypt hashes, emails and phone numbers and this repo is public.
+So after the schema step above, the database has **zero accounts** and nobody can
+log in yet. Populate it once from a data-only dump:
+
+**1. Export from XAMPP — on your PC (PowerShell)**
+
+```powershell
+& "C:\xampp\mysql\bin\mysqldump.exe" -u root --add-drop-table --routines --events waste2goods > "$env:USERPROFILE\Downloads\waste2goods-data.sql"
+```
+
+**2. Copy it up**
+
+```powershell
+scp "$env:USERPROFILE\Downloads\waste2goods-data.sql" deploy@<droplet-ip>:/tmp/
+```
+
+**3. Import — on the droplet, as `deploy`**
+
+```bash
+cd ~/waste2goods
+set -a; source .env; set +a
+docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$DB_NAME" < /tmp/waste2goods-data.sql
+rm -f /tmp/waste2goods-data.sql
+```
+
+**4. Verify**
+
+```bash
+docker compose exec db mysql -u root -p"$MYSQL_ROOT_PASSWORD" \
+  -e "SELECT COUNT(*) AS users FROM users; SELECT COUNT(*) AS admins FROM administrators;" "$DB_NAME"
+```
+
+Expected from the Oct-2026 dump: **19 users, 5 admins**.
+
+> ⚠️ **Never commit a data dump.** `.gitignore` blocks `*.sql` except
+> `packages/backend/database/*.sql`, and `schema-mysql.sql` is the only file that
+> belongs in git. Data travels by `scp` only.
+
+> ⚠️ `SEED_DEMO_DATA` must stay `false`. With `true` the seeder re-creates
+> A-001 + Maria Santos and **resets their password hashes on every boot**,
+> overwriting what you just imported.
+
+---
 ---
 
 ## Step 5 — Verify the stack
@@ -461,6 +508,12 @@ history.
 ## Security checklist (do it before going public)
 
 - [x] `.env` gitignored — **verified**: only `.env.example` is tracked
+- [x] No live data dumps tracked — **verified**: `schema-mysql.sql` is schema-only;
+      `git ls-files` returns no data dump. `*.sql` is ignored except
+      `packages/backend/database/*.sql`
+- [ ] Legacy `hashed_*` password hashes replaced with bcrypt (`comparePassword()`
+      still accepts `hashed_<plaintext>`, so those accounts are effectively
+      plaintext — see the import section in Step 4)
 - [ ] `JWT_SECRET` / `JWT_REFRESH_SECRET` rotated and unique to production
 - [ ] `SEED_DEMO_DATA=false`
 - [ ] `KIOSK_PIN` set to something non-trivial (or intentionally empty)
