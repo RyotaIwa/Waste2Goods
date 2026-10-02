@@ -1,0 +1,31 @@
+# ════════════════════════════════════════════════════════════════════
+# Waste2Goods — use DigitalOcean Managed MySQL instead of the local `db`
+# container.
+#
+# Usage (on the droplet, as `deploy`):
+#   1. Fill DB_* in .env with your Managed DB values (see below).
+#   2. Put DO's CA at ./certs/ca-certificate.crt (download from
+#      Databases → your cluster → Connection Details → Download CA).
+#   3. Start with BOTH files:
+#        docker compose -f docker-compose.yml -f docker-compose.managed-db.yml up -d --build
+#
+# What this does:
+#   - api no longer waits for / requires the local `db` container.
+#   - mounts the CA cert read-only into api at /certs/ca-certificate.crt
+#     (matches DB_SSL_CA in .env).
+#   - disables the local `db` service (scale 0) so it uses no RAM.
+# ════════════════════════════════════════════════════════════════════
+
+services:
+  api:
+    depends_on:
+      redis:
+        condition: service_started
+    volumes:
+      - ./certs/ca-certificate.crt:/certs/ca-certificate.crt:ro
+
+  # Local MySQL is not needed when Managed MySQL is used.
+  # `scale: 0` keeps the service defined (so nothing else breaks)
+  # but starts zero containers.
+  db:
+    scale: 0
