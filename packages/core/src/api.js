@@ -12,9 +12,31 @@ import {
   DEMO_KIOSK_USER,
 } from "./constants.js";
 
-// API Configuration — host in localStorage (change Wi‑Fi without rebuild)
+// API Configuration.
+// Production (waste2goods.site, Cloudflare + Caddy): ALWAYS same-origin "/api".
+// Local dev (localhost / LAN IP): keep the manual host override.
 const API_HOST_STORAGE_KEY = "w2g_api_host";
 const DEFAULT_API_HOST = "localhost";
+
+function isDeployedSite() {
+  try {
+    const hn = (typeof window !== "undefined" && window.location
+      ? window.location.hostname || ""
+      : "").toLowerCase();
+    return hn !== "" && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1"
+      && !hn.startsWith("192.168.") && !hn.startsWith("10.")
+      && !hn.startsWith("172.16.") && !hn.startsWith("172.17.")
+      && !hn.startsWith("172.18.") && !hn.startsWith("172.19.")
+      && !hn.startsWith("172.2") && !hn.startsWith("172.30.")
+      && !hn.startsWith("172.31.") && !hn.endsWith(".local");
+  } catch {
+    return false;
+  }
+}
+
+export function isServerIpPanelEnabled() {
+  return !isDeployedSite();
+}
 
 function parseHostAndPort(rawInput) {
   let str = (rawInput || "").trim();
@@ -79,6 +101,8 @@ export function setApiHost(rawHost) {
 }
 
 export function getApiBaseUrl() {
+  // Deployed site: same-origin, ignore any stale localStorage host/port.
+  if (isDeployedSite()) return "/api";
   const host = getApiHost();
   let port = "3001";
   try {
@@ -89,6 +113,18 @@ export function getApiBaseUrl() {
 }
 
 export async function testApiConnection() {
+  if (isDeployedSite()) {
+    try {
+      const res = await fetch("/", {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) return { ok: true, message: "Connected to this site (same-origin /api)" };
+      return { ok: false, message: `Server responded with HTTP ${res.status}` };
+    } catch {
+      return { ok: false, message: "Cannot reach this site — check your connection" };
+    }
+  }
   const host = getApiHost();
   let port = "3001";
   try {

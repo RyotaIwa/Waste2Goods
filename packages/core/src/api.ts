@@ -31,12 +31,38 @@ import {
   DEMO_KIOSK_USER,
 } from "./constants";
 
-// API Configuration — host stored in localStorage so mobile/kiosk can switch Wi‑Fi without rebuild.
-// On DigitalOcean / production builds, prefer VITE_API_BASE_URL (absolute or origin-relative "/api")
-// so the UI hits the Nginx reverse proxy on the same HTTPS domain (no port number needed).
+// API Configuration.
+// Production (waste2goods.site, Cloudflare + Caddy): ALWAYS same-origin "/api".
+// The app is served from the same domain as the API, so no host, port, or
+// protocol configuration is needed. A stale localStorage host (e.g. a LAN IP
+// saved during development) must NEVER override this.
+// Local dev (localhost / LAN IP): keep the manual host override so phones on
+// Wi-Fi can point at the dev PC without a rebuild.
 const API_HOST_STORAGE_KEY = "w2g_api_host";
 const API_PORT_STORAGE_KEY = "w2g_api_port";
 const API_PROTOCOL_STORAGE_KEY = "w2g_api_protocol";
+
+/** True when running from the deployed site (not localhost / LAN dev). */
+function isDeployedSite(): boolean {
+  try {
+    const hn = (typeof window !== "undefined" && window.location
+      ? window.location.hostname || ""
+      : "").toLowerCase();
+    return hn !== "" && hn !== "localhost" && hn !== "127.0.0.1" && hn !== "::1"
+      && !hn.startsWith("192.168.") && !hn.startsWith("10.")
+      && !hn.startsWith("172.16.") && !hn.startsWith("172.17.")
+      && !hn.startsWith("172.18.") && !hn.startsWith("172.19.")
+      && !hn.startsWith("172.2") && !hn.startsWith("172.30.")
+      && !hn.startsWith("172.31.") && !hn.endsWith(".local");
+  } catch {
+    return false;
+  }
+}
+
+/** True when the "Backend Server IP" dev panel should be shown (local dev only). */
+export function isServerIpPanelEnabled(): boolean {
+  return !isDeployedSite();
+}
 
 const STATIC_BASE_URL: string | undefined = (
   typeof (import.meta as any)?.env?.VITE_API_BASE_URL === "string" && (import.meta as any).env.VITE_API_BASE_URL !== ""
@@ -154,6 +180,9 @@ export function setApiProtocol(proto: "http" | "https") {
 }
 
 export function getApiBaseUrl(): string {
+  // Deployed site (waste2goods.site): same-origin, ignore any stale localStorage.
+  // VITE_API_BASE_URL still wins when set at build time (Cloudflare Pages split).
+  if (isDeployedSite() && !STATIC_BASE_URL) return "/api";
   if (STATIC_BASE_URL) {
     if (STATIC_BASE_URL.startsWith("http://") || STATIC_BASE_URL.startsWith("https://") || STATIC_BASE_URL.startsWith("/")) {
       return STATIC_BASE_URL.endsWith("/api") ? STATIC_BASE_URL : `${STATIC_BASE_URL.replace(/\/$/, "")}/api`;
@@ -168,6 +197,11 @@ export function getApiBaseUrl(): string {
 
 export async function testApiConnection(): Promise<{ ok: boolean; message: string }> {
   try {
+    if (isDeployedSite() && !STATIC_BASE_URL) {
+      const res = await fetch("/", { method: "GET", signal: AbortSignal.timeout(8000) });
+      if (res.ok) return { ok: true, message: "Connected to this site (same-origin /api)" };
+      return { ok: false, message: `Server responded with HTTP ${res.status}` };
+    }
     if (STATIC_BASE_URL) {
       const root = STATIC_BASE_URL.endsWith("/api") ? STATIC_BASE_URL.slice(0, -"/api".length) || "/" : "/";
       let url = "/";

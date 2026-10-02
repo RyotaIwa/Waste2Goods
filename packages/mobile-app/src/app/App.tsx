@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Waste2GoodsAPI, getApiHost, setApiHost as persistApiHost, getApiBaseUrl, testApiConnection } from "@waste2goods/core";
+import { Waste2GoodsAPI, getApiHost, setApiHost as persistApiHost, getApiBaseUrl, testApiConnection, isServerIpPanelEnabled } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
 import {
   Monitor, Recycle, Home, QrCode, Gift,
@@ -269,6 +269,11 @@ function saveServerIp(apiHost: string, onSaved?: (msg: { type: "ok" | "err"; tex
 function getBackendOrigin(): string {
   try {
     const base = getApiBaseUrl();
+    if (base === "/api" || base.startsWith("/")) {
+      return typeof window !== "undefined" && window.location
+        ? window.location.origin
+        : "http://localhost:3001";
+    }
     if (base.startsWith("http://") || base.startsWith("https://")) {
       return base.replace(/\/api\/?$/, "");
     }
@@ -308,6 +313,9 @@ function ServerIpPanel({
   onSaved?: (msg: { type: "ok" | "err"; text: string }) => void;
   compact?: boolean;
 }>) {
+  // Production (waste2goods.site): the API is same-origin — never show the
+  // LAN-IP panel. Local dev (localhost / LAN IP) keeps it for Wi-Fi testing.
+  if (!isServerIpPanelEnabled()) return null;
   const [testing, setTesting] = useState(false);
   const save = () => {
     saveServerIp(apiHost, onSaved);
@@ -1394,11 +1402,13 @@ function ScreenLogin(p: ScreenLoginProps) {
             <span>{p.loginError}</span>
           </div>
         )}
+        {isServerIpPanelEnabled() && (
         <button type="button" onClick={p.onToggleLoginServer} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0">
           <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
           <ChevronRight className={`w-4 h-4 transition-transform ${p.showLoginServer ? "rotate-90" : ""}`} />
         </button>
-        {p.showLoginServer && (
+        )}
+        {isServerIpPanelEnabled() && p.showLoginServer && (
           <div className="space-y-2 shrink-0">
             {p.loginServerBanner && (
               <div className={`rounded-xl px-3 py-2 text-xs font-bold ${p.loginServerBanner.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{p.loginServerBanner.text}</div>
@@ -2281,7 +2291,7 @@ function ScreenProfile(p: MobileAppRouterProps) {
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </button>
           <button type="button" onClick={() => p.go("settings")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
-            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center"><Settings className="w-4 h-4 text-muted-foreground" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Settings</p><p className="text-[10px] text-muted-foreground font-semibold">Account, server IP, security</p></div></div>
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-muted flex items-center justify-center"><Settings className="w-4 h-4 text-muted-foreground" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Settings</p><p className="text-[10px] text-muted-foreground font-semibold">Account, security</p></div></div>
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </button>
         </div>
@@ -2319,6 +2329,7 @@ function ScreenSettings(p: MobileAppRouterProps) {
             {p.profileSaving ? "Saving..." : "💾 Save Changes"}
           </button>
         </div>
+        {isServerIpPanelEnabled() && (
         <div className="rounded-2xl border border-border bg-white p-5 space-y-3">
           <div className="flex items-center justify-between">
             <div>
@@ -2329,6 +2340,7 @@ function ScreenSettings(p: MobileAppRouterProps) {
           </div>
           <ServerIpPanel apiHost={p.apiHost} setApiHost={p.setApiHost} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
         </div>
+        )}
       </div>
     </div>
   );
