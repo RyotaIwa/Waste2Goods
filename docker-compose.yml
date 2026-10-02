@@ -65,12 +65,14 @@ services:
       PORT: "3001"
 
       # Database
-      DB_HOST: db
-      DB_PORT: "3306"
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
       DB_NAME: ${DB_NAME:-waste2goods}
       DB_USER: ${DB_USER:-w2g}
       DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
-      DB_SSL: "false"                 # same Docker network — no TLS needed
+      DB_SSL: ${DB_SSL:-false}
+      DB_SSL_CA: ${DB_SSL_CA:-}
+      DB_SSL_REJECT_UNAUTHORIZED: ${DB_SSL_REJECT_UNAUTHORIZED:-1}
       DB_RUN_MIGRATIONS: ${DB_RUN_MIGRATIONS:-true}
 
       # Redis
