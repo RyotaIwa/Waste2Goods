@@ -144,31 +144,90 @@ export async function testApiConnection() {
 }
 
 // Auth Helpers
+//
+// Storage is deliberately layered: localStorage → sessionStorage → memory.
+// In-app browsers (Messenger/Instagram/Facebook WebViews), iOS/Android private
+// mode, and "block all cookies" either throw on access or return null. When
+// that happened, the sign-in itself succeeded but the session disappeared on the
+// very next read — so the auth guard bounced the user straight back to the
+// splash/onboarding screen. To the user that reads as "I tap Sign In and it
+// restarts from the beginning". A successful sign-in must at minimum survive for
+// the lifetime of the tab.
 const AUTH_STORAGE_KEY = "w2g_auth_state";
 
-export function getStoredAuth() {
+/** Most recent auth state for this tab. Valid even when web storage is unusable. */
+let cachedAuthState = null;
+
+function readAuthStorage(key) {
   try {
-    const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-    return stored ? JSON.parse(stored) : null;
+    const fromLocal = localStorage.getItem(key);
+    if (fromLocal !== null) return fromLocal;
+  } catch {
+    // localStorage unavailable (private mode / blocked cookies) — try sessionStorage.
+  }
+  try {
+    return sessionStorage.getItem(key);
   } catch {
     return null;
   }
 }
 
-export function setStoredAuth(authState) {
+function writeAuthStorage(key, value) {
+  let persisted = false;
   try {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(authState));
+    localStorage.setItem(key, value);
+    persisted = true;
   } catch {
-    console.warn("Failed to store auth state");
+    // ignore — fall through to sessionStorage.
+  }
+  try {
+    sessionStorage.setItem(key, value);
+    persisted = true;
+  } catch {
+    // ignore — the in-memory cache still holds the session for this tab.
+  }
+  return persisted;
+}
+
+function removeAuthStorage(key) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore — storage was already unavailable.
+  }
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // ignore — storage was already unavailable.
+  }
+}
+
+export function getStoredAuth() {
+  const stored = readAuthStorage(AUTH_STORAGE_KEY);
+  if (stored) {
+    try {
+      cachedAuthState = JSON.parse(stored);
+      return cachedAuthState;
+    } catch {
+      console.warn("Stored auth state is not valid JSON — ignoring it");
+    }
+  }
+  // Storage was empty or unreadable: fall back to this tab's in-memory session.
+  return cachedAuthState;
+}
+
+export function setStoredAuth(authState) {
+  cachedAuthState = authState;
+  if (!writeAuthStorage(AUTH_STORAGE_KEY, JSON.stringify(authState))) {
+    console.warn(
+      "Browser storage is unavailable — staying signed in for this tab only; the session will not survive a reload."
+    );
   }
 }
 
 export function clearStoredAuth() {
-  try {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-  } catch {
-    console.warn("Failed to clear auth state");
-  }
+  cachedAuthState = null;
+  removeAuthStorage(AUTH_STORAGE_KEY);
 }
 
 // Generic Fetcher

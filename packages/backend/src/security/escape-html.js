@@ -69,9 +69,21 @@ const ALLOWED_HOSTNAMES = new Set([
   '127.0.0.1',
   'waste2goods.ph',
   'app.waste2goods.ph',
+  'waste2goods.site',
+  'www.waste2goods.site',
   'accounts.google.com',
   'github.com',
 ]);
+
+// Hosts an operator adds at deploy time via the REDIRECT_ALLOWED_HOSTS env var
+// (comma-separated). Lets a custom domain send OAuth users back to itself
+// without a code change. Parsed lazily so a missing var is harmless.
+function extraAllowedHosts() {
+  return String(process.env.REDIRECT_ALLOWED_HOSTS || '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 /**
  * Checks if a hostname is on the approved allowlist for redirects.
@@ -84,10 +96,41 @@ export function isHostAllowed(hostname) {
   const host = String(hostname).toLowerCase().trim();
   if (ALLOWED_HOSTNAMES.has(host)) return true;
   if (host.endsWith('.waste2goods.ph')) return true;
+  if (host.endsWith('.waste2goods.site')) return true;
+  if (extraAllowedHosts().includes(host)) return true;
   if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   if (/^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host)) return true;
   return false;
+}
+
+/** True for loopback / RFC1918 hosts, which are served over plain http in dev. */
+function isPrivateHost(host) {
+  return (
+    /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host) ||
+    /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host)
+  );
+}
+
+/**
+ * Builds the public origin (scheme + host) that the current request arrived on.
+ *
+ * OAuth callbacks must return users to the app they started from. The previous
+ * hardcoded `http://${host}:5173` only worked on a dev machine, so on a real
+ * deployment the callback redirected to a dead port and the user was dropped
+ * back at the splash screen with no session. Deriving the origin from the
+ * request follows the real domain automatically.
+ *
+ * @param {import('express').Request} req - Express request object
+ * @param {string} [fallback] - Origin used when the host header is unusable
+ * @returns {string} Origin such as `https://waste2goods.site`
+ */
+export function requestOrigin(req, fallback = 'http://localhost:5173') {
+  const host = String(req?.get?.('host') || '').trim();
+  // Keep only a plain host[:port] — never let a crafted header inject a path.
+  if (!/^[a-zA-Z0-9.:[\]-]+$/.test(host)) return fallback;
+  const secure = req?.protocol === 'https' || !isPrivateHost(host);
+  return `${secure ? 'https' : 'http'}://${host}`;
 }
 
 /**
@@ -200,6 +243,7 @@ export default {
   isHostAllowed,
   isSafeRedirectUrl,
   sanitizeRedirectUrl,
+  requestOrigin,
   safeRedirect,
   sanitizeLog,
 };

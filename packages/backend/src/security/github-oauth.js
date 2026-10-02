@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
-import { sanitizeRedirectUrl, safeRedirect } from './escape-html.js';
+import { sanitizeRedirectUrl, safeRedirect, requestOrigin } from './escape-html.js';
 
 const STATE_PREFIX = 'gh:oauth:state:';
 const CODE_PREFIX = 'gh:oauth:code:';
@@ -200,8 +200,14 @@ export function attachGitHubOAuth(app) {
   app.get('/api/auth/github/callback', async (req, res) => {
     const { code, error } = req.query;
     let state = String(req.query.state || '');
+    // Every failure redirects back to the app with an `oauth_error` code so the
+    // user sees the login screen plus a reason instead of a dead-end JSON page.
+    const failAuth = (reason) => {
+      const params = new URLSearchParams({ oauth_error: String(reason) });
+      return safeRedirect(res, `${requestOrigin(req)}/?${params.toString()}`, 302);
+    };
     if (error) {
-      return res.status(400).json({ error: String(error) });
+      return failAuth(error);
     }
     let saved = await loadState(state);
     if (!saved) {
@@ -213,10 +219,10 @@ export function attachGitHubOAuth(app) {
     try {
       profile = await resolveGitHubProfile(code, req);
       if (!profile) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown demo authorization code' });
+        return failAuth('invalid_grant');
       }
     } catch (err) {
-      return res.status(400).json({ error: 'github_token_exchange_failed', detail: err.message });
+      return failAuth(err?.message || 'github_token_exchange_failed');
     }
 
     const userRecord = await findOrCreateOAuthUser(profile, { provider: 'github' });
@@ -236,7 +242,6 @@ export function attachGitHubOAuth(app) {
 
     // Determine redirect target
     const returnTo = sanitizeRedirectUrl(saved?.returnTo, '/');
-    const clientHost = req.hostname || 'localhost';
 
     // If returnTo is an external URL (mobile app or custom origin), redirect with tokens.
     // Parse the URL first to break taint tracking and prevent open-redirect forging (S5146).
@@ -254,14 +259,13 @@ export function attachGitHubOAuth(app) {
         // safeRedirect re-validates the hostname against the allowlist before redirecting
         return safeRedirect(res, u.toString(), 302);
       } catch {
-        return safeRedirect(res, '/', 302);
+        return failAuth('invalid_return_to');
       }
     }
 
 
     // Redirect directly to the mobile app — no server-side HTML interpolation of tainted values.
     // All user data is passed as URL-encoded query params handled by the client (S5131 fix).
-    const safeClientHost = /^[a-zA-Z0-9.-]+$/.test(clientHost) ? clientHost : 'localhost';
     const mobileParams = new URLSearchParams({
       token: access.accessToken,
       refreshToken: refresh.refreshToken,
@@ -270,8 +274,7 @@ export function attachGitHubOAuth(app) {
       email: String(userRecord.email),
       provider: 'github',
     });
-    const mobileAppUrl = `http://${safeClientHost}:5173/?${mobileParams.toString()}`;
-    return safeRedirect(res, mobileAppUrl, 302);
+    return safeRedirect(res, `${requestOrigin(req)}/?${mobileParams.toString()}`, 302);
   });
 }
 

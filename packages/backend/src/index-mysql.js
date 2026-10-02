@@ -591,8 +591,12 @@ function buildAdminUserFromDb(adm, normalizedEmail) {
 }
 
 function buildResidentUserFromDb(user) {
+  // `user` is a raw `users` row. Spreading it wholesale echoed the bcrypt
+  // passwordHash (and qr_code) back to the client in every login/register/OAuth
+  // response, so strip the credential columns before shaping the payload.
+  const { passwordHash: _passwordHash, ...safeUser } = user;
   return {
-    ...user,
+    ...safeUser,
     id: user.userId,
     name: `${user.firstName} ${user.lastName}`,
     barangay: user.barangayName || 'Cabantian',

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
-import { sanitizeRedirectUrl, safeRedirect } from './escape-html.js';
+import { sanitizeRedirectUrl, safeRedirect, requestOrigin } from './escape-html.js';
 
 const STATE_PREFIX = 'google:oauth:state:';
 const CODE_PREFIX = 'google:oauth:code:';
@@ -208,8 +208,16 @@ export function attachGoogleOAuth(app) {
   app.get('/api/auth/google/callback', async (req, res) => {
     const { code, error } = req.query;
     let state = String(req.query.state || '');
+    // Every failure redirects back to the app with an `oauth_error` code so the
+    // user sees the login screen plus a reason. Returning bare JSON here left
+    // them on a dead-end page (or, for a silent failure, back at the splash
+    // screen) with no idea that sign-in had failed at all.
+    const failAuth = (reason) => {
+      const params = new URLSearchParams({ oauth_error: String(reason) });
+      return safeRedirect(res, `${requestOrigin(req)}/?${params.toString()}`, 302);
+    };
     if (error) {
-      return res.status(400).json({ error: String(error) });
+      return failAuth(error);
     }
     let saved = await loadState(state);
     if (!saved) {
@@ -221,10 +229,10 @@ export function attachGoogleOAuth(app) {
     try {
       profile = await resolveGoogleProfile(code, req);
       if (!profile) {
-        return res.status(400).json({ error: 'invalid_grant', error_description: 'Unknown or expired authorization code' });
+        return failAuth('invalid_grant');
       }
     } catch (err) {
-      return res.status(400).json({ error: 'google_token_exchange_failed', detail: err.message });
+      return failAuth(err?.message || 'google_token_exchange_failed');
     }
 
     const userRecord = await findOrCreateOAuthUser(profile, { provider: 'google' });
@@ -244,7 +252,6 @@ export function attachGoogleOAuth(app) {
 
     // Determine redirect target
     const returnTo = sanitizeRedirectUrl(saved?.returnTo, '/');
-    const clientHost = req.hostname || 'localhost';
 
     // If returnTo is an external URL (mobile app), redirect with tokens in URL
     if (returnTo && (returnTo.startsWith('http://') || returnTo.startsWith('https://'))) {
@@ -255,9 +262,10 @@ export function attachGoogleOAuth(app) {
       return safeRedirect(res, redirectTarget, 302);
     }
 
-
+    // return_to was missing, relative, or rejected as an untrusted host. Send the
+    // tokens to the origin this request actually arrived on — on a deployment
+    // that is https://<domain>, so no host/scheme configuration is needed.
     // Redirect directly to mobile app — no tainted data rendered into HTML (S5131 fix).
-    const safeClientHost = /^[a-zA-Z0-9.-]+$/.test(clientHost) ? clientHost : 'localhost';
     const mobileParams = new URLSearchParams({
       token: access.accessToken,
       refreshToken: refresh.refreshToken,
@@ -266,7 +274,7 @@ export function attachGoogleOAuth(app) {
       email: String(userRecord.email),
       provider: 'google',
     });
-    return safeRedirect(res, `http://${safeClientHost}:5173/?${mobileParams.toString()}`, 302);
+    return safeRedirect(res, `${requestOrigin(req)}/?${mobileParams.toString()}`, 302);
   });
 }
 

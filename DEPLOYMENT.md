@@ -514,6 +514,10 @@ history.
 - [ ] Legacy `hashed_*` password hashes replaced with bcrypt (`comparePassword()`
       still accepts `hashed_<plaintext>`, so those accounts are effectively
       plaintext — see the import section in Step 4)
+- [x] OAuth redirect host allowlist includes the real domain — **verified**:
+      `waste2goods.site` is in `ALLOWED_HOSTNAMES` (`escape-html.js`). Add any
+      other hostname via `REDIRECT_ALLOWED_HOSTS`, or Google/GitHub sign-in
+      redirects to `/` with no token and looks like a restart.
 - [ ] `JWT_SECRET` / `JWT_REFRESH_SECRET` rotated and unique to production
 - [ ] `SEED_DEMO_DATA=false`
 - [ ] `KIOSK_PIN` set to something non-trivial (or intentionally empty)

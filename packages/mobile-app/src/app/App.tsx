@@ -2744,6 +2744,16 @@ export default function App() {
       try {
         const params = new URLSearchParams(window.location.search);
 
+        // 0. OAuth failure — the backend redirects here with `oauth_error` instead of
+        //    a dead-end JSON page, so show the real reason on the login screen.
+        const oauthError = params.get("oauth_error");
+        if (oauthError) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+          setLoginError(`Sign-in failed: ${oauthError}`);
+          if (!cancelled) setScreen("login");
+          return;
+        }
+
         // 1. Native backend OAuth redirect — tokens come as URL params
         const token = params.get("token") || params.get("accessToken");
         if (token) {
