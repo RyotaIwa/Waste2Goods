@@ -42,6 +42,7 @@ yarn-error.log*
 
 # XAMPP / local DB dumps
 *.sql
+!waste2goods.sql
 !packages/backend/database/*.sql
 
 # Chat exports, temporary files & binaries
