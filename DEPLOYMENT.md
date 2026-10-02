@@ -2,7 +2,7 @@
 
 > **Follow top to bottom, step 0 → step 12. No branches.**
 > **Stack:** 1× DigitalOcean Droplet (Docker Compose) + Cloudflare free proxy.
-> **Cost:** ~$12/mo droplet + ~$1.63 first-year domain + $0 Cloudflare + $0 Caddy.
+> **Cost:** ~$12/mo droplet + your domain + $0 Cloudflare + $0 Caddy.
 
 ---
 
@@ -58,45 +58,29 @@ surface at all. `CORS_ORIGINS` can stay empty.
 ## Prerequisites
 
 - A DigitalOcean account
-- A domain (see Step 0 — cheapest is a `.top` at Porkbun, ~$1.63 first year)
+- A domain (see Step 0 — you already own `waste2goods.site` ✅)
 - SSH key added to DigitalOcean *(recommended — password auth is disabled by default)*
 - The repo pushed to GitHub (`https://github.com/RyotaIwa/Waste2Goods.git`)
 
 ---
 
-## Step 0 — Buy the domain (cheapest: ~$1.63 first year, ~$4.63/yr after)
+## Step 0 — Domain ✅ DONE (`waste2goods.site` at Cloudflare Registrar)
 
-> Verified Oct 2026 via live registrar pricing. Prices change — recheck at
-> checkout. The trap to avoid is **cheap first year + expensive renewal**;
-> the table sorts by what you actually pay in year 2+.
+> You already bought `waste2goods.site` directly from Cloudflare Registrar, so
+> there is **no Porkbun step and no nameserver change** — Cloudflare is already
+> your registrar AND your DNS. Skip straight to Step 1.
+>
+> Cheapest-domain reference (kept for the record — you already beat the trap
+> by buying at Cloudflare at-cost instead of a Namecheap promo):
 
 | TLD | Registrar | Year 1 | Renewal/yr | 2-yr total | Catch |
 |---|---|---|---|---|---|
-| **`.top`** | **Porkbun** | **~$1.63** | **~$4.63** | **~$6.26** | ✅ cheapest honest renewal; free WHOIS privacy |
-| `.xyz` | Porkbun | ~$1.04 | ~$13–14 | ~$14–15 | ❌ renewal jumps 13× — only for throwaway demos |
-| `.xyz` | Spaceship (`XYZ52`, 1/domain) | ~$0.95 | ~$13.97 | ~$14.92 | ❌ same trap, plus coupon limit |
-| `.top` | Namecheap | ~$0.99 | ~$5.58 | ~$6.57 | ⚠️ fine, but renewal ~$1/yr more than Porkbun |
-| `.com` | Spaceship | ~$9–10 | ~$10.18 | ~$19–20 | ✅ credible TLD, cheapest `.com` renewal tracked |
-| `.com` | Porkbun | ~$10–11 | ~$11.08 | ~$21–22 | ✅ credible TLD, flat pricing, great support |
+| `.site` | Cloudflare | at-cost, no markup | at-cost (same) | — | ✅ what you did — no transfer/promo games, WHOIS privacy free |
+| `.top` | Porkbun | ~$1.63 | ~$4.63 | ~$6.26 | cheapest honest renewal if buying new |
+| `.com` | Spaceship / Porkbun | ~$9–11 | ~$10–11 | ~$19–22 | credible TLD, costs more |
 | `.com` | Cloudflare | ~$10.46 | ~$10.46 | ~$20.92 | ⚠️ transfer-in only for `.com` — cannot register new |
 
-**Recommendation: `waste2goods.top` (or `waste2goodsph.top`) at Porkbun.**
-~$1.63 today, ~$4.63/yr after — a 2-year capstone costs ~$6.26 total, and the
-renewal won't ambush you. Porkbun includes free WHOIS privacy and lets you
-point nameservers at Cloudflare in one step (Step 2).
-
-**When to pay more for `.com`:** if panelists/judges will type the URL or it
-goes on a poster, `.com` looks 10× more legitimate for ~$14 extra over 2 years.
-Buy it at Spaceship (~$10.18 renewal) or Porkbun (~$11.08), *not* Namecheap
-(~$18.48 renewal). Skip Cloudflare for the purchase — their `.com` is
-transfer-in only, so you can't register new there.
-
-Do this now (5 min):
-
-1. Go to **porkbun.com** → search `waste2goods` (+ a modifier if taken,
-   e.g. `waste2goodsph`, `waste2goods-davao`).
-2. Buy the `.top` (~$1.63). Enable auto-renew. WHOIS privacy is already free.
-3. Keep the Porkbun tab open — Step 2 needs you to change nameservers.
+**Nothing to do here.** Your domain already lives where Step 2 needs it.
 
 ---
 
@@ -120,23 +104,22 @@ Note the droplet's **public IP**.
 
 ---
 
-## Step 2 — Add the domain to Cloudflare
+## Step 2 — Add the DNS record (no nameserver change needed)
 
-> Your domain lives at Porkbun (Step 0). Cloudflare takes over DNS from here
-> — do not also create records in DO Networking.
+> Your domain is **already at Cloudflare** (registrar + DNS in one). There is
+> NO Step 2.1 — skip "Add domain / change nameservers" entirely. You only add
+> the A record below.
 
-1. Cloudflare dashboard → **Add domain** → enter your `.top` → plan **Free**.
-2. Cloudflare shows 2 nameservers. In your **Porkbun** dashboard → Domain
-   Management → Nameservers → replace with those 2. Wait for Cloudflare to
-   show **Active** (5–30 min typical).
-3. DNS → Records → **Add record**: Type `A`, Name `@` (or `waste2goods` for a
-   subdomain), IPv4 = `<droplet-ip>`, Proxy = **Proxied (orange cloud ON)**.
-   Add `www` the same way if you use it.
+1. In the Cloudflare dashboard, select `waste2goods.site` (it should already
+   be listed — no "Add domain" needed).
+2. Go to **DNS → Records → Add record**: Type `A`, Name `@`, IPv4 =
+   `<droplet-ip>`, Proxy = **Proxied (orange cloud ON)**. Add `www` the same
+   way if you use it. (No nameserver change — skip that entirely.)
 
 Verify before continuing:
 
 ```bash
-dig +short waste2goods.top
+dig +short waste2goods.site
 # should print your droplet IP
 ```
 
@@ -207,7 +190,7 @@ echo "JWT_SECRET:             $(openssl rand -hex 48)"
 echo "JWT_REFRESH_SECRET:     $(openssl rand -hex 48)"
 ```
 
-Copy those into `.env`, set `DOMAIN=waste2goods.top`, and pick a
+Copy those into `.env`, set `DOMAIN=waste2goods.site`, and pick a
 non-trivial `KIOSK_PIN`.
 
 **Required values:**
@@ -224,7 +207,7 @@ non-trivial `KIOSK_PIN`.
 **Keep these exact values — this is the Cloudflare path (CF + Caddy = 2 hops):**
 
 ```ini
-DOMAIN=waste2goods.top
+DOMAIN=waste2goods.site
 SEED_DEMO_DATA=false   # never recreate the demo admin + resident in production
 TRUST_PROXY=2          # Cloudflare (1) + Caddy (1). With 1, every visitor shares one rate-limit bucket.
 CORS_ORIGINS=          # same origin (Caddy serves SPA + API) → leave empty
@@ -270,11 +253,11 @@ docker compose logs --tail=50 api
 docker compose logs web | grep -i certificate
 
 # Liveness (fast, no DB dependency)
-curl -s https://waste2goods.top/health
+curl -s https://waste2goods.site/health
 # {"status":"ok","service":"waste2goods-api","env":"production",...}
 
 # Readiness (pings MySQL)
-curl -s https://waste2goods.top/health/ready
+curl -s https://waste2goods.site/health/ready
 # {"status":"ready","checks":{"database":"ok","redis":"redis"},...}
 ```
 
@@ -287,10 +270,10 @@ Then open in a browser:
 
 | URL | What you should see |
 |---|---|
-| `https://waste2goods.top/` | Resident PWA (valid certificate, no warning) |
-| `https://waste2goods.top/admin/` | Admin panel |
-| `https://waste2goods.top/kiosk/` | Kiosk terminal |
-| `https://waste2goods.top/security-dashboard` | DevSecOps dashboard |
+| `https://waste2goods.site/` | Resident PWA (valid certificate, no warning) |
+| `https://waste2goods.site/admin/` | Admin panel |
+| `https://waste2goods.site/kiosk/` | Kiosk terminal |
+| `https://waste2goods.site/security-dashboard` | DevSecOps dashboard |
 
 ## Step 6 — Cloudflare SSL mode → Full (strict)
 
@@ -354,16 +337,16 @@ FLUSH PRIVILEGES;
 
 ```bash
 # Edge is Cloudflare (cf-ray header present)
-curl -sI https://waste2goods.top/ | grep -i -E "cf-ray|server:"
+curl -sI https://waste2goods.site/ | grep -i -E "cf-ray|server:"
 # API through the edge
-curl -s https://waste2goods.top/health
-curl -s https://waste2goods.top/health/ready
+curl -s https://waste2goods.site/health
+curl -s https://waste2goods.site/health/ready
 # Same-origin mutation works with empty CORS/CSRF
-curl -s -X POST https://waste2goods.top/api/auth/kiosk-login \
+curl -s -X POST https://waste2goods.site/api/auth/kiosk-login \
   -H 'Content-Type: application/json' -d '{"pin":"<YOUR_KIOSK_PIN>"}'
 ```
 
-Browser: open `https://waste2goods.top/`, `/admin/`, `/kiosk/` — valid
+Browser: open `https://waste2goods.site/`, `/admin/`, `/kiosk/` — valid
 cert, no CORS errors in DevTools (same origin → zero preflights expected).
 
 ## Step 12 — Backups on (don't skip)
