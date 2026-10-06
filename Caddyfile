@@ -16,7 +16,7 @@
 	handle /api/* {
 		reverse_proxy api:3001
 	}
-	handle /health {
+	handle /health* {
 		reverse_proxy api:3001
 	}
 	handle /security-dashboard {
