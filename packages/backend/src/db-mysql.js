@@ -391,6 +391,7 @@ async function insertInfrastructureData() {
 async function insertAdminData() {
   try {
     const pw = ADMIN_CREDENTIALS?.password ?? 'AdminCabantian2025';
+    const email = (ADMIN_CREDENTIALS?.email ?? 'admin@waste2goods.ph').toLowerCase().trim();
     const [rows] = await db.query(
       "SELECT adminId, passwordHash FROM administrators WHERE adminId = 'A-001' OR adminIdentifier = 'admin@waste2goods.ph' OR email = 'admin@waste2goods.ph' LIMIT 1"
     );
@@ -406,11 +407,14 @@ async function insertAdminData() {
       return;
     }
     const passwordHash = await precomputeHash(pw);
+    // NOTE: `email` is NOT NULL with no default in schema-mysql.sql — omitting it
+    // made this INSERT fail on fresh databases and left no admin able to log in.
     await db.query(`
-      INSERT INTO administrators (adminId, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt)
+      INSERT INTO administrators (adminId, email, adminIdentifier, firstName, lastName, passwordHash, barangayId, roleId, createdAt)
       VALUES (
         'A-001',
-        'admin@waste2goods.ph',
+        ?,
+        ?,
         'Juan',
         'Reyes',
         ?,
@@ -418,7 +422,7 @@ async function insertAdminData() {
         1,
         NOW()
       )
-    `, [passwordHash]);
+    `, [email, email, passwordHash]);
     console.log('✅ Admin user (A-001 Juan Reyes) inserted into administrators table');
     console.log('   → Email: admin@waste2goods.ph  |  Password: ' + pw);
   } catch (err) {

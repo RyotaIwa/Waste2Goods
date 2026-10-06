@@ -1220,7 +1220,7 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
         [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'ready', approvedBy]
       );
       await db.query('UPDATE users SET pointsBalance = pointsBalance - ? WHERE userId = ?', [totalPoints, userId]);
-      await db.query('UPDATE rewards SET stockQuantity = stockQuantity - ? WHERE rewardId = ?', [quantity, rewardId]);
+      await db.query('UPDATE rewards SET stockQuantity = stockQuantity - ?, stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE rewardId = ?', [quantity, quantity, rewardId]);
       await db.query('COMMIT');
     } catch (txErr) {
       await db.query('ROLLBACK');
@@ -1408,9 +1408,11 @@ app.delete('/api/admin/admins/:id', authenticate, requirePermission('delete', 'a
 app.post('/api/rewards', authenticate, requirePermission('create', 'reward'), writeLimiter, validateBody(RewardCRUDSchema), async (req, res) => {
   try {
     const { rewardName, pointsCost, stockQuantity = 0, description = '', category = 'Eco Essentials', icon = '🎁', isSeasonal = 0, status = 'active' } = req.body;
+    // `points_required` is NOT NULL (no default) and `stock_quantity` mirrors
+    // `stockQuantity` — keep both in sync or INSERT fails / reads go stale.
     await db.query(
-      'INSERT INTO rewards (rewardName, pointsCost, stockQuantity, description, category, icon, isSeasonal, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [String(rewardName).trim(), Number(pointsCost), Number(stockQuantity), String(description), String(category), String(icon), isSeasonal ? 1 : 0, String(status)]
+      'INSERT INTO rewards (rewardName, pointsCost, points_required, stockQuantity, stock_quantity, description, category, icon, isSeasonal, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [String(rewardName).trim(), Number(pointsCost), Number(pointsCost), Number(stockQuantity), Number(stockQuantity), String(description), String(category), String(icon), isSeasonal ? 1 : 0, String(status)]
     );
     const [rows] = await db.query('SELECT * FROM rewards ORDER BY rewardId DESC LIMIT 1');
     const r = rows[0];
@@ -1450,8 +1452,8 @@ app.put('/api/rewards/:id', authenticate, requirePermission('update', 'reward'),
     }
     const nextStatus = status != null ? String(status) : curr.status;
     await db.query(
-      'UPDATE rewards SET rewardName = ?, pointsCost = ?, stockQuantity = ?, description = ?, category = ?, icon = ?, isSeasonal = ?, status = ? WHERE rewardId = ?',
-      [nextName, nextPoints, nextStock, nextDesc, nextCat, nextIcon, nextSeason, nextStatus, id]
+      'UPDATE rewards SET rewardName = ?, pointsCost = ?, points_required = ?, stockQuantity = ?, stock_quantity = ?, description = ?, category = ?, icon = ?, isSeasonal = ?, status = ? WHERE rewardId = ?',
+      [nextName, nextPoints, nextPoints, nextStock, nextStock, nextDesc, nextCat, nextIcon, nextSeason, nextStatus, id]
     );
     const [rows] = await db.query('SELECT * FROM rewards WHERE rewardId = ?', [id]);
     const r = rows[0];
