@@ -14,6 +14,9 @@ yarn.lock
 *.crt
 *.key
 
+# Local-only Docker services (phpMyAdmin) — never deploy these
+docker-compose.override.yml
+
 # Build outputs
 dist/
 build/
