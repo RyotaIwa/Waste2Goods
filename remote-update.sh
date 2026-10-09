@@ -13,7 +13,7 @@
 #       (total_points = 50 AND pointsBalance = 50). Real users who recycled
 #       have pointsBalance > 50 and are left untouched.
 # ============================================================================
-set -euo pipefail
+set -e
 
 BRANCH="${1:-main}"
 
