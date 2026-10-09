@@ -815,8 +815,8 @@ function publishQrBridge(decodedText: string, currentUser: MobileUserShape) {
       firstName: (u as any).firstName,
       lastName: (u as any).lastName,
       email: currentUser.email || (u as any).email || "",
-      points: currentUser.points || (u as any).pointsBalance || 50,
-      pointsBalance: currentUser.points || (u as any).pointsBalance || 50,
+      points: currentUser.points ?? (u as any).pointsBalance ?? 0,
+      pointsBalance: currentUser.points ?? (u as any).pointsBalance ?? 0,
     },
     kioskPayload: decodedText,
     timestamp: Date.now(),
@@ -903,7 +903,7 @@ function buildQrBridgePayload(authUser: any, currentUser: any, decodedText: stri
   const rawName = currentUser.name && currentUser.name !== "Guest User"
     ? currentUser.name
     : (u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Registered User");
-  const pts = currentUser.points || u.pointsBalance || 50;
+  const pts = currentUser.points ?? u.pointsBalance ?? 0;
   return {
     user: {
       id: uid,
@@ -1473,7 +1473,7 @@ function ScreenProfileSetup({ currentUser, go }: Readonly<{ currentUser: any; go
         <button type="button" onClick={() => go("register")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
         <div>
           <h2 className="text-base font-black text-foreground">Almost done!</h2>
-          <p className="text-xs text-muted-foreground">Complete your profile to earn <strong className="text-primary">+50 bonus pts</strong></p>
+          <p className="text-xs text-muted-foreground">Complete your profile to customize your account</p>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-6 space-y-5 pb-24">
@@ -1493,9 +1493,9 @@ function ScreenProfileSetup({ currentUser, go }: Readonly<{ currentUser: any; go
           <label htmlFor="profile-bio" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Bio (optional)</label>
           <textarea id="profile-bio" className={INPUT_BASE_CLS} rows={3} placeholder="I recycle because I care about my community..." />
         </div>
-        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3 flex gap-2">
-          <Zap className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700 font-semibold">Complete your profile to earn a <strong>50 bonus points</strong> welcome gift!</p>
+        <div className="rounded-2xl bg-emerald-50 border border-emerald-200 p-3 flex gap-2">
+          <Zap className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-emerald-700 font-semibold">Start recycling at a nearby kiosk to earn your first points!</p>
         </div>
         <button type="button" onClick={() => go("home")} className={`w-full py-4 ${BTN_PRIMARY_CLS}`}>Start Recycling!</button>
       </div>
@@ -2769,8 +2769,8 @@ export default function App() {
             name,
             email,
             role,
-            total_points: 50,
-            pointsBalance: 50,
+            total_points: 0,
+            pointsBalance: 0,
             barangayName: "Cabantian",
           };
           const authState: any = {
@@ -3085,8 +3085,8 @@ export default function App() {
                 firstName: (u as any).firstName,
                 lastName: (u as any).lastName,
                 email: currentUser.email || (u as any).email || "",
-                points: currentUser.points || (u as any).pointsBalance || 50,
-                pointsBalance: currentUser.points || (u as any).pointsBalance || 50,
+                points: currentUser.points ?? (u as any).pointsBalance ?? 0,
+                pointsBalance: currentUser.points ?? (u as any).pointsBalance ?? 0,
               },
               kioskPayload: decodedText,
               timestamp: Date.now(),

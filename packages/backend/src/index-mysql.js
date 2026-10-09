@@ -44,6 +44,11 @@ import { sanitizeLog } from './security/escape-html.js';
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
 
+const CORS_ORIGINS = (process.env.CORS_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const DEFAULT_CORS_ORIGINS = [
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
@@ -51,6 +56,7 @@ const DEFAULT_CORS_ORIGINS = [
   /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$/,
   /^http:\/\/10\.\d{1,3}\.\d{1,3}\.\d{1,3}(:\d+)?$/,
 ];
+
 
 function buildCorsOrigins() {
   const list = [...DEFAULT_CORS_ORIGINS];
@@ -117,13 +123,29 @@ const trustProxyValue = TRUST_PROXY_RAW === undefined
 app.set('trust proxy', trustProxyValue);
 app.use(globalLimiter);
 app.use(gatewayLogger);
+// Browsers attach an Origin header to EVERY POST — including same-origin ones.
+// A same-origin request is not a cross-site request, so strip it before the
+// CORS allowlist evaluates it; otherwise production (where CORS_ORIGINS is
+// intentionally empty per DEPLOYMENT.md) rejects the app's own SPA with a 500
+// on every login/register POST. Cross-origin requests keep their header and
+// still get checked against CORS_ALLOWED below.
+app.use((req, res, next) => {
+  const host = String(req.headers.host || '').trim();
+  if (host && req.headers.origin && req.headers.origin === `${req.protocol}://${host}`) {
+    delete req.headers.origin;
+  }
+  next();
+});
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
     const ok = CORS_ALLOWED.some(r => typeof r === 'function' ? r(origin) : r.test(origin));
     if (ok) return cb(null, true);
     if (!isProd) return cb(null, true);
-    return cb(new Error(`CORS blocked: ${origin}`));
+    if (CORS_ORIGINS.includes(origin)) return cb(null, true);
+    const err = new Error(`CORS blocked: ${origin}`);
+    err.statusCode = 403;
+    return cb(err);
   },
   credentials: false,
   methods: ['GET','POST','PUT','DELETE','OPTIONS'],
@@ -229,7 +251,7 @@ app.get('/', async (req, res) => {
     ],
     authEndpoints: [
       'POST /api/auth/login (password → access_token + refresh_token, backward-compat: token field included)',
-      'POST /api/auth/register (password → access_token + refresh_token + 50 welcome points)',
+      'POST /api/auth/register (password → access_token + refresh_token)',
       'POST /api/auth/kiosk-login (PIN 7890 → kiosk tokens)',
       'POST /api/auth/refresh (grant_type refresh → rotation, reuse detection)',
       'POST /api/auth/logout (revokes access jti + refresh family)',
@@ -314,7 +336,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
       `INSERT INTO users 
          (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
           total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 50, 50, 0, 'active', ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'active', ?, ?, ?, ?, ?)`,
       [userId, firstName, lastName, normalizedEmail, passwordHash, qrCode, barangayId,
        phone, province, city, barangayName, streetAddress]
     );
@@ -323,7 +345,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
     const dbUser = newRows[0];
 
     const user = buildResidentUserFromDb(dbUser);
-    user.points = 50;
+    user.points = 0;
     user.submissions = 0;
     user.totalSubmissions = 0;
     user.redeemed = 0;
@@ -343,7 +365,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
       refreshFamilyId: refresh.familyId,
       user,
       tokenTypeHardening: 'access=15min, refresh=7d rotating with reuse-detection family revocation',
-      message: 'Registration successful! +50 welcome points!',
+      message: 'Registration successful!',
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -633,20 +655,36 @@ async function tryDbAdminLogin(normalizedEmail, password) {
 }
 
 async function tryResidentDbLogin(normalizedEmail, password) {
-  const [rows] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
-  if (rows.length === 0) {
-    return { error: { status: 401, msg: 'Invalid credentials or user not registered yet. Please sign up first!' } };
-  }
-  const user = rows[0];
-  const pwOk = await comparePassword(password, String(user.passwordHash || ''));
-  if (!pwOk) {
+  try {
+    const [rows] = await db.query('SELECT * FROM users WHERE email = ? LIMIT 1', [normalizedEmail]);
+    if (rows.length === 0) {
+      return { error: { status: 401, msg: 'Invalid credentials or user not registered yet. Please sign up first!' } };
+    }
+    const user = rows[0];
+    // Detect legacy seed/placeholder hashes (e.g. 'hashed_123456') that are not
+    // real bcrypt hashes. Passing these to bcrypt.compare() throws an exception.
+    // Treat them as invalid — the user must register properly or reset their password.
+    const hash = String(user.passwordHash || '');
+    if (!hash || hash.startsWith('hashed_')) {
+      return { error: { status: 401, msg: 'This account requires a password reset. Please contact support.' } };
+    }
+    // Google / OAuth-only accounts have no password — block password login
+    if (user.provider && user.provider !== 'local') {
+      return { error: { status: 401, msg: `This account uses ${user.provider} sign-in. Please use the "Sign in with Google" button.` } };
+    }
+    const pwOk = await comparePassword(password, hash);
+    if (!pwOk) {
+      return { error: { status: 401, msg: 'Invalid credentials' } };
+    }
+    const userWithCompat = buildResidentUserFromDb(user);
+    const access = signAccessToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
+    const refresh = await issueRefreshToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
+    console.log(`🔐 Resident logged in from DB: ${sanitizeLog(userWithCompat.name)} (${sanitizeLog(user.userId)})`);
+    return buildHardenedAuthResponse(access, refresh, userWithCompat);
+  } catch (err) {
+    console.error(`[login] tryResidentDbLogin error: ${sanitizeLog(err?.message || 'unknown')}`);
     return { error: { status: 401, msg: 'Invalid credentials' } };
   }
-  const userWithCompat = buildResidentUserFromDb(user);
-  const access = signAccessToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
-  const refresh = await issueRefreshToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
-  console.log(`🔐 Resident logged in from DB: ${sanitizeLog(userWithCompat.name)} (${sanitizeLog(user.userId)})`);
-  return buildHardenedAuthResponse(access, refresh, userWithCompat);
 }
 
 function buildHardenedAuthResponse(access, refresh, user) {
@@ -822,7 +860,7 @@ function buildUserWelcomeNotif(u) {
     id: `welcome-${u.userId}`,
     type: 'welcome',
     title: "👋 Welcome to Waste2Goods!",
-    message: "Your account was created. Enjoy your 50 welcome bonus points!",
+    message: "Your account was created. Start recycling to earn points!",
     time: new Date(u.createdAt).toISOString(),
     severity: 'info',
     read: true,

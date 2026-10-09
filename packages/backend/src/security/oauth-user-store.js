@@ -61,12 +61,38 @@ async function findExistingUser(email, fallbackBarangayId) {
         name: `${u.firstName} ${u.lastName}`.trim(),
         email: u.email,
         barangayId: u.barangayId || fallbackBarangayId,
+        provider: u.provider || 'local',
+        google_id: u.google_id || null,
         created: false,
         userRow: u,
       };
     }
   } catch (err) {
     console.warn('[oauth-user-store] find user failed, proceeding to create:', err.message);
+  }
+  return null;
+}
+
+async function findByProviderId(googleId, fallbackBarangayId) {
+  if (!googleId) return null;
+  try {
+    const [rows] = await db.query('SELECT * FROM users WHERE google_id = ? LIMIT 1', [googleId]);
+    if (rows && rows.length > 0) {
+      const u = rows[0];
+      return {
+        userId: u.userId,
+        role: 'resident',
+        name: `${u.firstName} ${u.lastName}`.trim(),
+        email: u.email,
+        barangayId: u.barangayId || fallbackBarangayId,
+        provider: u.provider || 'google',
+        google_id: u.google_id,
+        created: false,
+        userRow: u,
+      };
+    }
+  } catch (err) {
+    console.warn('[oauth-user-store] findByProviderId failed:', err.message);
   }
   return null;
 }
@@ -89,21 +115,51 @@ async function findRaceUser(email, fallbackBarangayId) {
 
 export async function findOrCreateOAuthUser(profile, opts = {}) {
   const p = extractProfileDetails(profile, opts);
-  const existing = await findExistingUser(p.email, p.barangayId);
-  if (existing) return existing;
 
+  // 1. Try to find by provider ID first (most accurate — avoids email collisions)
+  const byId = await findByProviderId(p.providerId, p.barangayId);
+  if (byId) return byId;
+
+  // 2. Fall back to email lookup
+  const existing = await findExistingUser(p.email, p.barangayId);
+  if (existing) {
+    // Back-fill provider / google_id if the row predates this migration
+    if (!existing.google_id && p.providerId) {
+      try {
+        await db.query(
+          'UPDATE users SET provider = ?, google_id = ? WHERE userId = ? AND google_id IS NULL',
+          [p.provider, p.providerId, existing.userId]
+        );
+        existing.provider = p.provider;
+        existing.google_id = p.providerId;
+      } catch (patchErr) {
+        console.warn('[oauth-user-store] provider back-fill failed:', patchErr.message);
+      }
+    }
+    return existing;
+  }
+
+  // 3. New user — create without a real password (OAuth users never need one)
   const userId = await nextUserId();
   const qrCode = `${userId}-${secureRandomAlnum(5)}`;
+  // passwordHash is NULL for OAuth users (column is now nullable after migration 001)
+  // We still generate a bcrypt hash as a safe fallback for deployments that have
+  // not run the migration yet (NOT NULL constraint still present on old schemas).
   const passwordHash = await hashPasswordSafe(`${p.providerId}-${Date.now()}-${crypto.randomBytes(8).toString('hex')}`);
 
   try {
     await db.query(
       `INSERT INTO users
          (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
-          total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 50, 50, 0, 'active', ?, ?, ?, ?, ?, NOW())`,
-      [userId, p.firstName, p.lastName, p.email, passwordHash, qrCode, p.barangayId,
-       p.phone, p.province, p.city, p.barangayName, p.streetAddress]
+          total_points, pointsBalance, totalSubmissions, status, phone, province, city,
+          barangayName, streetAddress, provider, google_id, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'active', ?, ?, ?, ?, ?, ?, ?, NOW())`,
+      [
+        userId, p.firstName, p.lastName, p.email, passwordHash, qrCode, p.barangayId,
+        p.phone, p.province, p.city, p.barangayName, p.streetAddress,
+        p.provider,      // e.g. 'google'
+        p.providerId,    // e.g. 'GOOGLE-abc123'
+      ]
     );
   } catch (insertErr) {
     if (/Duplicate entry/.test(insertErr.message || '') && /email/.test(insertErr.message || '')) {
@@ -122,6 +178,8 @@ export async function findOrCreateOAuthUser(profile, opts = {}) {
     name: `${p.firstName} ${p.lastName}`.trim(),
     email: p.email,
     barangayId: p.barangayId,
+    provider: p.provider,
+    google_id: p.providerId,
     created: true,
     userRow,
   };

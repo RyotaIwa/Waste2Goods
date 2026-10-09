@@ -107,22 +107,22 @@ app.post("/api/auth/register", async (req, res) => {
         const createdAt = new Date().toISOString();
         db.run(
           "INSERT INTO users (userId, firstName, lastName, email, passwordHash, barangayId, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          [userId, firstName, lastName, email, passwordHash, barangayId, 50, 0, "active", phone, province, city, barangayName, createdAt],
+          [userId, firstName, lastName, email, passwordHash, barangayId, 0, 0, "active", phone, province, city, barangayName, createdAt],
           function (err) {
             if (err) return res.status(500).json({ error: err.message });
             const user = {
-              userId, firstName, lastName, email, barangayId, pointsBalance: 50, totalSubmissions: 0,
+              userId, firstName, lastName, email, barangayId, pointsBalance: 0, totalSubmissions: 0,
               status: "active", createdAt, phone, province, city, barangayName,
               id: userId,
               name: `${firstName} ${lastName}`,
               barangay: barangayName || "Cabantian",
-              points: 50,
+              points: 0,
               joined: new Date(createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
               submissions: 0,
               redeemed: 0
             };
             const token = `token_${userId}_${Date.now()}`;
-            res.status(201).json({ token, user, message: "Registration successful! +50 welcome points!" });
+            res.status(201).json({ token, user, message: "Registration successful!" });
           }
         );
       });
