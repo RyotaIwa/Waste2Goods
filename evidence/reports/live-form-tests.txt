@@ -1,0 +1,27 @@
+Waste2Goods — LIVE server tests mapped to Pre-UAT form
+Target: https://waste2goods.site
+Generated: Wed Oct 14 2026 00:36:42 GMT+0800 (Philippine Standard Time)
+Scope: read-only / non-destructive only (see notes).
+========================================================================
+PASS  [A-health] GET /health returns ok + production + redis  -> status=200 env=production redis=redis uptimeSec=350426
+PASS  [ST-NF-007] GET / (mobile PWA) loads  -> HTTP 200
+PASS  [ST-NF-007] GET /admin (admin panel) loads  -> HTTP 200
+PASS  [ST-NF-007] GET /kiosk (kiosk) loads  -> HTTP 200
+PASS  [ST-NF-007] GET /security-dashboard (security dashboard) loads  -> HTTP 200
+PASS  [IT-012] OAuth2 discovery (RFC 8414) + PKCE S256  -> issuer=waste2goods grants=authorization_code,refresh_token,client_credentials,pin_extension pkce=S256,plain
+PASS  [UT-006] Login with WRONG password is rejected (401)  -> HTTP 401 msg="Invalid credentials or user not registered yet. Please sign up first!"
+PASS  [UT-002] Login with SQLi-style email is safely rejected  -> HTTP 400
+PASS  [IT-011] CSRF: hostile Origin blocked (403)  -> HTTP 403 code=undefined
+PASS  [IT-005] Protected route rejects invalid token (401)  -> HTTP 401
+PASS  [IT-009] CDN static asset has immutable cache headers  -> HTTP 200 Cache-Control="public, max-age=31536000, immutable" Surrogate-Key="static-assets w2g-cdn"
+
+========================================================================
+SUMMARY: 11/11 safe live checks PASS
+
+NOT run on live (require real credentials OR are destructive):
+  - ABAC admin 200 / resident 403 (F1/F2)        [needs a real login token]
+  - /api/rewards cache tier, /api/tasks (H1/H2)   [needs a real login token]
+  - Brute-force lockout 429 (ST-NF-005)           [destructive: locks a real account]
+  - SQLi/XSS payload writes (ST-NF-003)           [destructive: writes to real DB]
+  - Create/edit/delete reward or user (ST-F-003/004) [destructive: mutates real data]
+  Run these on LOCALHOST, or on live with a real admin account you own.

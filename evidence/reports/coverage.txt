@@ -1,0 +1,94 @@
+
+> @figma/my-make-file@0.0.1 test
+> npm test --workspace=@waste2goods/backend
+
+
+> @waste2goods/backend@0.0.1 test
+> node --test src/security/security.test.js
+
+TAP version 13
+# [auth-jwt] WARNING: JWT_SECRET not set. Using ephemeral per-process runtime secret (tokens will invalidate on restart). Set JWT_SECRET for persistent sessions.
+# Subtest: ABAC: admin can read analytics, resident cannot
+ok 1 - ABAC: admin can read analytics, resident cannot
+  ---
+  duration_ms: 4.6175
+  ...
+# Subtest: ABAC: resident cannot modify another user
+ok 2 - ABAC: resident cannot modify another user
+  ---
+  duration_ms: 0.3525
+  ...
+# Subtest: ownership helper matches userId
+ok 3 - ownership helper matches userId
+  ---
+  duration_ms: 0.3558
+  ...
+# Subtest: PKCE S256 matches RFC 7636 appendix B
+ok 4 - PKCE S256 matches RFC 7636 appendix B
+  ---
+  duration_ms: 1.6566
+  ...
+# Subtest: CSRF origin allowlist
+ok 5 - CSRF origin allowlist
+  ---
+  duration_ms: 1.2012
+  ...
+# Subtest: CSRF guard blocks hostile Origin on POST
+ok 6 - CSRF guard blocks hostile Origin on POST
+  ---
+  duration_ms: 0.9637
+  ...
+# Subtest: CDN headers are Cloudflare/CloudFront compatible
+ok 7 - CDN headers are Cloudflare/CloudFront compatible
+  ---
+  duration_ms: 0.4778
+  ...
+# Subtest: Zod login schema rejects injection-like garbage
+ok 8 - Zod login schema rejects injection-like garbage
+  ---
+  duration_ms: 5.4978
+  ...
+# ❌ Error connecting to MySQL: Access denied for user 'root'@'172.19.0.1' (using password: NO)
+# 💡 Make sure XAMPP is running and you created the "waste2goods" database in phpMyAdmin!
+# 💡 Also ensure you imported schema-mysql.sql to create the required tables.
+# Subtest: GitHub OAuth info returns valid authorization and callback endpoint metadata
+ok 9 - GitHub OAuth info returns valid authorization and callback endpoint metadata
+  ---
+  duration_ms: 237.9594
+  ...
+# Subtest: Google OAuth info returns valid authorization and callback endpoint metadata
+ok 10 - Google OAuth info returns valid authorization and callback endpoint metadata
+  ---
+  duration_ms: 8.5984
+  ...
+# Subtest: XSS sanitization: escapeHtml neutralizes HTML/script injection payloads
+ok 11 - XSS sanitization: escapeHtml neutralizes HTML/script injection payloads
+  ---
+  duration_ms: 1.4527
+  ...
+# Subtest: Log injection defense: sanitizeLog strips carriage returns and newlines
+ok 12 - Log injection defense: sanitizeLog strips carriage returns and newlines
+  ---
+  duration_ms: 0.5063
+  ...
+# Subtest: Open redirect defense: sanitizeRedirectUrl blocks hostile phishing URLs
+ok 13 - Open redirect defense: sanitizeRedirectUrl blocks hostile phishing URLs
+  ---
+  duration_ms: 1.5913
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1340.9294
+
+=============================== Coverage summary ===============================
+Statements   : 36.16% ( 1602/4430 )
+Branches     : 52.34% ( 78/149 )
+Functions    : 13.53% ( 31/229 )
+Lines        : 36.16% ( 1602/4430 )
+================================================================================

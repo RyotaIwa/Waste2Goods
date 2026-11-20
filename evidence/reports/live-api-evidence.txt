@@ -1,0 +1,22 @@
+Waste2Goods — LIVE production evidence
+Target:
+Generated:
+======================================================================
+
+[/health] HTTP 200
+  {"status":"ok","service":"waste2goods-api","env":"production","uptimeSec":321849,"redis":"redis","timestamp":"2026-10-13T08:40:26.616Z"}
+
+[/api/oauth2/.well-known/...] HTTP 200
+  issuer: waste2goods
+  grant_types: authorization_code, refresh_token, client_credentials, pin_extension
+  code_challenge_methods: S256, plain
+
+[GET /] HTTP 200
+
+[GET /admin] HTTP 200
+
+[GET /kiosk] HTTP 200
+
+[GET /security-dashboard] HTTP 200
+
+[GET /cdn/brand.css] HTTP 200  Cache-Control: public, max-age=31536000, immutable

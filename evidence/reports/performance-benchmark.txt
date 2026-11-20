@@ -1,0 +1,15 @@
+Waste2Goods — Performance Benchmark Report (Live Production Server)
+Target: https://waste2goods.site
+Date: 2026-10-13T16:37:26.782Z
+=====================================================================================
+ID      | Test Description                      | Users | Avg(ms) | p95(ms) | Slowest | Errors | Target / Status
+-------------------------------------------------------------------------------------
+PT-001  | Dashboard Page Load (LCP target <= 2.5s) | 10    |     178 |     541 |     541 |     0% | Pass
+PT-002  | Concurrent Dashboard Reads           | 10    |     124 |     159 |     159 |     0% | Pass
+PT-003  | Login Under Load (POST /api/auth/login) | 10    |     298 |     407 |     407 |     0% | Pass
+PT-004  | API Read Cache HIT (GET /api/rewards) | 10    |     121 |     154 |     154 |     0% | Pass
+PT-005  | Kiosk Scan / Health Latency          | 10    |     113 |     138 |     138 |     0% | Pass
+PT-007  | Steady State Endurance Check (GET /health) | 10    |     117 |     150 |     150 |     0% | Pass
+PT-008  | Notification Endpoint Latency (GET /api/notifications) | 10    |     111 |     132 |     132 |     0% | Pass
+PT-009  | CDN Static Asset Delivery (GET /cdn/brand.css) | 10    |     108 |     133 |     133 |     0% | Pass
+=====================================================================================

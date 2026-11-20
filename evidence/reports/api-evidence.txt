@@ -1,0 +1,41 @@
+Waste2Goods — Pre-UAT API evidence transcript
+Generated:
+Target:
+======================================================================
+
+[ST-F-001 / UT-006] Admin login (correct then wrong password)
+  correct password -> HTTP 200, role=admin, token=issued
+  wrong password   -> HTTP 401, msg="Invalid credentials or user not registered yet. Please sign up first!"
+
+[ST-F-002] Resident login
+  resident login   -> HTTP 429, role=undefined
+
+[ST-IOT-002] Kiosk PIN login
+  kiosk PIN 7890  -> HTTP 200, kioskId=K-001, role=kiosk
+
+[ST-NF-001 / IT-007] ABAC — admin vs resident on /api/security/policy
+  admin   -> HTTP 200, roles=6, resources=11
+  resident-> HTTP 401 (expected 403)
+
+[IT-005] Token lifecycle — /api/auth/me with valid vs invalid
+  valid token   -> HTTP 200
+  invalid token -> HTTP 401 (expected 401)
+
+[IT-011] CSRF origin guard — evil Origin on POST
+  evil Origin -> HTTP 403 (expected 403 CSRF_ORIGIN_DENIED)
+
+[IT-009 / PT-009] CDN static asset headers — GET /cdn/brand.css
+  HTTP 200
+  Cache-Control: public, max-age=31536000, immutable
+  Surrogate-Key: static-assets w2g-cdn
+
+[IT-008 / PT-004] 3-tier cache — GET /api/rewards twice
+  1st x-cache: N/A
+  2nd x-cache: N/A
+
+[H1] DB-backed tasks — GET /api/tasks
+  HTTP 401, tasks=n/a
+
+======================================================================
+SUMMARY: expected — admin/resident/kiosk login 200, resident policy 403,
+invalid token 401, evil origin 403, CDN headers immutable, cache MISS->HIT.

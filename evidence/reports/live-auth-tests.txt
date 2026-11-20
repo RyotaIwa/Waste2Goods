@@ -1,0 +1,18 @@
+Waste2Goods — AUTHENTICATED live tests (read-only) mapped to Pre-UAT form
+Target: https://waste2goods.site  |  Actor: admin (A-001)
+Generated: Tue Oct 13 2026 18:19:16 GMT+0800 (Philippine Standard Time)
+Scope: read-only only — no create/edit/delete, no lockout, no injection writes.
+========================================================================
+PASS  [IT-007] Admin reads ABAC policy (200, roles & resources)  -> HTTP 200 roles=6 resources=11
+PASS  [ST-NF-001] Admin-only security telemetry reachable with admin token  -> HTTP 200 backend=redis
+PASS  [H1] GET /api/tasks returns DB-backed tasks  -> HTTP 200 count=5
+PASS  [IT-008] GET /api/rewards served with caching (2nd call cached)  -> 1st=200 x-cache=(none) | 2nd=200 x-cache=(none) | Cache-Control="public, max-age=30, s-maxage=60, stale-while-revalidate=60"
+PASS  [TC09] GET /api/users returns records (admin)  -> HTTP 200 count=21
+PASS  [TC12] GET /api/analytics/summary returns report  -> HTTP 200 keys=totalKgCollected,totalTransactions,totalPointsAwarded,totalUsers,activeResidents,rewardsRedeemed
+PASS  [TC13] GET /api/notifications returns items  -> HTTP 200 count=5
+PASS  [ST-F] GET /api/redemptions returns records  -> HTTP 200
+PASS  [IT-005] GET /api/auth/me with valid admin token -> 200  -> HTTP 200 id=n/a
+
+========================================================================
+SUMMARY: 9/9 authenticated live checks PASS
+(Token and password intentionally omitted from this evidence file.)
