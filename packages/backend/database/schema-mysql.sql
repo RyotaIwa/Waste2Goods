@@ -547,6 +547,46 @@ ALTER TABLE `reward_redemptions`
 ALTER TABLE `user_task_progress`
   ADD CONSTRAINT `user_task_progress_ibfk_1` FOREIGN KEY (`userId`) REFERENCES `users` (`userId`),
   ADD CONSTRAINT `user_task_progress_ibfk_2` FOREIGN KEY (`taskId`) REFERENCES `recycling_tasks` (`taskId`);
+
+  -- Migration 002: bottle machine deposits
+--
+-- The bottle machine prints a one-time redeem code on a receipt. The machine posts the
+-- transaction here as "unclaimed". When a resident enters the code in the app/site, the
+-- server credits their points and marks the deposit "claimed".
+--
+-- Existing tables are NOT changed. Put this file in packages/backend/migrations/
+-- and import it the same way as 001_add_oauth_provider_fields.sql.
+--
+-- Column notes
+--   depositId       the machine's transaction_id (a UUID). UNIQUE per row, so a retry
+--                   from the machine can never create a duplicate.
+--   kioskId         the machine's ID. Must already exist in `kiosks` (for example K-01).
+--   redeemCode      the 8-character code printed on the receipt. UNIQUE.
+--   pointsReported  the points the machine showed on its LCD and receipt.
+--   pointsAwarded   the points the resident actually receives. The server decides this,
+--                   so a wrong or tampered machine value cannot create free points.
+--   status          unclaimed | claimed | void
+
+CREATE TABLE IF NOT EXISTS `machine_deposits` (
+  `depositId` varchar(50) NOT NULL,
+  `kioskId` varchar(50) NOT NULL,
+  `redeemCode` varchar(16) NOT NULL,
+  `bottles` int(11) NOT NULL,
+  `pointsReported` int(11) NOT NULL,
+  `pointsAwarded` int(11) NOT NULL,
+  `status` varchar(20) NOT NULL DEFAULT 'unclaimed',
+  `claimedBy` varchar(50) DEFAULT NULL,
+  `claimedAt` timestamp NULL DEFAULT NULL,
+  `machineTime` timestamp NULL DEFAULT NULL,
+  `createdAt` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`depositId`),
+  UNIQUE KEY `redeemCode` (`redeemCode`),
+  KEY `kioskId` (`kioskId`),
+  KEY `claimedBy` (`claimedBy`),
+  KEY `status` (`status`),
+  CONSTRAINT `machine_deposits_ibfk_1` FOREIGN KEY (`kioskId`) REFERENCES `kiosks` (`kioskId`),
+  CONSTRAINT `machine_deposits_ibfk_2` FOREIGN KEY (`claimedBy`) REFERENCES `users` (`userId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

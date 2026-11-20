@@ -40,6 +40,7 @@ import { attachAppwriteAuth, appwriteInfo, syncAppwriteSessionToPlatform } from 
 import { attachCdnStatic, cdnInfo } from './security/cdn.js';
 import { lookupKioskUser } from './security/oauth-user-store.js';
 import { sanitizeLog } from './security/escape-html.js';
+import { attachMachineRoutes } from './machine-routes.js';
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -148,9 +149,9 @@ app.use(cors({
     return cb(err);
   },
   credentials: false,
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization','X-Requested-With','X-Request-ID'],
-  exposedHeaders: ['X-Request-ID','X-W2G-Cache','X-RateLimit-Limit','X-RateLimit-Remaining'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-ID'],
+  exposedHeaders: ['X-Request-ID', 'X-W2G-Cache', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
   maxAge: 86400,
 }));
 app.use(express.json({ limit: process.env.BODY_LIMIT || '100kb' }));
@@ -338,7 +339,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
           total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'active', ?, ?, ?, ?, ?)`,
       [userId, firstName, lastName, normalizedEmail, passwordHash, qrCode, barangayId,
-       phone, province, city, barangayName, streetAddress]
+        phone, province, city, barangayName, streetAddress]
     );
 
     const [newRows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
@@ -479,7 +480,7 @@ app.get('/api/users', authenticate, requirePermission('list', 'user'), cacheRout
   }
 });
 
-app.get('/api/users/:id', authenticate, requireOwnershipOrRole(['admin','super_admin','barangay_admin'], 'id', 'userId'), cacheRoute(15), async (req, res) => {
+app.get('/api/users/:id', authenticate, requireOwnershipOrRole(['admin', 'super_admin', 'barangay_admin'], 'id', 'userId'), cacheRoute(15), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM users WHERE userId = ?', [req.params.id]);
     if (rows.length === 0) {
@@ -573,10 +574,10 @@ app.post('/api/transactions', authenticate, requirePermission('create', 'transac
     );
 
     await CacheBust.transactions();
-    res.json({ 
-      message: 'Transaction created successfully', 
-      transactionId, 
-      pointsEarned 
+    res.json({
+      message: 'Transaction created successfully',
+      transactionId,
+      pointsEarned
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -590,7 +591,7 @@ app.post('/api/transactions', authenticate, requirePermission('create', 'transac
 
 // Helper: day-of-week formatter (Mon, Tue, ..., Sun)
 function getDayName(dateObj) {
-  return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dateObj.getDay()];
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dateObj.getDay()];
 }
 // Helper: 3-letter month formatter (Jan, Feb, ..., Dec)
 function getMonthName(dateObj) {
@@ -1809,7 +1810,7 @@ app.post('/api/kiosk/session/disconnect', authenticate, validateBody(KioskPingSc
   res.json({ ok: true, connected: false });
 });
 
-app.get('/api/kiosk/session/:userId', authenticate, requireOwnershipOrRole(['admin','super_admin','barangay_admin','kiosk'], 'userId', 'userId'), kioskLimiter, (req, res) => {
+app.get('/api/kiosk/session/:userId', authenticate, requireOwnershipOrRole(['admin', 'super_admin', 'barangay_admin', 'kiosk'], 'userId', 'userId'), kioskLimiter, (req, res) => {
   const targetUserId = req.params.userId;
   if (!canAccessKioskSession(req, targetUserId)) {
     return res.status(403).json({ error: 'Forbidden' });
@@ -2092,6 +2093,7 @@ app.get('/health/ready', async (_req, res) => {
 });
 
 // ── D2 P2: API Gateway fallbacks ─────────────────────────────────────
+attachMachineRoutes(app);
 app.use(apiNotFound);
 app.use(errorHandler);
 
