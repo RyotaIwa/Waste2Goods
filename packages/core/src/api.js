@@ -108,7 +108,7 @@ export function getApiBaseUrl() {
   try {
     const storedPort = localStorage.getItem("w2g_api_port");
     if (storedPort && storedPort !== "5173") port = storedPort;
-  } catch {}
+  } catch { }
   return `http://${host}:${port}/api`;
 }
 
@@ -130,7 +130,7 @@ export async function testApiConnection() {
   try {
     const storedPort = localStorage.getItem("w2g_api_port");
     if (storedPort && storedPort !== "5173") port = storedPort;
-  } catch {}
+  } catch { }
   try {
     const res = await fetch(`http://${host}:${port}/`, {
       method: "GET",
@@ -462,6 +462,25 @@ export const Waste2GoodsAPI = {
     clearStoredAuth();
   },
   getAuthState: () => getStoredAuth(),
+
+  // Resident enters the 8-character receipt code printed by the machine.
+  claimMachineCode: async (code) => {
+    const auth = getStoredAuth();
+    const response = await fetch(`${getApiBaseUrl()}/machine/claim`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: JSON.stringify({ code }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || data.message || `Could not redeem the code (HTTP ${response.status})`);
+    }
+    return data;
+  },
+
 
   // Profile refresh & save (see api.ts for docs)
   async refreshCurrentUser() {

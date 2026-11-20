@@ -544,13 +544,31 @@ export const Waste2GoodsAPI = {
       if (AppwriteSdk) {
         Waste2GoodsAPI.appwrite.configure();
         if (Waste2GoodsAPI.appwrite.account) {
-          try { await (Waste2GoodsAPI.appwrite.account as any).deleteSession("current"); } catch {}
+          try { await (Waste2GoodsAPI.appwrite.account as any).deleteSession("current"); } catch { }
         }
       }
-    } catch {}
+    } catch { }
     clearStoredAuth();
   },
   getAuthState: () => getStoredAuth(),
+
+  // Resident enters the 8-character receipt code printed by the machine.
+  claimMachineCode: async (code: string) => {
+    const auth = getStoredAuth();
+    const response = await fetch(`${getApiBaseUrl()}/machine/claim`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: JSON.stringify({ code }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.error || data.message || `Could not redeem the code (HTTP ${response.status})`);
+    }
+    return data as { ok: boolean; bottles: number; pointsAwarded: number; newBalance: number; message: string };
+  },
 
   // ——— Appwrite SDK client + OAuth (Google / GitHub / any provider) ———
   appwrite: {
@@ -580,9 +598,9 @@ export const Waste2GoodsAPI = {
         this.projectId = projectId;
         this.region = region;
         this.configured = true;
-        try { localStorage.setItem("w2g_appwrite_endpoint", endpoint); } catch {}
-        try { localStorage.setItem("w2g_appwrite_project", projectId); } catch {}
-        try { localStorage.setItem("w2g_appwrite_region", region); } catch {}
+        try { localStorage.setItem("w2g_appwrite_endpoint", endpoint); } catch { }
+        try { localStorage.setItem("w2g_appwrite_project", projectId); } catch { }
+        try { localStorage.setItem("w2g_appwrite_region", region); } catch { }
         return true;
       } catch {
         this.configured = false;
@@ -676,7 +694,7 @@ export const Waste2GoodsAPI = {
           user,
           token: payload.accessToken,
         };
-        try { Object.assign((authState as any), { refreshToken: payload.refreshToken, refreshFamilyId: payload.refreshFamilyId, appwriteUser: payload.appwriteUser }); } catch {}
+        try { Object.assign((authState as any), { refreshToken: payload.refreshToken, refreshFamilyId: payload.refreshFamilyId, appwriteUser: payload.appwriteUser }); } catch { }
         setStoredAuth(authState);
         return authState;
       } catch (err) {

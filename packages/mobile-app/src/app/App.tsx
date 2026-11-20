@@ -13,6 +13,7 @@ import {
   ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
   Copy, Check
 } from "lucide-react";
+import ScreenRedeemCode from "./ScreenRedeemCode";
 
 type MobileScreen =
   | "splash" | "onboard1" | "onboard2" | "onboard3"
@@ -20,7 +21,7 @@ type MobileScreen =
   | "home" | "submit" | "submit-scan" | "submit-confirm" | "submit-done"
   | "rewards" | "redeem-confirm" | "redeem-history"
   | "tasks" | "profile" | "history" | "settings" | "notifications"
-  | "leaderboard";
+  | "leaderboard" | "redeem-code";
 
 // Default LAN address of the local development backend (offline demo fallback only).
 // This is a private RFC-1918 address (192.168.0.0/16) used as a convenience default for
@@ -240,9 +241,9 @@ function patchAuthBalance(newBalance: number) {
     if (auth?.user) {
       const patchedUser = { ...auth.user, points: Number(newBalance), pointsBalance: Number(newBalance) };
       const patchedAuth = { ...auth, user: patchedUser, isAuthenticated: true };
-      try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(patchedAuth)); } catch {}
+      try { localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(patchedAuth)); } catch { }
     }
-  } catch {}
+  } catch { }
 }
 
 function getRedeemButtonLabel(loading: boolean, success: any): string {
@@ -440,9 +441,8 @@ function KioskLinkBadge({
   })();
   return (
     <div
-      className={`w-full rounded-xl px-3 py-2.5 flex items-center gap-2 border text-xs font-bold ${
-        connected ? "bg-green-50 border-green-200 text-green-800" : "bg-slate-50 border-border text-muted-foreground"
-      }`}
+      className={`w-full rounded-xl px-3 py-2.5 flex items-center gap-2 border text-xs font-bold ${connected ? "bg-green-50 border-green-200 text-green-800" : "bg-slate-50 border-border text-muted-foreground"
+        }`}
     >
       <Monitor className={`w-4 h-4 flex-shrink-0 ${connected ? "text-green-600" : ""}`} />
       <div className="flex-1 min-w-0">
@@ -540,50 +540,50 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
 
   let list = (liveLeaderboard && liveLeaderboard.length > 0)
     ? liveLeaderboard.map((u: any, i: number) => {
-        const firstName = u.firstName || "";
-        const lastName = u.lastName || "";
-        const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
-        const pts = Number(u.points ?? u.pointsBalance ?? 0);
-        const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
-        const uid = String(u.userId ?? u.id ?? "").toUpperCase();
-        const uEmail = String(u.email || "").toLowerCase();
-        const isMe = (!!myId && !!uid && uid === myId) || (!!myEmail && !!uEmail && uEmail === myEmail) || (name.toLowerCase() === myName.toLowerCase());
-        const avatarChars = initialsFromName(name, "RU");
-        return {
-          id: uid || `u-${i}`,
-          userId: uid,
-          name,
-          displayName: name,
-          _initials: avatarChars || "RU",
-          avatar: avatarChars || "RU",
-          barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
-          points: pts,
-          submissions: subs,
-          totalKg: Number(u.totalKg || (subs * 2.3)),
-          streak: Number(u.streak) || (subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1),
-          isMe,
-          _isYou: isMe,
-        };
-      })
+      const firstName = u.firstName || "";
+      const lastName = u.lastName || "";
+      const name = (u.name && u.name.trim() !== "") ? u.name : [firstName, lastName].filter(Boolean).join(" ").trim() || u.userId || "Resident";
+      const pts = Number(u.points ?? u.pointsBalance ?? 0);
+      const subs = Number(u.submissions ?? u.totalSubmissions ?? 0);
+      const uid = String(u.userId ?? u.id ?? "").toUpperCase();
+      const uEmail = String(u.email || "").toLowerCase();
+      const isMe = (!!myId && !!uid && uid === myId) || (!!myEmail && !!uEmail && uEmail === myEmail) || (name.toLowerCase() === myName.toLowerCase());
+      const avatarChars = initialsFromName(name, "RU");
+      return {
+        id: uid || `u-${i}`,
+        userId: uid,
+        name,
+        displayName: name,
+        _initials: avatarChars || "RU",
+        avatar: avatarChars || "RU",
+        barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
+        points: pts,
+        submissions: subs,
+        totalKg: Number(u.totalKg || (subs * 2.3)),
+        streak: Number(u.streak) || (subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1),
+        isMe,
+        _isYou: isMe,
+      };
+    })
     : DEMO_LEADERBOARD_FALLBACK.map((u: any, i: number) => {
-        const isMe = (u.name.toLowerCase() === myName.toLowerCase()) || (Boolean(u.id) && u.id === currentUser.id);
-        const demoId = u.id || `demo-${u.rank || i + 1}`;
-        return {
-          id: demoId,
-          userId: demoId,
-          name: u.name,
-          displayName: u.name,
-          _initials: u.avatar || "RU",
-          avatar: u.avatar || "RU",
-          barangay: u.barangay || "Cabantian",
-          points: u.points,
-          submissions: 10,
-          totalKg: 23.0,
-          streak: u.streak || 5,
-          isMe,
-          _isYou: isMe,
-        };
-      });
+      const isMe = (u.name.toLowerCase() === myName.toLowerCase()) || (Boolean(u.id) && u.id === currentUser.id);
+      const demoId = u.id || `demo-${u.rank || i + 1}`;
+      return {
+        id: demoId,
+        userId: demoId,
+        name: u.name,
+        displayName: u.name,
+        _initials: u.avatar || "RU",
+        avatar: u.avatar || "RU",
+        barangay: u.barangay || "Cabantian",
+        points: u.points,
+        submissions: 10,
+        totalKg: 23.0,
+        streak: u.streak || 5,
+        isMe,
+        _isYou: isMe,
+      };
+    });
 
   // Ensure logged-in user is present in leaderboard
   const hasMe = list.some(u => u.isMe);
@@ -622,7 +622,7 @@ function MobileBottomNav({ screen, go }: Readonly<{ screen: MobileScreen; go: (s
   return (
     <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-3 pt-3 flex justify-around z-20" style={{ paddingBottom: "calc(0.75rem + var(--sab))" }}>
       {items.map(i => (
-        <button type="button" key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit","submit-scan","submit-confirm","submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
+        <button type="button" key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit", "submit-scan", "submit-confirm", "submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
           {i.icon}
           <span className="text-xs font-bold">{i.label}</span>
         </button>
@@ -1057,6 +1057,7 @@ type MobileAppRouterProps = Readonly<{
   onRewardRedeem: () => Promise<void>;
   onRewardClose: () => void;
   onSubmitConfirm: () => void;
+  onClaimed: (r: { newBalance: number; pointsAwarded: number; bottles: number }) => void;
   go: (s: MobileScreen) => void;
 }>;
 
@@ -1116,6 +1117,7 @@ function MobileScreenContent(p: MobileAppRouterProps) {
     case "submit-done": return <ScreenSubmitDone go={p.go} currentUser={p.currentUser} />;
     case "tasks": return <ScreenTasks {...p} />;
     case "leaderboard": return <ScreenLeaderboard {...p} />;
+    case "redeem-code": return <ScreenRedeemCode go={p.go} onClaimed={p.onClaimed} />;
     case "notifications": return <ScreenNotifications {...p} />;
     case "profile": return <ScreenProfile {...p} />;
     case "settings": return <ScreenSettings {...p} />;
@@ -1142,7 +1144,7 @@ function ScreenSplash() {
       <h1 className="text-4xl font-black text-white mt-6 tracking-tight">Waste2Goods</h1>
       <p className="text-green-300 text-sm mt-1 font-semibold">Recycle · Earn · Thrive</p>
       <div className="mt-12 flex gap-1.5">
-        {[0,1,2].map(i => <div key={`item-${i}`} className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: `${i*0.3}s` }} />)}
+        {[0, 1, 2].map(i => <div key={`item-${i}`} className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: `${i * 0.3}s` }} />)}
       </div>
     </div>
   );
@@ -1240,13 +1242,13 @@ type ScreenRegisterProps = Readonly<{
 function ScreenRegister(p: ScreenRegisterProps) {
   return (
     <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
-         style={{ paddingTop: "calc(0.5rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+      style={{ paddingTop: "calc(0.5rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
       <div className="px-5 py-3 flex items-center gap-3 border-b border-border bg-white sticky top-0 z-20" style={{ top: "var(--sat)" }}>
         <button type="button" onClick={() => p.go("onboard3")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
         <div>
           <h2 className="text-base font-black text-foreground">Create Account</h2>
           <div className="flex gap-1 mt-1">
-            {[1,2,3].map(s => <div key={s} className={`h-1 rounded-full transition-all ${p.regStep >= s-1 ? "bg-primary w-8" : "bg-muted w-4"}`} />)}
+            {[1, 2, 3].map(s => <div key={s} className={`h-1 rounded-full transition-all ${p.regStep >= s - 1 ? "bg-primary w-8" : "bg-muted w-4"}`} />)}
           </div>
         </div>
       </div>
@@ -1270,7 +1272,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
               </div>
             )}
             <button type="button" onClick={p.onStep1Next} className={`w-full py-4 ${BTN_PRIMARY_CLS}`}>Continue</button>
-            
+
             <div className="flex items-center gap-3 pt-2">
               <div className="flex-1 h-px bg-border" />
               <span className="text-xs text-muted-foreground font-semibold">or sign up with</span>
@@ -1287,10 +1289,10 @@ function ScreenRegister(p: ScreenRegisterProps) {
               className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
               </svg>
               <span>Sign up with Google</span>
             </button>
@@ -1304,7 +1306,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
               className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
               <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
-                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+                <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
               </svg>
               <span>Sign up with GitHub</span>
             </button>
@@ -1384,7 +1386,7 @@ type ScreenLoginProps = Readonly<{
 function ScreenLogin(p: ScreenLoginProps) {
   return (
     <div className="h-full min-h-[100dvh] flex flex-col overflow-y-auto"
-         style={{ paddingTop: "calc(0.75rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
+      style={{ paddingTop: "calc(0.75rem + var(--sat))", paddingBottom: "calc(1.5rem + var(--sab))" }}>
       <div className="flex flex-col items-center gap-2 px-8 pt-4 pb-3 shrink-0">
         <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center">
           <Recycle className="w-7 h-7 text-primary" />
@@ -1403,10 +1405,10 @@ function ScreenLogin(p: ScreenLoginProps) {
           </div>
         )}
         {isServerIpPanelEnabled() && (
-        <button type="button" onClick={p.onToggleLoginServer} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0">
-          <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
-          <ChevronRight className={`w-4 h-4 transition-transform ${p.showLoginServer ? "rotate-90" : ""}`} />
-        </button>
+          <button type="button" onClick={p.onToggleLoginServer} className="w-full flex items-center justify-between px-4 py-2.5 rounded-xl border border-border bg-white text-sm font-bold text-foreground shrink-0">
+            <span className="flex items-center gap-2"><Globe className="w-4 h-4 text-primary" /> Server IP Settings</span>
+            <ChevronRight className={`w-4 h-4 transition-transform ${p.showLoginServer ? "rotate-90" : ""}`} />
+          </button>
         )}
         {isServerIpPanelEnabled() && p.showLoginServer && (
           <div className="space-y-2 shrink-0">
@@ -1420,7 +1422,7 @@ function ScreenLogin(p: ScreenLoginProps) {
           <button type="button" disabled={p.loginLoading} onClick={p.onLogin} className={`w-full py-3.5 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60 flex items-center justify-center gap-2`}>
             {p.loginLoading ? "Signing in..." : "Sign In"}
           </button>
-          
+
           <div className="flex items-center gap-3 pt-1">
             <div className="flex-1 h-px bg-border" />
             <span className="text-xs text-muted-foreground font-semibold">or sign in with</span>
@@ -1437,10 +1439,10 @@ function ScreenLogin(p: ScreenLoginProps) {
             className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
-              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+              <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+              <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+              <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+              <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
             </svg>
             <span>Continue with Google</span>
           </button>
@@ -1455,7 +1457,7 @@ function ScreenLogin(p: ScreenLoginProps) {
             className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
             <svg className="w-5 h-5 fill-current shrink-0" viewBox="0 0 24 24">
-              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/>
+              <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
             </svg>
             <span>Continue with GitHub</span>
           </button>
@@ -1516,7 +1518,7 @@ function ScreenMFA({ mfaCode, setMfaCode, mfaRefs, go }: ScreenMFAProps) {
       </div>
       <div className="flex gap-2">
         {mfaCode.map((d, i) => (
-          <input key={`mfa-digit-${["one","two","three","four","five","six"][i]}`}
+          <input key={`mfa-digit-${["one", "two", "three", "four", "five", "six"][i]}`}
             ref={el => { mfaRefs.current[i] = el; }}
             value={d}
             maxLength={1}
@@ -1827,6 +1829,14 @@ function ScreenHome(p: MobileAppRouterProps) {
             <p className="text-[10px] text-muted-foreground mt-0.5">Top barangay recyclers</p>
           </button>
         </div>
+        <button type="button" onClick={() => p.go("redeem-code")} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white border border-primary/40 hover:bg-green-50 transition-colors text-left">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Hash className="w-5 h-5 text-primary" /></div>
+          <div className="flex-1">
+            <p className="text-sm font-black text-foreground">Redeem Receipt Code</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Enter the code from the bottle machine</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </button>
         {p.kioskSession.connected && (
           <button type="button" onClick={p.handleDisconnectKiosk} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 transition-colors">
             <div className="flex items-center gap-3">
@@ -1933,9 +1943,8 @@ function ScreenRewards(p: MobileAppRouterProps) {
                 type="button"
                 key={r.name}
                 onClick={() => p.setSelectedReward(r)}
-                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${
-                  canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
-                }`}
+                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
+                  }`}
               >
                 <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
                   <div className="text-5xl">{r.icon}</div>
@@ -2082,7 +2091,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
           </button>
         </div>
         <div className="flex border-b border-border px-5">
-          {(["weekly","monthly"] as const).map(t => (
+          {(["weekly", "monthly"] as const).map(t => (
             <button type="button" key={t} onClick={() => p.setLeaderTab(t)} className={`px-4 py-2 text-xs font-black capitalize transition-colors relative ${p.leaderTab === t ? "text-primary" : "text-muted-foreground"}`}>
               {t} Ranking
               {p.leaderTab === t && <div className="absolute left-3 right-3 -bottom-px h-0.5 bg-primary rounded-full" />}
@@ -2151,9 +2160,8 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
               return (
                 <div
                   key={u.id || u.userId || `leader-${i}`}
-                  className={`flex items-center gap-3 px-4 py-3 transition-colors ${
-                    i !== p.mergedLeaderboard.length - 1 ? "border-b border-border" : ""
-                  } ${isYou ? "bg-green-50/80 ring-1 ring-inset ring-green-200" : ""}`}
+                  className={`flex items-center gap-3 px-4 py-3 transition-colors ${i !== p.mergedLeaderboard.length - 1 ? "border-b border-border" : ""
+                    } ${isYou ? "bg-green-50/80 ring-1 ring-inset ring-green-200" : ""}`}
                 >
                   <RankIcon rank={u.rank || i + 1} />
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white shadow-sm ${isYou ? "bg-primary text-white ring-2 ring-primary/30" : "bg-gradient-to-br from-emerald-500 to-teal-600 text-white"}`}>
@@ -2330,16 +2338,16 @@ function ScreenSettings(p: MobileAppRouterProps) {
           </button>
         </div>
         {isServerIpPanelEnabled() && (
-        <div className="rounded-2xl border border-border bg-white p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Backend Server IP</p>
-              <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">XAMPP LAN IP where Waste2Goods backend runs. Mobile app expects raw IP (no http:// or port).</p>
+          <div className="rounded-2xl border border-border bg-white p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Backend Server IP</p>
+                <p className="text-[10px] text-muted-foreground font-semibold mt-0.5">XAMPP LAN IP where Waste2Goods backend runs. Mobile app expects raw IP (no http:// or port).</p>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><Globe className="w-4 h-4 text-blue-600" /></div>
             </div>
-            <div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><Globe className="w-4 h-4 text-blue-600" /></div>
+            <ServerIpPanel apiHost={p.apiHost} setApiHost={p.setApiHost} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
           </div>
-          <ServerIpPanel apiHost={p.apiHost} setApiHost={p.setApiHost} onSaved={() => p.setProfileBanner({ type: "ok", text: "✅ Server IP saved. API requests will use this host." })} />
-        </div>
         )}
       </div>
     </div>
@@ -2467,11 +2475,10 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
               key={h.id}
               type="button"
               onClick={() => setSelectedClaim(h)}
-              className={`w-full text-left rounded-2xl border transition-all p-4 flex items-start gap-4 ${
-                isReady
-                  ? "bg-white border-green-300 hover:border-primary hover:shadow-md cursor-pointer ring-1 ring-green-100"
-                  : "bg-white/80 border-border hover:border-muted-foreground/40 cursor-pointer"
-              }`}
+              className={`w-full text-left rounded-2xl border transition-all p-4 flex items-start gap-4 ${isReady
+                ? "bg-white border-green-300 hover:border-primary hover:shadow-md cursor-pointer ring-1 ring-green-100"
+                : "bg-white/80 border-border hover:border-muted-foreground/40 cursor-pointer"
+                }`}
             >
               <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{h.i}</div>
               <div className="flex-1 min-w-0">
@@ -3093,7 +3100,7 @@ export default function App() {
             };
             localStorage.setItem("w2g_kiosk_qr_bridge", JSON.stringify(bridgePayload));
             // Also emit cross-tab storage event for same-origin kiosk tabs already listening
-            try { window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) })); } catch {}
+            try { window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) })); } catch { }
             Waste2GoodsAPI.connectKioskSession?.({
               userId: bridgePayload.user.id || bridgePayload.user.userId,
               userName: bridgePayload.user.name,
@@ -3103,7 +3110,7 @@ export default function App() {
           } catch (bridgeErr) {
             console.warn("QR bridge write failed:", bridgeErr);
           }
-          scanner.clear().catch(() => {});
+          scanner.clear().catch(() => { });
           go("submit-confirm");
         },
         (errorMessage) => {
@@ -3112,7 +3119,7 @@ export default function App() {
       );
       // Cleanup on unmount
       return () => {
-        scanner.clear().catch(() => {});
+        scanner.clear().catch(() => { });
       };
     }
   }, [screen]);
@@ -3198,6 +3205,16 @@ export default function App() {
       submissions: Number(currentUser.submissions || 0) + 1,
     }));
     go("submit-done");
+  };
+
+  const onClaimed = (r: { newBalance: number; pointsAwarded: number; bottles: number }) => {
+    patchAuthBalance(r.newBalance);
+    setProfileUser((prev: any) => ({
+      ...(prev || currentUser),
+      points: r.newBalance,
+      pointsBalance: r.newBalance,
+      submissions: Number(currentUser.submissions || 0) + 1,
+    }));
   };
 
   return (
@@ -3298,7 +3315,9 @@ export default function App() {
         onRewardRedeem={onRewardRedeem}
         onRewardClose={onRewardClose}
         onSubmitConfirm={onSubmitConfirm}
+        onClaimed={onClaimed}
         go={go}
+
       />
     </div>
   );
