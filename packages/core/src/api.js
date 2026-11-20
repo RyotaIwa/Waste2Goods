@@ -230,6 +230,34 @@ export function clearStoredAuth() {
   removeAuthStorage(AUTH_STORAGE_KEY);
 }
 
+async function refreshAccessToken() {
+  const auth = getStoredAuth();
+  if (!auth?.refreshToken) return null;
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        refresh_token: auth.refreshToken,
+        refreshToken: auth.refreshToken,
+        refreshFamilyId: auth.refreshFamilyId,
+      }),
+    });
+    if (!res.ok) { clearStoredAuth(); return null; }
+    const data = await res.json().catch(() => null);
+    const token = data?.token || data?.accessToken || data?.access_token;
+    if (!token) return null;
+    setStoredAuth({
+      ...auth,
+      token,
+      refreshToken: data.refreshToken || data.refresh_token || auth.refreshToken,
+      refreshFamilyId: data.refreshFamilyId || auth.refreshFamilyId,
+    });
+    return token;
+  } catch {
+    return null;
+  }
+}
 // Generic Fetcher
 // forceMockFallback = true (default for pre-login screens, kiosk) → returns mock on network error.
 // forceMockFallback = false (admin use) → returns null on any error so caller can properly render DEMO badge.
@@ -243,10 +271,19 @@ async function fetchApi(endpoint, options) {
   };
 
   try {
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    let response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       headers,
       ...options,
     });
+    if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+          ...options,
+          headers: { ...headers, Authorization: `Bearer ${newToken}` },
+        });
+      }
+    }
 
     if (!response.ok) {
       console.warn(`API Error: ${response.status} ${response.statusText} for ${endpoint}`);
@@ -417,6 +454,7 @@ export const Waste2GoodsAPI = {
         isAuthenticated: true,
         user: result.user,
         token: result.token,
+        refreshToken: result.refreshToken || result.refresh_token,
       };
       setStoredAuth(authState);
       return authState;
@@ -463,17 +501,22 @@ export const Waste2GoodsAPI = {
   },
   getAuthState: () => getStoredAuth(),
 
-  // Resident enters the 8-character receipt code printed by the machine.
   claimMachineCode: async (code) => {
-    const auth = getStoredAuth();
-    const response = await fetch(`${getApiBaseUrl()}/machine/claim`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-      },
-      body: JSON.stringify({ code }),
-    });
+    const send = (token) =>
+      fetch(`${getApiBaseUrl()}/machine/claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ code }),
+      });
+
+    let response = await send(getStoredAuth()?.token);
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) response = await send(newToken);
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.error || data.message || `Could not redeem the code (HTTP ${response.status})`);

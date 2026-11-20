@@ -315,6 +315,35 @@ export function clearStoredAuth(): void {
   removeAuthStorage(AUTH_STORAGE_KEY);
 }
 
+async function refreshAccessToken(): Promise<string | null> {
+  const auth = getStoredAuth() as any;
+  if (!auth?.refreshToken) return null;
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        refresh_token: auth.refreshToken,
+        refreshToken: auth.refreshToken,
+        refreshFamilyId: auth.refreshFamilyId,
+      }),
+    });
+    if (!res.ok) { clearStoredAuth(); return null; }
+    const data = await res.json().catch(() => null);
+    const token = data?.accessToken || data?.token || data?.access_token;
+    if (!token) return null;
+    setStoredAuth({
+      ...auth,
+      token,
+      refreshToken: data.refreshToken || data.refresh_token || auth.refreshToken,
+      refreshFamilyId: data.refreshFamilyId || auth.refreshFamilyId,
+    });
+    return token;
+  } catch {
+    return null;
+  }
+}
+
 // Generic Fetcher
 // Use options.forceMockFallback = true only for kiosk/mobile pre-login screens
 // where mock-data UX is acceptable. Admin endpoints leave this unset so
@@ -330,10 +359,16 @@ async function fetchApi<T>(endpoint: string, options?: FetchOpts): Promise<T | n
   };
 
   try {
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-      headers,
-      ...options,
-    });
+    let response = await fetch(`${getApiBaseUrl()}${endpoint}`, { headers, ...options });
+    if (response.status === 401 && !endpoint.startsWith("/auth/")) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+          ...options,
+          headers: { ...headers, Authorization: `Bearer ${newToken}` },
+        });
+      }
+    }
 
     if (!response.ok) {
       console.warn(`API Error: ${response.status} ${response.statusText} for ${endpoint}`);
@@ -554,15 +589,21 @@ export const Waste2GoodsAPI = {
 
   // Resident enters the 8-character receipt code printed by the machine.
   claimMachineCode: async (code: string) => {
-    const auth = getStoredAuth();
-    const response = await fetch(`${getApiBaseUrl()}/machine/claim`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(auth?.token ? { Authorization: `Bearer ${auth.token}` } : {}),
-      },
-      body: JSON.stringify({ code }),
-    });
+    const send = (token?: string) =>
+      fetch(`${getApiBaseUrl()}/machine/claim`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ code }),
+      });
+
+    let response = await send(getStoredAuth()?.token);
+    if (response.status === 401) {
+      const newToken = await refreshAccessToken();
+      if (newToken) response = await send(newToken);
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(data.error || data.message || `Could not redeem the code (HTTP ${response.status})`);
@@ -752,8 +793,6 @@ export const Waste2GoodsAPI = {
     const userId = (auth.user as any).id || (auth.user as any).userId;
     if (!userId) return false;
     const body: any = { ...patches };
-    if (patches.password) body.passwordHash = `hashed_${patches.password}`;
-    delete body.password;
     const result = await fetchApi<any>(`/users/${userId}`, {
       method: "PUT",
       body: JSON.stringify(body),
