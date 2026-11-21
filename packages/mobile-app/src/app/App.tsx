@@ -3164,26 +3164,23 @@ export default function App() {
 
   const onRewardRedeem = async () => {
     if (!selectedReward) return;
-    const cost = selectedReward.cost ?? selectedReward.points ?? 0;
     const uid = currentUser.id || currentUser.userId;
     if (!uid) {
       console.error("User not logged in");
       return;
     }
     try {
+      // Send redemption request to admin (status: pending — points NOT deducted yet)
       await Waste2GoodsAPI.redeemReward({
         userId: uid,
         rewardId: Number(selectedReward.id ?? 0),
         quantity: 1,
       });
-      const newBal = Math.max(0, Number(currentUser.points || 0) - Number(cost));
-      patchAuthBalance(newBal);
-      setProfileUser((prev: any) => ({ ...(prev || currentUser), points: newBal, pointsBalance: newBal, redeemed: Number(currentUser.redeemed
-|| 0) + 1 }));
+      // Points are deducted ONLY when admin approves via PUT /api/redemptions/:id/status
       setSelectedReward(null);
       go("redeem-history");
     } catch (e) {
-      console.error(e instanceof Error ? e.message : "Redemption failed");
+      console.error(e instanceof Error ? e.message : "Redemption request failed");
     }
   };
 
