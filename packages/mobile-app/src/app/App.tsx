@@ -2402,47 +2402,29 @@ function ScreenHistory(p: MobileAppRouterProps) {
 }
 
 function ScreenRedeemHistory(p: MobileAppRouterProps) {
-  const [items, setItems] = useState([
-    {
-      id: "RD-101",
-      n: "P50 GCash Load",
-      pts: "500 pts",
-      i: "📱",
-      status: "ready",
-      t: "Arrives in 24 hours",
-      code: "GC-2G-9841",
-      pickupLocation: "GCash Digital Distribution",
-      pickupHours: "Processed within 24 Hours",
-      instructions: "Credits will be transferred to your registered mobile number automatically upon verification.",
-      date: "Aug 26, 2026"
-    },
-    {
-      id: "RD-102",
-      n: "5kg Rice Voucher",
-      pts: "1,200 pts",
-      i: "🍚",
-      status: "claimed",
-      t: "Redeemed at K-01",
-      code: "RICE-88-1204",
-      pickupLocation: "Cabantian Barangay Hall (Resource Desk)",
-      pickupHours: "Mon-Fri: 8:00 AM – 5:00 PM",
-      instructions: "Present this voucher code to the desk officer to collect your 5kg Premium Rice pack.",
-      date: "Aug 20, 2026"
-    },
-    {
-      id: "RD-103",
-      n: "School Supplies Kit",
-      pts: "800 pts",
-      i: "🎒",
-      status: "ready",
-      t: "Pick up at Barangay Hall",
-      code: "EDU-44-5920",
-      pickupLocation: "Cabantian Barangay Hall (Ecology Desk)",
-      pickupHours: "Mon-Fri: 8:00 AM – 5:00 PM",
-      instructions: "Present your Claim Code or Resident ID (Maria Santos) at the barangay hall to claim your kit.",
-      date: "Aug 25, 2026"
-    },
-  ]);
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoading(true);
+        const uid = p.currentUser.id || p.currentUser.userId;
+        if (!uid) { setLoading(false); return; }
+        const res = (await Waste2GoodsAPI.fetchRedemptions()) as any[];
+        if (cancelled) return;
+        const all = Array.isArray(res) ? res : [];
+        setItems(all.filter((r: any) => String(r.userId || r.user_id) === String(uid)));
+      } catch (err) {
+        console.warn("Fetch redemptions failed:", err);
+        setItems([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [p.currentUser]);
 
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
   const [copied, setCopied] = useState(false);
@@ -3183,11 +3165,26 @@ export default function App() {
   const onRewardRedeem = async () => {
     if (!selectedReward) return;
     const cost = selectedReward.cost ?? selectedReward.points ?? 0;
-    const newBal = Math.max(0, Number(currentUser.points || 0) - Number(cost));
-    patchAuthBalance(newBal);
-    setProfileUser((prev: any) => ({ ...(prev || currentUser), points: newBal, pointsBalance: newBal, redeemed: Number(currentUser.redeemed || 0) + 1 }));
-    setSelectedReward(null);
-    go("redeem-history");
+    const uid = currentUser.id || currentUser.userId;
+    if (!uid) {
+      console.error("User not logged in");
+      return;
+    }
+    try {
+      await Waste2GoodsAPI.redeemReward({
+        userId: uid,
+        rewardId: Number(selectedReward.id ?? 0),
+        quantity: 1,
+      });
+      const newBal = Math.max(0, Number(currentUser.points || 0) - Number(cost));
+      patchAuthBalance(newBal);
+      setProfileUser((prev: any) => ({ ...(prev || currentUser), points: newBal, pointsBalance: newBal, redeemed: Number(currentUser.redeemed
+|| 0) + 1 }));
+      setSelectedReward(null);
+      go("redeem-history");
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : "Redemption failed");
+    }
   };
 
   const onRewardClose = () => setSelectedReward(null);
