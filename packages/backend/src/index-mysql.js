@@ -335,9 +335,9 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
 
     await db.query(
       `INSERT INTO users 
-         (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
-          total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'active', ?, ?, ?, ?, ?)`,
+          (userId, firstName, lastName, email, passwordHash, qr_code, barangayId,
+            total_points, pointsBalance, totalSubmissions, status, phone, province, city, barangayName, streetAddress)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'active', ?, ?, ?, ?, ?)`,
       [userId, firstName, lastName, normalizedEmail, passwordHash, qrCode, barangayId,
         phone, province, city, barangayName, streetAddress]
     );
@@ -1069,12 +1069,12 @@ function buildLeaderboardRow(user, index) {
 app.get('/api/analytics/weekly', authenticate, analyticsHeavyLimiter, requirePermission('read', 'analytics'), cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query(`
-      SELECT DATE(timestamp) AS day, SUM(weightKg) AS kg
-      FROM recycling_transactions
-      WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-      GROUP BY DATE(timestamp)
-      ORDER BY DATE(timestamp) ASC
-    `);
+        SELECT DATE(timestamp) AS day, SUM(weightKg) AS kg
+        FROM recycling_transactions
+        WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        GROUP BY DATE(timestamp)
+        ORDER BY DATE(timestamp) ASC
+      `);
     if (rows.length === 0) {
       // Empty DB — return classic sample shape as default fallback only, not hardcoded UI
       return res.json([
@@ -1092,22 +1092,22 @@ app.get('/api/analytics/weekly', authenticate, analyticsHeavyLimiter, requirePer
 app.get('/api/analytics/monthly', authenticate, analyticsHeavyLimiter, requirePermission('read', 'analytics'), cacheRoute(60), async (req, res) => {
   try {
     const [txRows] = await db.query(`
-      SELECT DATE_FORMAT(timestamp, '%Y-%m') AS ym,
-             SUM(weightKg) AS collected,
-             COUNT(DISTINCT userId) AS users
-      FROM recycling_transactions
-      WHERE YEAR(timestamp) = YEAR(NOW())
-      GROUP BY DATE_FORMAT(timestamp, '%Y-%m')
-      ORDER BY ym ASC
-    `);
+        SELECT DATE_FORMAT(timestamp, '%Y-%m') AS ym,
+              SUM(weightKg) AS collected,
+              COUNT(DISTINCT userId) AS users
+        FROM recycling_transactions
+        WHERE YEAR(timestamp) = YEAR(NOW())
+        GROUP BY DATE_FORMAT(timestamp, '%Y-%m')
+        ORDER BY ym ASC
+      `);
     // Rewards redeemed per month
     const [redRows] = await db.query(`
-      SELECT DATE_FORMAT(redemptionDate, '%Y-%m') AS ym, COUNT(*) AS redeemed
-      FROM reward_redemptions
-      WHERE YEAR(redemptionDate) = YEAR(NOW())
-      GROUP BY DATE_FORMAT(redemptionDate, '%Y-%m')
-      ORDER BY ym ASC
-    `);
+        SELECT DATE_FORMAT(redemptionDate, '%Y-%m') AS ym, COUNT(*) AS redeemed
+        FROM reward_redemptions
+        WHERE YEAR(redemptionDate) = YEAR(NOW())
+        GROUP BY DATE_FORMAT(redemptionDate, '%Y-%m')
+        ORDER BY ym ASC
+      `);
     const redeemedByMonth = Object.fromEntries(redRows.map(r => [r.ym, Number(r.redeemed)]));
     const monthly = txRows.map(r => ({
       month: getMonthName(new Date(r.ym + '-01')),
@@ -1138,37 +1138,37 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
   try {
     // Total collected kg & points & submissions from transactions
     const [sum1] = await db.query(`
-      SELECT COALESCE(SUM(weightKg),0) AS totalKgCollected,
-             COALESCE(SUM(pointsEarned),0) AS totalPointsAwarded,
-             COUNT(*) AS totalTransactions
-      FROM recycling_transactions
-    `);
+        SELECT COALESCE(SUM(weightKg),0) AS totalKgCollected,
+              COALESCE(SUM(pointsEarned),0) AS totalPointsAwarded,
+              COUNT(*) AS totalTransactions
+        FROM recycling_transactions
+      `);
     // Total users & active residents (active = status='active' AND submissions > 0)
     const [sum2] = await db.query(`
-      SELECT COUNT(*) AS totalUsers,
-             SUM(CASE WHEN status='active' AND totalSubmissions>0 THEN 1 ELSE 0 END) AS activeResidents
-      FROM users
-    `);
+        SELECT COUNT(*) AS totalUsers,
+              SUM(CASE WHEN status='active' AND totalSubmissions>0 THEN 1 ELSE 0 END) AS activeResidents
+        FROM users
+      `);
     // Rewards redeemed
     const [sum3] = await db.query(`SELECT COUNT(*) AS rewardsRedeemed FROM reward_redemptions`);
     // Rewards low stock (<10)
     const [sum4] = await db.query(`SELECT COUNT(*) AS lowStock FROM rewards WHERE stockQuantity < 10 AND status='active'`);
     // Kiosks online
     const [sum5] = await db.query(`
-      SELECT SUM(CASE WHEN status='online' THEN 1 ELSE 0 END) AS kiosksOnline,
-             COUNT(*) AS totalKiosks
-      FROM kiosks
-    `);
+        SELECT SUM(CASE WHEN status='online' THEN 1 ELSE 0 END) AS kiosksOnline,
+              COUNT(*) AS totalKiosks
+        FROM kiosks
+      `);
 
     // ── Recent 8 transactions WITH user names ──
     const [recentTx] = await db.query(`
-      SELECT t.transactionId, t.timestamp, t.weightKg, t.pointsEarned, t.kioskId, t.userId,
-             u.firstName, u.lastName
-      FROM recycling_transactions t
-      LEFT JOIN users u ON u.userId = t.userId
-      ORDER BY t.timestamp DESC
-      LIMIT 8
-    `);
+        SELECT t.transactionId, t.timestamp, t.weightKg, t.pointsEarned, t.kioskId, t.userId,
+              u.firstName, u.lastName
+        FROM recycling_transactions t
+        LEFT JOIN users u ON u.userId = t.userId
+        ORDER BY t.timestamp DESC
+        LIMIT 8
+      `);
     const recent = recentTx.map(t => ({
       id: t.transactionId,
       date: new Date(t.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
@@ -1179,11 +1179,11 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
 
     // ── Top 5 Leaderboard ──
     const [lbRows] = await db.query(`
-      SELECT userId, firstName, lastName, barangayName, pointsBalance, totalSubmissions, tier, phone
-      FROM users
-      ORDER BY pointsBalance DESC
-      LIMIT 5
-    `);
+        SELECT userId, firstName, lastName, barangayName, pointsBalance, totalSubmissions, tier, phone
+        FROM users
+        ORDER BY pointsBalance DESC
+        LIMIT 5
+      `);
     const leaderboard = lbRows.map((u, i) => {
       const name = `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.userId || 'Resident';
       const avatar = name.split(/\s+/).filter(Boolean).map((p) => p[0]).join('').slice(0, 2).toUpperCase();
@@ -1257,7 +1257,9 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
       'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
       [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'pending']
     );
-    CacheBust.redemptions();
+    await CacheBust.redemptions();
+    await CacheBust.users();
+    await CacheBust.rewards();
     res.json({
       ok: true,
       redemptionId,
@@ -1275,15 +1277,15 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
 app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'), cacheRoute(30), async (req, res) => {
   try {
     const [rows] = await db.query(`
-      SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
-             r.status, r.approvedBy, r.redemptionDate,
-             u.firstName, u.lastName, w.rewardName, w.icon, w.category
-      FROM reward_redemptions r
-      LEFT JOIN users u ON u.userId = r.userId
-      LEFT JOIN rewards w ON w.rewardId = r.rewardId
-      ORDER BY r.redemptionDate DESC
-      LIMIT 50
-    `);
+        SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
+              r.status, r.approvedBy, r.redemptionDate,
+              u.firstName, u.lastName, w.rewardName, w.icon, w.category
+        FROM reward_redemptions r
+        LEFT JOIN users u ON u.userId = r.userId
+        LEFT JOIN rewards w ON w.rewardId = r.rewardId
+        ORDER BY r.redemptionDate DESC
+        LIMIT 50
+      `);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1657,6 +1659,29 @@ app.get('/api/notifications', authenticate, requirePermission('list', 'notificat
 // (scoped to ONE resident: their submissions, redemptions,
 //  tasks completed, milestone badges, tier changes)
 // ─────────────────────────────────────────────────────────
+app.get('/api/users/:id/redemptions', authenticate, async (req, res) => {
+  const targetId = String(req.params.id).toUpperCase();
+  const requesterRole = req.user?.role || 'resident';
+  const requesterId = String(req.user?.userId || '').toUpperCase();
+  if (requesterRole !== 'admin' && requesterId !== targetId) {
+    return res.status(403).json({ error: 'Forbidden — you may only view your own redemptions' });
+  }
+  try {
+    const [rows] = await db.query(
+      `SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
+                r.status, r.approvedBy, r.redemptionDate, w.rewardName, w.icon, w.category
+        FROM reward_redemptions r
+        LEFT JOIN rewards w ON w.rewardId = r.rewardId
+        WHERE r.userId = ?
+        ORDER BY r.redemptionDate DESC
+        LIMIT 100`,
+      [targetId]
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
   const targetId = String(req.params.id).toUpperCase();
   const requesterRole = req.user?.role || 'resident';
@@ -1815,7 +1840,7 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
     const [existing] = await db.query('SELECT * FROM reward_redemptions WHERE redemptionId = ?', [redemptionId]);
     if (!existing.length) return res.status(404).json({ error: 'Redemption not found' });
     const redemption = existing[0];
-        if (String(redemption.status).toLowerCase() !== 'pending') {
+    if (String(redemption.status).toLowerCase() !== 'pending') {
       return res.status(409).json({ error: `This redemption was already ${redemption.status}.` });
     }
     if (status === 'approved' || status === 'ready') {
@@ -1840,7 +1865,9 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
       throw txErr;
     }
 
-    CacheBust.redemptions();
+    await CacheBust.redemptions();
+    await CacheBust.users();
+    await CacheBust.rewards();
     res.json({ ok: true, redemptionId, status, message: status === 'ready' || status === 'approved' ? 'Redemption approved — points deducted and stock updated.' : 'Redemption rejected.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1852,221 +1879,221 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
 // ════════════════════════════════════════════════════════════════════
 function securityDashboardHtml() {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Waste2Goods — DevSecOps & OAuth 2.0 Security Dashboard (D2-P2)</title>
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#0f172a;line-height:1.5}
-.wrap{max-width:1200px;margin:0 auto;padding:24px}
-.hero{background:linear-gradient(135deg,#052e16 0%,#064e3b 50%,#0c3547 100%);color:#fff;border-radius:20px;padding:32px 36px;margin-bottom:24px;box-shadow:0 20px 50px rgba(6,78,59,.25)}
-.hero h1{font-size:28px;font-weight:800}.hero p{opacity:.9;margin-top:8px;font-size:14px}
-.grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:20px}
-.card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.05);border:1px solid #e2e8f0}
-.card h3{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
-.score{display:flex;align-items:baseline;gap:6px}.score .num{font-size:30px;font-weight:900;color:#0f172a}.score .max{font-size:14px;font-weight:600;color:#94a3b8}
-.bar{height:8px;background:#e2e8f0;border-radius:999px;margin-top:10px;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#10b981,#059669)}
-.bar.high>span{background:linear-gradient(90deg,#22c55e,#15803d)}.bar.med>span{background:linear-gradient(90deg,#f59e0b,#d97706)}.bar.low>span{background:linear-gradient(90deg,#ef4444,#dc2626)}
-.tier-green{color:#15803d}.tier-orange{color:#c2410c}
-.section{background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 2px 10px rgba(0,0,0,.05);border:1px solid #e2e8f0;margin-bottom:18px}
-.section h2{font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;display:flex;align-items:center;gap:10px}
-.section .sub{color:#64748b;font-size:13px;margin-bottom:16px}
-.chip{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;margin-right:6px}
-.chip-green{background:#dcfce7;color:#166534}.chip-blue{background:#dbeafe;color:#1e40af}.chip-purple{background:#ede9fe;color:#5b21b6}.chip-amber{background:#fef3c7;color:#92400e}.chip-rose{background:#ffe4e6;color:#9f1239}
-.tbl{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
-.tbl th,.tbl td{padding:10px 12px;text-align:left;border-bottom:1px solid #f1f5f9}
-.tbl th{background:#f8fafc;font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
-.tbl tr:last-child td{border-bottom:0}
-.tbl td.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#0ea5e9}
-.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:13px;border:0;cursor:pointer;transition:all .1s;text-decoration:none}
-.btn:active{transform:translateY(1px)}
-.btn-primary{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 6px 14px rgba(16,185,129,.3)}
-.btn-outline{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
-.btn-ghost{background:#f1f5f9;color:#334155}
-.btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-.flow{display:flex;align-items:stretch;gap:8px;margin-top:16px;overflow-x:auto;padding-bottom:6px}
-.flow-step{flex:1;min-width:180px;background:#f8fafc;border:2px solid #e2e8f0;border-radius:12px;padding:14px}
-.flow-step .n{display:inline-flex;width:28px;height:28px;border-radius:50%;align-items:center;justify-content:center;background:#059669;color:#fff;font-weight:900;font-size:13px;margin-bottom:8px}
-.flow-step h4{font-size:13px;font-weight:800;color:#0f172a}.flow-step p{font-size:12px;color:#64748b;margin-top:4px}
-.flow-arrow{align-self:center;font-size:22px;color:#94a3b8;flex-shrink:0}
-.two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-.box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px}
-.box h4{font-size:12px;font-weight:800;color:#334155;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
-.box p,.box li{font-size:12px;color:#475569}.box ul{padding-left:18px}
-.diagram{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:18px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin-top:12px}
-.diagram .k{color:#34d399}.diagram .v{color:#fbbf24}.diagram .c{color:#64748b;font-style:italic}
-.oauth-demo{background:linear-gradient(135deg,#ecfdf5,#f0f9ff);border:2px dashed #10b981;border-radius:14px;padding:18px;margin-top:14px}
-.oauth-demo h3{font-size:15px;font-weight:800;color:#065f46;margin-bottom:10px}
-.steps-list{counter-reset:s;list-style:none;margin-top:6px}
-.steps-list li{counter-increment:s;position:relative;padding:10px 0 10px 44px;border-bottom:1px dashed #d1fae5;font-size:13px;color:#0f172a}
-.steps-list li::before{content:counter(s);position:absolute;left:0;top:8px;width:30px;height:30px;background:#059669;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
-.steps-list li:last-child{border-bottom:0}
-.footer{text-align:center;padding:24px;font-size:12px;color:#94a3b8}
-</style></head><body><div class="wrap">
-<div class="hero">
-  <h1>♻️ Waste2Goods — DevSecOps &amp; OAuth 2.0 Hardened Dashboard</h1>
-  <p>Deliverable D2-P2 · Gamified Recycling Platform Prototype · Backend bound 0.0.0.0:${PORT} · MySQL (XAMPP)</p>
-  <div class="grid">
-    <div class="card"><h3>Auth &amp; OAuth 2.0</h3><div class="score"><span class="num tier-green">25</span><span class="max">/ 25</span></div><div class="bar high"><span style="width:100%"></span></div></div>
-    <div class="card"><h3>Access Control (ABAC)</h3><div class="score"><span class="num tier-green">28</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:93%"></span></div></div>
-    <div class="card"><h3>Rate Limit &amp; Threat Mitigation</h3><div class="score"><span class="num tier-green">28</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:93%"></span></div></div>
-    <div class="card"><h3>Caching / Redis / CDN</h3><div class="score"><span class="num tier-green">45</span><span class="max">/ 50</span></div><div class="bar high"><span style="width:90%"></span></div></div>
-    <div class="card"><h3>Code Quality &amp; DevSecOps</h3><div class="score"><span class="num tier-green">27</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:90%"></span></div></div>
-  </div>
-</div>
-
-<div class="section">
-  <h2>🔐 OAuth 2.0 Authorization Server (RFC 6749 + 7636 PKCE + 8414 Discovery)</h2>
-  <div class="sub">Authorization Code Flow with PKCE S256, Rotating Refresh Tokens with reuse-detection, Introspection (RFC 7662), Revocation (RFC 7009). 4 registered clients: mobile-app, admin-panel, kiosk-app, waste2goods-docs.</div>
-  <div class="three-col">
-    <div class="box"><h4>✓ Endpoints</h4><ul>
-      <li><code>GET /.well-known/oauth-authorization-server</code></li>
-      <li><code>GET /api/oauth2/clients</code></li>
-      <li><code>GET /api/oauth2/authorize</code> — consent UI</li>
-      <li><code>POST /api/oauth2/authorize/consent</code></li>
-      <li><code>POST /api/oauth2/token</code> — 4 grants</li>
-      <li><code>POST /api/oauth2/introspect</code></li>
-      <li><code>POST /api/oauth2/revoke</code></li>
-    </ul></div>
-    <div class="box"><h4>✓ Grant Types</h4><ul>
-      <li><b>authorization_code</b> + PKCE S256 (public clients)</li>
-      <li><b>refresh_token</b> — rotation + family revocation</li>
-      <li><b>client_credentials</b> (confidential clients)</li>
-      <li><b>pin_extension</b> — kiosk PIN-based login</li>
-    </ul></div>
-    <div class="box"><h4>✓ Token Hardening</h4><ul>
-      <li>Access: 15 min short-lived, JWT HS256</li>
-      <li>Refresh: 7 day opaque, rotating, family-id reuse-detect</li>
-      <li>JTI-based access-token revocation list</li>
-      <li>Audience + Issuer + Subject claims</li>
-      <li>Scoped per role (admin:read, rewards:redeem, …)</li>
-    </ul></div>
-  </div>
-
-  <div class="btn-row">
-    <a class="btn btn-primary" href="/api/oauth2/authorize?client_id=waste2goods-docs&redirect_uri=http://localhost:3001/api/oauth2/demo/callback&response_type=code&scope=profile:read&state=instructor-demo-12345&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256">▶ Step 1: OAuth Consent (waste2goods-docs + PKCE)</a>
-    <a class="btn btn-primary" href="/api/auth/google">🔵 Login with Google (OAuth 2.0)</a>
-    <a class="btn btn-primary" href="/api/auth/github">🐙 Login with GitHub (OAuth 2.0)</a>
-    <a class="btn btn-outline" href="/api/oauth2/.well-known/oauth-authorization-server">🔍 RFC 8414 Discovery</a>
-    <a class="btn btn-outline" href="/api/oauth2/clients">📋 Registered Clients</a>
-  </div>
-
-  <div class="oauth-demo">
-    <h3>🎓 Authorization Code + PKCE Flow — 7 Steps</h3>
-    <ol class="steps-list">
-      <li><b>Mobile/Admin App generates PKCE verifier + challenge</b> (S256 hash) → calls <code>/authorize?response_type=code&client_id=X&redirect_uri=Y&code_challenge=…&state=…</code></li>
-      <li><b>Backend validates client_id</b> against registry, ensures redirect_uri whitelisted, PKCE required for public clients → renders <b>branded consent screen</b> with scope descriptions</li>
-      <li><b>User (Resident/Admin) clicks Allow</b> → backend issues short-lived (10 min) <code>authorization_code</code> stored in Redis, redirects back with <code>?code=…&state=…</code></li>
-      <li><b>App exchanges code + verifier at /token</b> → backend recomputes S256(verifier) and matches stored challenge to prevent CSRF/code interception</li>
-      <li><b>Backend returns access_token (15m JWT) + refresh_token (7d opaque)</b> with role-scoped claims; refresh has family_id for rotation tracking</li>
-      <li><b>Every /auth/refresh rotates tokens</b> — old refresh marked <i>rotatedAt</i>; if old refresh is reused, <b>entire family revoked</b> (RFC 6819 token replay defense)</li>
-      <li><b>Logout via /oauth2/revoke</b> — access JTI blacklisted + refresh token deleted; subsequent requests with revoked JTI return 401</li>
-    </ol>
-  </div>
-
-  <div class="flow">
-    <div class="flow-step"><span class="n">1</span><h4>📱 Client App</h4><p>PKCE verifier, open /authorize in browser</p></div><div class="flow-arrow">→</div>
-    <div class="flow-step"><span class="n">2</span><h4>🌐 Auth Server</h4><p>Consent UI, validate client, scope, PKCE</p></div><div class="flow-arrow">→</div>
-    <div class="flow-step"><span class="n">3</span><h4>👤 User</h4><p>Signs in + clicks Allow (decision)</p></div><div class="flow-arrow">→</div>
-    <div class="flow-step"><span class="n">4</span><h4>🔁 Redirect</h4><p>?code= short-lived authz code (Redis)</p></div><div class="flow-arrow">→</div>
-    <div class="flow-step"><span class="n">5</span><h4>🔑 Token Exchange</h4><p>code + code_verifier → access+refresh tokens</p></div><div class="flow-arrow">→</div>
-    <div class="flow-step"><span class="n">6</span><h4>🛡️ Resource APIs</h4><p>JWT verify, JTI revocation check, ABAC policy</p></div>
-  </div>
-</div>
-
-<div class="two-col" style="margin-bottom:18px">
-  <div class="section">
-    <h2>🛡️ ABAC Access Control Policy Engine</h2>
-    <div class="sub">6 roles × 11 resources × 9 actions = 594 evaluated policy cells, plus barangay scoping, ownership checks, superadmin ID lock</div>
-    <table class="tbl"><thead><tr><th>Role</th><th>Capabilities</th><th>Scope</th></tr></thead><tbody>
-      <tr><td><span class="chip chip-rose">SUPER_ADMIN</span></td><td>All + delete admins + archive A-001</td><td>Platform-wide</td></tr>
-      <tr><td><span class="chip chip-purple">ADMIN</span></td><td>Manage users, rewards, kiosks, approve redemptions</td><td>All barangays</td></tr>
-      <tr><td><span class="chip chip-amber">BARANGAY_ADMIN</span></td><td>View residents + transactions in barangay only</td><td>Own barangayId</td></tr>
-      <tr><td><span class="chip chip-green">RESIDENT</span></td><td>Self profile, redeem, kiosk sessions, notifications</td><td>Own userId only</td></tr>
-      <tr><td><span class="chip chip-blue">KIOSK</span></td><td>Write transactions, manage sessions, ping</td><td>Kiosk-bound</td></tr>
-      <tr><td><span class="chip">ANON</span></td><td>Rewards browse, leaderboard public, kiosk status</td><td>Public read-only</td></tr>
-    </tbody></table>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/policy">📄 Download Full Policy Matrix (JSON)</a></div>
-  </div>
-  <div class="section">
-    <h2>🚦 8-Tier Rate Limiting + Progressive Delay</h2>
-    <div class="sub">Per-endpoint tiered limits. After 5x threshold: progressive delay (250ms/step → max 3s) to slow attackers without dropping legitimate traffic.</div>
-    <table class="tbl"><thead><tr><th>Tier</th><th>Limit</th><th>Window</th><th>Scope</th></tr></thead><tbody>
-      <tr><td>Global</td><td><b>1,000</b></td><td>60 s</td><td>IP</td></tr>
-      <tr><td>Auth (login/register)</td><td><b>10</b></td><td>15 min</td><td>IP</td></tr>
-      <tr><td>🔒 Account Lock</td><td><b>5 fails</b></td><td>5 min</td><td>Email + IP</td></tr>
-      <tr><td>Write operations</td><td><b>30</b></td><td>60 s</td><td>User or IP</td></tr>
-      <tr><td>Analytics heavy</td><td><b>60</b></td><td>60 s</td><td>User or IP</td></tr>
-      <tr><td>Kiosk telemetry</td><td><b>120</b></td><td>60 s</td><td>Kiosk sub</td></tr>
-      <tr><td>OAuth Authorize</td><td><b>30</b></td><td>5 min</td><td>IP</td></tr>
-      <tr><td>OAuth Token</td><td><b>60</b></td><td>60 s</td><td>IP</td></tr>
-    </tbody></table>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/rate-info">📊 Rate Limit Policy (JSON)</a></div>
-  </div>
-</div>
-
-<div class="two-col" style="margin-bottom:18px">
-  <div class="section">
-    <h2>💾 3-Tier Caching + CDN-Ready Headers</h2>
-    <div class="sub">Redis-backed (auto-fallback to in-memory if Redis down). Namespaced by role (adm / res / kio / pub), with tag-based invalidation on write.</div>
-    <div class="diagram"><span class="c">// Request flow (GET)</span>
-<span class="k">L1</span>  <span class="v">In-process response wrapper</span>  →  X-W2G-Cache: HIT/MISS
-<span class="k">L2</span>  <span class="v">Redis w2g:cache:{scope}:{url}</span>  →  TTL 15-60s, per-role namespace
-<span class="k">L3</span>  <span class="v">CDN Edge (Cloudflare-ready)</span>  →  Surrogate-Key, Cache-Control: s-maxage, stale-while-revalidate
-
-<span class="c">// Write operations → cache bust</span>
-<span class="k">POST/PUT/DELETE</span>  →  <span class="v">CacheBust.users | transactions | rewards | redemptions | kiosks</span>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Waste2Goods — DevSecOps & OAuth 2.0 Security Dashboard (D2-P2)</title>
+  <style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#f1f5f9;color:#0f172a;line-height:1.5}
+  .wrap{max-width:1200px;margin:0 auto;padding:24px}
+  .hero{background:linear-gradient(135deg,#052e16 0%,#064e3b 50%,#0c3547 100%);color:#fff;border-radius:20px;padding:32px 36px;margin-bottom:24px;box-shadow:0 20px 50px rgba(6,78,59,.25)}
+  .hero h1{font-size:28px;font-weight:800}.hero p{opacity:.9;margin-top:8px;font-size:14px}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:20px}
+  .card{background:#fff;border-radius:14px;padding:18px;box-shadow:0 2px 10px rgba(0,0,0,.05);border:1px solid #e2e8f0}
+  .card h3{font-size:12px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+  .score{display:flex;align-items:baseline;gap:6px}.score .num{font-size:30px;font-weight:900;color:#0f172a}.score .max{font-size:14px;font-weight:600;color:#94a3b8}
+  .bar{height:8px;background:#e2e8f0;border-radius:999px;margin-top:10px;overflow:hidden}.bar>span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#10b981,#059669)}
+  .bar.high>span{background:linear-gradient(90deg,#22c55e,#15803d)}.bar.med>span{background:linear-gradient(90deg,#f59e0b,#d97706)}.bar.low>span{background:linear-gradient(90deg,#ef4444,#dc2626)}
+  .tier-green{color:#15803d}.tier-orange{color:#c2410c}
+  .section{background:#fff;border-radius:14px;padding:22px 24px;box-shadow:0 2px 10px rgba(0,0,0,.05);border:1px solid #e2e8f0;margin-bottom:18px}
+  .section h2{font-size:18px;font-weight:800;color:#0f172a;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+  .section .sub{color:#64748b;font-size:13px;margin-bottom:16px}
+  .chip{display:inline-block;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:700;margin-right:6px}
+  .chip-green{background:#dcfce7;color:#166534}.chip-blue{background:#dbeafe;color:#1e40af}.chip-purple{background:#ede9fe;color:#5b21b6}.chip-amber{background:#fef3c7;color:#92400e}.chip-rose{background:#ffe4e6;color:#9f1239}
+  .tbl{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}
+  .tbl th,.tbl td{padding:10px 12px;text-align:left;border-bottom:1px solid #f1f5f9}
+  .tbl th{background:#f8fafc;font-weight:700;color:#475569;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  .tbl tr:last-child td{border-bottom:0}
+  .tbl td.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:#0ea5e9}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:13px;border:0;cursor:pointer;transition:all .1s;text-decoration:none}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:linear-gradient(135deg,#059669,#10b981);color:#fff;box-shadow:0 6px 14px rgba(16,185,129,.3)}
+  .btn-outline{background:#fff;color:#0f172a;border:1px solid #cbd5e1}
+  .btn-ghost{background:#f1f5f9;color:#334155}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .flow{display:flex;align-items:stretch;gap:8px;margin-top:16px;overflow-x:auto;padding-bottom:6px}
+  .flow-step{flex:1;min-width:180px;background:#f8fafc;border:2px solid #e2e8f0;border-radius:12px;padding:14px}
+  .flow-step .n{display:inline-flex;width:28px;height:28px;border-radius:50%;align-items:center;justify-content:center;background:#059669;color:#fff;font-weight:900;font-size:13px;margin-bottom:8px}
+  .flow-step h4{font-size:13px;font-weight:800;color:#0f172a}.flow-step p{font-size:12px;color:#64748b;margin-top:4px}
+  .flow-arrow{align-self:center;font-size:22px;color:#94a3b8;flex-shrink:0}
+  .two-col{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .three-col{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  .box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px}
+  .box h4{font-size:12px;font-weight:800;color:#334155;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .box p,.box li{font-size:12px;color:#475569}.box ul{padding-left:18px}
+  .diagram{background:#0f172a;color:#e2e8f0;border-radius:12px;padding:18px;font-family:ui-monospace,Consolas,monospace;font-size:12px;line-height:1.7;overflow-x:auto;margin-top:12px}
+  .diagram .k{color:#34d399}.diagram .v{color:#fbbf24}.diagram .c{color:#64748b;font-style:italic}
+  .oauth-demo{background:linear-gradient(135deg,#ecfdf5,#f0f9ff);border:2px dashed #10b981;border-radius:14px;padding:18px;margin-top:14px}
+  .oauth-demo h3{font-size:15px;font-weight:800;color:#065f46;margin-bottom:10px}
+  .steps-list{counter-reset:s;list-style:none;margin-top:6px}
+  .steps-list li{counter-increment:s;position:relative;padding:10px 0 10px 44px;border-bottom:1px dashed #d1fae5;font-size:13px;color:#0f172a}
+  .steps-list li::before{content:counter(s);position:absolute;left:0;top:8px;width:30px;height:30px;background:#059669;color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px}
+  .steps-list li:last-child{border-bottom:0}
+  .footer{text-align:center;padding:24px;font-size:12px;color:#94a3b8}
+  </style></head><body><div class="wrap">
+  <div class="hero">
+    <h1>♻️ Waste2Goods — DevSecOps &amp; OAuth 2.0 Hardened Dashboard</h1>
+    <p>Deliverable D2-P2 · Gamified Recycling Platform Prototype · Backend bound 0.0.0.0:${PORT} · MySQL (XAMPP)</p>
+    <div class="grid">
+      <div class="card"><h3>Auth &amp; OAuth 2.0</h3><div class="score"><span class="num tier-green">25</span><span class="max">/ 25</span></div><div class="bar high"><span style="width:100%"></span></div></div>
+      <div class="card"><h3>Access Control (ABAC)</h3><div class="score"><span class="num tier-green">28</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:93%"></span></div></div>
+      <div class="card"><h3>Rate Limit &amp; Threat Mitigation</h3><div class="score"><span class="num tier-green">28</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:93%"></span></div></div>
+      <div class="card"><h3>Caching / Redis / CDN</h3><div class="score"><span class="num tier-green">45</span><span class="max">/ 50</span></div><div class="bar high"><span style="width:90%"></span></div></div>
+      <div class="card"><h3>Code Quality &amp; DevSecOps</h3><div class="score"><span class="num tier-green">27</span><span class="max">/ 30</span></div><div class="bar high"><span style="width:90%"></span></div></div>
     </div>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/cache-stats">📈 Cache Stats (JSON)</a> <a class="btn btn-ghost" href="/api/security/redis-stats">🔴 Redis Status</a> <a class="btn btn-ghost" href="/cdn/">🌐 CDN static (/cdn)</a> <a class="btn btn-ghost" href="/api/security/cdn-info">CDN headers JSON</a></div>
   </div>
+
   <div class="section">
-    <h2>📐 Code Quality — Tests, Lint, CI, Sonar</h2>
-    <div class="sub">node:test unit tests, ESLint, GitHub Actions (test + npm audit), Cognitive Complexity ≤ 15. Helmet CSP / HSTS / Zod / bcrypt.</div>
-    <div class="box" style="margin-top:12px"><h4>DevSecOps Stack</h4><ul>
-      <li><b>GitHub Actions</b> — <code>.github/workflows/ci.yml</code> runs tests + ESLint + <code>npm audit</code></li>
-      <li><b>Helmet.js</b> — CSP, HSTS (prod only), nosniff (XSS)</li>
-      <li><b>CSRF Origin guard</b> — foreign browser Origins rejected on POST/PUT/DELETE</li>
-      <li><b>Parameterized SQL</b> — mysql2 <code>?</code> placeholders (SQLi)</li>
-      <li><b>CORS whitelist</b> — RegExp + exact-match origin list</li>
-      <li><b>Zod v4</b> — 15 schemas at the API gateway (reject malformed input pre-controller)</li>
-      <li><b>bcryptjs</b> — 10-round salted password hashing, legacy <code>hashed_</code> compat</li>
-      <li><b>API Gateway logger</b> — X-Request-ID correlation, [GW] structured logs</li>
-    </ul></div>
-    <div class="btn-row"><a class="btn btn-ghost" href="/api/security/auth-info">🔐 Auth Hardening Spec (JSON)</a> <a class="btn btn-ghost" href="/api/security/threat-model">Threat model JSON</a></div>
-  </div>
-</div>
+    <h2>🔐 OAuth 2.0 Authorization Server (RFC 6749 + 7636 PKCE + 8414 Discovery)</h2>
+    <div class="sub">Authorization Code Flow with PKCE S256, Rotating Refresh Tokens with reuse-detection, Introspection (RFC 7662), Revocation (RFC 7009). 4 registered clients: mobile-app, admin-panel, kiosk-app, waste2goods-docs.</div>
+    <div class="three-col">
+      <div class="box"><h4>✓ Endpoints</h4><ul>
+        <li><code>GET /.well-known/oauth-authorization-server</code></li>
+        <li><code>GET /api/oauth2/clients</code></li>
+        <li><code>GET /api/oauth2/authorize</code> — consent UI</li>
+        <li><code>POST /api/oauth2/authorize/consent</code></li>
+        <li><code>POST /api/oauth2/token</code> — 4 grants</li>
+        <li><code>POST /api/oauth2/introspect</code></li>
+        <li><code>POST /api/oauth2/revoke</code></li>
+      </ul></div>
+      <div class="box"><h4>✓ Grant Types</h4><ul>
+        <li><b>authorization_code</b> + PKCE S256 (public clients)</li>
+        <li><b>refresh_token</b> — rotation + family revocation</li>
+        <li><b>client_credentials</b> (confidential clients)</li>
+        <li><b>pin_extension</b> — kiosk PIN-based login</li>
+      </ul></div>
+      <div class="box"><h4>✓ Token Hardening</h4><ul>
+        <li>Access: 15 min short-lived, JWT HS256</li>
+        <li>Refresh: 7 day opaque, rotating, family-id reuse-detect</li>
+        <li>JTI-based access-token revocation list</li>
+        <li>Audience + Issuer + Subject claims</li>
+        <li>Scoped per role (admin:read, rewards:redeem, …)</li>
+      </ul></div>
+    </div>
 
-<div class="section">
-  <h2>🏗️ Full DevSecOps Architecture Map</h2>
-  <div class="diagram">
-<span class="c">┌──────────────────────────────────────────────────────────────────────────────┐</span>
-<span class="c">│  CLIENTS                  │  AUTHORIZE (OAuth 2.0)       │  RESOURCE APIS     │</span>
-<span class="c">├───────────────────────────┤  ┌───────────────────────┐    │  ┌───────────────── │</span>
-<span class="k">📱 mobile-app :5173</span> ───────┤─▶│  GET /oauth2/authorize │───┼──│  ✅ Helmet + CORS  │</span>
-<span class="k">🛡️ admin-panel :5174</span> ──────┤  │  + PKCE S256 + State   │    │  ✅ Global Rate 1k  │</span>
-<span class="k">🖥️  kiosk-app :5175</span> ───────┤  │  4 Client Registry      │    │  ✅ Gateway Logger   │</span>
-<span class="c">│                           │  │  Consent Screen UI      │    │  ✅ Zod Validate    │</span>
-<span class="c">│                           │  └───────────┬───────────┘    │  ✅ JWT Auth       │</span>
-<span class="c">│                           │              ▼                │  ✅ ABAC Policy    │</span>
-<span class="c">│                           │  POST /token (code→tokens)◀───┤  ✅ Write Rate 30   │</span>
-<span class="c">│                           │  Refresh rotation + reuse-detect │ ✅ 3-Tier Cache  │</span>
-<span class="c">│                           │  Introspect · Revoke · Logout │  ✅ Redis / Memory │</span>
-<span class="c">├───────────────────────────┴───────────────────────────────┴─── XAMPP MySQL ──┤</span>
-<span class="c">│  🔴 REDIS (namespaced w2g:*) — tokens | jti:revoked | rl:* | cache:* | session │</span>
-<span class="c">└──────────────────────────────────────────────────────────────────────────────┘</span>
-  </div>
-  <div class="btn-row">
-    <a class="btn btn-primary" href="/">🌐 Root API Welcome (endpoint list)</a>
-    <a class="btn btn-outline" href="/api/security/auth-info">🔐 Auth Info</a>
-    <a class="btn btn-outline" href="/api/security/policy">🛡️ ABAC Policy</a>
-    <a class="btn btn-outline" href="/api/security/rate-info">🚦 Rate Limits</a>
-    <a class="btn btn-outline" href="/api/security/cache-stats">💾 Cache</a>
-    <a class="btn btn-outline" href="/api/security/redis-stats">🔴 Redis</a>
-  </div>
-</div>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/api/oauth2/authorize?client_id=waste2goods-docs&redirect_uri=http://localhost:3001/api/oauth2/demo/callback&response_type=code&scope=profile:read&state=instructor-demo-12345&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256">▶ Step 1: OAuth Consent (waste2goods-docs + PKCE)</a>
+      <a class="btn btn-primary" href="/api/auth/google">🔵 Login with Google (OAuth 2.0)</a>
+      <a class="btn btn-primary" href="/api/auth/github">🐙 Login with GitHub (OAuth 2.0)</a>
+      <a class="btn btn-outline" href="/api/oauth2/.well-known/oauth-authorization-server">🔍 RFC 8414 Discovery</a>
+      <a class="btn btn-outline" href="/api/oauth2/clients">📋 Registered Clients</a>
+    </div>
 
-<div class="footer">Waste2Goods API · D2-P2 DevSecOps Hardened · Backend :${PORT} · OAuth 2.0 + ABAC + Rate-Limit + Cache + SonarQube</div>
-</div></body></html>`;
+    <div class="oauth-demo">
+      <h3>🎓 Authorization Code + PKCE Flow — 7 Steps</h3>
+      <ol class="steps-list">
+        <li><b>Mobile/Admin App generates PKCE verifier + challenge</b> (S256 hash) → calls <code>/authorize?response_type=code&client_id=X&redirect_uri=Y&code_challenge=…&state=…</code></li>
+        <li><b>Backend validates client_id</b> against registry, ensures redirect_uri whitelisted, PKCE required for public clients → renders <b>branded consent screen</b> with scope descriptions</li>
+        <li><b>User (Resident/Admin) clicks Allow</b> → backend issues short-lived (10 min) <code>authorization_code</code> stored in Redis, redirects back with <code>?code=…&state=…</code></li>
+        <li><b>App exchanges code + verifier at /token</b> → backend recomputes S256(verifier) and matches stored challenge to prevent CSRF/code interception</li>
+        <li><b>Backend returns access_token (15m JWT) + refresh_token (7d opaque)</b> with role-scoped claims; refresh has family_id for rotation tracking</li>
+        <li><b>Every /auth/refresh rotates tokens</b> — old refresh marked <i>rotatedAt</i>; if old refresh is reused, <b>entire family revoked</b> (RFC 6819 token replay defense)</li>
+        <li><b>Logout via /oauth2/revoke</b> — access JTI blacklisted + refresh token deleted; subsequent requests with revoked JTI return 401</li>
+      </ol>
+    </div>
+
+    <div class="flow">
+      <div class="flow-step"><span class="n">1</span><h4>📱 Client App</h4><p>PKCE verifier, open /authorize in browser</p></div><div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="n">2</span><h4>🌐 Auth Server</h4><p>Consent UI, validate client, scope, PKCE</p></div><div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="n">3</span><h4>👤 User</h4><p>Signs in + clicks Allow (decision)</p></div><div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="n">4</span><h4>🔁 Redirect</h4><p>?code= short-lived authz code (Redis)</p></div><div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="n">5</span><h4>🔑 Token Exchange</h4><p>code + code_verifier → access+refresh tokens</p></div><div class="flow-arrow">→</div>
+      <div class="flow-step"><span class="n">6</span><h4>🛡️ Resource APIs</h4><p>JWT verify, JTI revocation check, ABAC policy</p></div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-bottom:18px">
+    <div class="section">
+      <h2>🛡️ ABAC Access Control Policy Engine</h2>
+      <div class="sub">6 roles × 11 resources × 9 actions = 594 evaluated policy cells, plus barangay scoping, ownership checks, superadmin ID lock</div>
+      <table class="tbl"><thead><tr><th>Role</th><th>Capabilities</th><th>Scope</th></tr></thead><tbody>
+        <tr><td><span class="chip chip-rose">SUPER_ADMIN</span></td><td>All + delete admins + archive A-001</td><td>Platform-wide</td></tr>
+        <tr><td><span class="chip chip-purple">ADMIN</span></td><td>Manage users, rewards, kiosks, approve redemptions</td><td>All barangays</td></tr>
+        <tr><td><span class="chip chip-amber">BARANGAY_ADMIN</span></td><td>View residents + transactions in barangay only</td><td>Own barangayId</td></tr>
+        <tr><td><span class="chip chip-green">RESIDENT</span></td><td>Self profile, redeem, kiosk sessions, notifications</td><td>Own userId only</td></tr>
+        <tr><td><span class="chip chip-blue">KIOSK</span></td><td>Write transactions, manage sessions, ping</td><td>Kiosk-bound</td></tr>
+        <tr><td><span class="chip">ANON</span></td><td>Rewards browse, leaderboard public, kiosk status</td><td>Public read-only</td></tr>
+      </tbody></table>
+      <div class="btn-row"><a class="btn btn-ghost" href="/api/security/policy">📄 Download Full Policy Matrix (JSON)</a></div>
+    </div>
+    <div class="section">
+      <h2>🚦 8-Tier Rate Limiting + Progressive Delay</h2>
+      <div class="sub">Per-endpoint tiered limits. After 5x threshold: progressive delay (250ms/step → max 3s) to slow attackers without dropping legitimate traffic.</div>
+      <table class="tbl"><thead><tr><th>Tier</th><th>Limit</th><th>Window</th><th>Scope</th></tr></thead><tbody>
+        <tr><td>Global</td><td><b>1,000</b></td><td>60 s</td><td>IP</td></tr>
+        <tr><td>Auth (login/register)</td><td><b>10</b></td><td>15 min</td><td>IP</td></tr>
+        <tr><td>🔒 Account Lock</td><td><b>5 fails</b></td><td>5 min</td><td>Email + IP</td></tr>
+        <tr><td>Write operations</td><td><b>30</b></td><td>60 s</td><td>User or IP</td></tr>
+        <tr><td>Analytics heavy</td><td><b>60</b></td><td>60 s</td><td>User or IP</td></tr>
+        <tr><td>Kiosk telemetry</td><td><b>120</b></td><td>60 s</td><td>Kiosk sub</td></tr>
+        <tr><td>OAuth Authorize</td><td><b>30</b></td><td>5 min</td><td>IP</td></tr>
+        <tr><td>OAuth Token</td><td><b>60</b></td><td>60 s</td><td>IP</td></tr>
+      </tbody></table>
+      <div class="btn-row"><a class="btn btn-ghost" href="/api/security/rate-info">📊 Rate Limit Policy (JSON)</a></div>
+    </div>
+  </div>
+
+  <div class="two-col" style="margin-bottom:18px">
+    <div class="section">
+      <h2>💾 3-Tier Caching + CDN-Ready Headers</h2>
+      <div class="sub">Redis-backed (auto-fallback to in-memory if Redis down). Namespaced by role (adm / res / kio / pub), with tag-based invalidation on write.</div>
+      <div class="diagram"><span class="c">// Request flow (GET)</span>
+  <span class="k">L1</span>  <span class="v">In-process response wrapper</span>  →  X-W2G-Cache: HIT/MISS
+  <span class="k">L2</span>  <span class="v">Redis w2g:cache:{scope}:{url}</span>  →  TTL 15-60s, per-role namespace
+  <span class="k">L3</span>  <span class="v">CDN Edge (Cloudflare-ready)</span>  →  Surrogate-Key, Cache-Control: s-maxage, stale-while-revalidate
+
+  <span class="c">// Write operations → cache bust</span>
+  <span class="k">POST/PUT/DELETE</span>  →  <span class="v">CacheBust.users | transactions | rewards | redemptions | kiosks</span>
+      </div>
+      <div class="btn-row"><a class="btn btn-ghost" href="/api/security/cache-stats">📈 Cache Stats (JSON)</a> <a class="btn btn-ghost" href="/api/security/redis-stats">🔴 Redis Status</a> <a class="btn btn-ghost" href="/cdn/">🌐 CDN static (/cdn)</a> <a class="btn btn-ghost" href="/api/security/cdn-info">CDN headers JSON</a></div>
+    </div>
+    <div class="section">
+      <h2>📐 Code Quality — Tests, Lint, CI, Sonar</h2>
+      <div class="sub">node:test unit tests, ESLint, GitHub Actions (test + npm audit), Cognitive Complexity ≤ 15. Helmet CSP / HSTS / Zod / bcrypt.</div>
+      <div class="box" style="margin-top:12px"><h4>DevSecOps Stack</h4><ul>
+        <li><b>GitHub Actions</b> — <code>.github/workflows/ci.yml</code> runs tests + ESLint + <code>npm audit</code></li>
+        <li><b>Helmet.js</b> — CSP, HSTS (prod only), nosniff (XSS)</li>
+        <li><b>CSRF Origin guard</b> — foreign browser Origins rejected on POST/PUT/DELETE</li>
+        <li><b>Parameterized SQL</b> — mysql2 <code>?</code> placeholders (SQLi)</li>
+        <li><b>CORS whitelist</b> — RegExp + exact-match origin list</li>
+        <li><b>Zod v4</b> — 15 schemas at the API gateway (reject malformed input pre-controller)</li>
+        <li><b>bcryptjs</b> — 10-round salted password hashing, legacy <code>hashed_</code> compat</li>
+        <li><b>API Gateway logger</b> — X-Request-ID correlation, [GW] structured logs</li>
+      </ul></div>
+      <div class="btn-row"><a class="btn btn-ghost" href="/api/security/auth-info">🔐 Auth Hardening Spec (JSON)</a> <a class="btn btn-ghost" href="/api/security/threat-model">Threat model JSON</a></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>🏗️ Full DevSecOps Architecture Map</h2>
+    <div class="diagram">
+  <span class="c">┌──────────────────────────────────────────────────────────────────────────────┐</span>
+  <span class="c">│  CLIENTS                  │  AUTHORIZE (OAuth 2.0)       │  RESOURCE APIS     │</span>
+  <span class="c">├───────────────────────────┤  ┌───────────────────────┐    │  ┌───────────────── │</span>
+  <span class="k">📱 mobile-app :5173</span> ───────┤─▶│  GET /oauth2/authorize │───┼──│  ✅ Helmet + CORS  │</span>
+  <span class="k">🛡️ admin-panel :5174</span> ──────┤  │  + PKCE S256 + State   │    │  ✅ Global Rate 1k  │</span>
+  <span class="k">🖥️  kiosk-app :5175</span> ───────┤  │  4 Client Registry      │    │  ✅ Gateway Logger   │</span>
+  <span class="c">│                           │  │  Consent Screen UI      │    │  ✅ Zod Validate    │</span>
+  <span class="c">│                           │  └───────────┬───────────┘    │  ✅ JWT Auth       │</span>
+  <span class="c">│                           │              ▼                │  ✅ ABAC Policy    │</span>
+  <span class="c">│                           │  POST /token (code→tokens)◀───┤  ✅ Write Rate 30   │</span>
+  <span class="c">│                           │  Refresh rotation + reuse-detect │ ✅ 3-Tier Cache  │</span>
+  <span class="c">│                           │  Introspect · Revoke · Logout │  ✅ Redis / Memory │</span>
+  <span class="c">├───────────────────────────┴───────────────────────────────┴─── XAMPP MySQL ──┤</span>
+  <span class="c">│  🔴 REDIS (namespaced w2g:*) — tokens | jti:revoked | rl:* | cache:* | session │</span>
+  <span class="c">└──────────────────────────────────────────────────────────────────────────────┘</span>
+    </div>
+    <div class="btn-row">
+      <a class="btn btn-primary" href="/">🌐 Root API Welcome (endpoint list)</a>
+      <a class="btn btn-outline" href="/api/security/auth-info">🔐 Auth Info</a>
+      <a class="btn btn-outline" href="/api/security/policy">🛡️ ABAC Policy</a>
+      <a class="btn btn-outline" href="/api/security/rate-info">🚦 Rate Limits</a>
+      <a class="btn btn-outline" href="/api/security/cache-stats">💾 Cache</a>
+      <a class="btn btn-outline" href="/api/security/redis-stats">🔴 Redis</a>
+    </div>
+  </div>
+
+  <div class="footer">Waste2Goods API · D2-P2 DevSecOps Hardened · Backend :${PORT} · OAuth 2.0 + ABAC + Rate-Limit + Cache + SonarQube</div>
+  </div></body></html>`;
 }
 
 // ════════════════════════════════════════════════════════════════════
