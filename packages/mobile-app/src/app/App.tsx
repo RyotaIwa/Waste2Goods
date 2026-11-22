@@ -2894,7 +2894,7 @@ export default function App() {
   // (points, submissions, name) and their current leaderboard rank.
   // Also seed the editable settings form fields so the "Save Changes" button works.
   useEffect(() => {
-    if (!["profile", "settings", "history"].includes(screen)) return;
+    if (!["home", "profile", "settings", "history", "rewards", "redeem-history", "tasks"].includes(screen)) return;
     let cancelled = false;
     (async () => {
       setProfileBanner(null);
@@ -2912,7 +2912,11 @@ export default function App() {
       if (cancelled) return;
       setProfileRank(rank || "#-");
     })();
-    return () => { cancelled = true; };
+    const t = setInterval(async () => {
+      const r = Waste2GoodsAPI.refreshCurrentUser ? await Waste2GoodsAPI.refreshCurrentUser() : null;
+      if (!cancelled && r) setProfileUser({ ...r });
+    }, 10000);
+    return () => { cancelled = true; clearInterval(t); };
   }, [screen]);
 
   // Fetch MY notifications (mobile 🔔 bell) when user enters Home or Notifications screen,

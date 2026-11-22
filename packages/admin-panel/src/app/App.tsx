@@ -560,6 +560,15 @@ export default function App() {
   const [confirmNotif, setConfirmNotif] = useState<{ n: any; status: "approved" | "rejected" } | null>(null);
   const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [handled, setHandled] = useState<Record<string, string>>({});
+  const sendRedemptionStatus = async (id: string, status: "approved" | "rejected"): Promise<any> => {
+    const first: any = await Waste2GoodsAPI.approveRedemption(id, status, "A-001");
+    if (first && first.ok) return first;
+    if (status === "approved") {
+      const second: any = await Waste2GoodsAPI.approveRedemption(id, "ready", "A-001");
+      if (second && second.ok) return second;
+    }
+    return first;
+  };
   const showToast = (type: "ok" | "err", text: string) => {
     setToast({ type, text });
     setTimeout(() => setToast(null), 4000);
@@ -576,7 +585,7 @@ export default function App() {
     const id = n.meta?.redemptionId;
     setApproving(true);
     try {
-      const res: any = await Waste2GoodsAPI.approveRedemption(id, status === "approved" ? "ready" : status, "A-001");
+      const res: any = await sendRedemptionStatus(id, status);
       if (!res || res.error || res.ok === false) {
         showToast("err", res?.error || "Could not update this redemption. It may already be processed.");
         setConfirmNotif(null);
@@ -607,8 +616,7 @@ export default function App() {
     setApproving(true);
     try {
       // the server stores approved requests as "ready"
-      const sendStatus = redemptionAction.status === "approved" ? "ready" : redemptionAction.status;
-      const res: any = await Waste2GoodsAPI.approveRedemption(redemptionAction.id, sendStatus as any, "A-001");
+      const res: any = await sendRedemptionStatus(redemptionAction.id, redemptionAction.status);
       if (!res || !res.ok) {
         alert(res?.error || "Could not update this redemption. It may already be processed, or the server rejected the request.");
         return;
