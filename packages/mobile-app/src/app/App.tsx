@@ -2439,7 +2439,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
           .filter((r: any) => String(r.userId ?? r.user_id ?? "").toUpperCase() === uid.toUpperCase())
           .map((r: any, i: number) => {
             const cat: any = rewards.find(x => String(x.id) === String(r.rewardId ?? r.reward_id));
-            const cost = Number(r.pointsSpent ?? r.points_spent ?? r.cost ?? r.points ?? cat?.cost ?? 0);
+            const cost = Number(r.totalPoints ?? r.pointsUsed ?? r.pointsSpent ?? r.points_spent ?? r.cost ?? 0);
             const st = String(r.status ?? "").toLowerCase();
             const rid = r.redemptionId ?? r.redemption_id ?? r.id;
             const when = r.createdAt ?? r.created_at ?? r.redeemedAt ?? r.date;
@@ -2448,7 +2448,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
               n: String(r.rewardName ?? r.reward_name ?? r.name ?? cat?.name ?? "Reward"),
               pts: `${cost.toLocaleString()} pts`,
               i: r.icon ?? cat?.icon ?? "🎁",
-              status: ["claimed", "completed", "delivered", "picked_up"].includes(st) ? "claimed" : "ready",
+              status: st === "pending" ? "pending" : st === "rejected" ? "rejected" : ["claimed", "completed", "delivered", "picked_up"].includes(st) ? "claimed" : "ready",
               t: r.delivery ?? cat?.delivery ?? "Barangay Pick-up",
               code: String(r.code ?? r.voucherCode ?? r.voucher_code ?? r.claimCode ?? rid ?? "-"),
               pickupLocation: r.pickupLocation ?? "Barangay Hall",
@@ -2520,8 +2520,8 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
                 <p className="text-xs font-black text-primary mt-0.5">{h.pts} spent</p>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700 font-black" : "bg-muted text-muted-foreground"}`}>
-                  {isReady ? "Ready to pick up" : "Claimed"}
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${h.status === "pending" ? "bg-amber-100 text-amber-700" : h.status === "rejected" ? "bg-red-100 text-red-700" : isReady ? "bg-green-100 text-green-700 font-black" : "bg-muted text-muted-foreground"}`}>
+                  {h.status === "pending" ? "Pending approval" : h.status === "rejected" ? "Rejected" : isReady ? "Ready to pick up" : "Claimed"}
                 </span>
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </div>
@@ -3155,8 +3155,39 @@ export default function App() {
     }
   }, [screen]);
 
-  const rewardCategories = ["All", "Education", "Grocery", "Lifestyle", "Garden", "Wellness"];
-  const filteredRewards = rewardFilter === "All" ? rewards : rewards.filter(r => r.category === rewardFilter);
+  const [liveRewards, setLiveRewards] = useState<any[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const loadRewards = async () => {
+      const res: any = await Waste2GoodsAPI.fetchRewards();
+      const rows: any[] = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
+      if (!alive || rows.length === 0) return;
+      setLiveRewards(rows
+        .filter((r: any) => String(r.status ?? "active").toLowerCase() === "active")
+        .map((r: any) => {
+          const cost = Number(r.pointsCost ?? r.cost ?? r.points ?? r.points_required ?? 0);
+          return {
+            id: Number(r.rewardId ?? r.id),
+            name: String(r.rewardName ?? r.name ?? "Reward"),
+            points: cost,
+            cost,
+            category: String(r.category ?? "Other"),
+            stock: Number(r.stockQuantity ?? r.stock ?? r.stock_quantity ?? 0),
+            icon: r.icon || "🎁",
+            seasonal: Boolean(Number(r.isSeasonal ?? r.seasonal ?? 0)),
+            description: String(r.description ?? ""),
+            delivery: String(r.delivery ?? "Barangay Pick-up"),
+            validity: String(r.validity ?? "30 Days"),
+          };
+        }));
+    };
+    loadRewards();
+    const t = setInterval(loadRewards, 15000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  const rewardList: typeof rewards = (liveRewards as any) ?? rewards;
+  const rewardCategories = ["All", ...Array.from(new Set(rewardList.map(r => r.category)))];
+  const filteredRewards = rewardFilter === "All" ? rewardList : rewardList.filter(r => r.category === rewardFilter);
 
 
   const onLogin = async () => {
@@ -3236,10 +3267,7 @@ export default function App() {
     }
 
     // 2) new balance: use the server's number when it sends one
-    const serverBal = result.newBalance ?? result.pointsBalance ?? result.balance;
-    const newBal = serverBal !== undefined
-      ? Number(serverBal)
-      : Math.max(0, Number(currentUser.points || 0) - cost);
+    const newBal = Number(currentUser.points || 0); // points are deducted when the admin approves
     patchAuthBalance(newBal);
     setProfileUser((prev: any) => ({
       ...(prev || currentUser),
@@ -3254,7 +3282,7 @@ export default function App() {
       n: r.name,
       pts: `${cost.toLocaleString()} pts`,
       i: r.icon,
-      status: "ready",
+      status: "pending",
       t: r.delivery ?? "Pick up at Barangay Hall",
       code: result.code ?? result.voucherCode ?? result.claimCode ?? "Pending",
       pickupLocation: r.pickupLocation ?? "Barangay Hall",
