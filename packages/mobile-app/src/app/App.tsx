@@ -2427,48 +2427,51 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const load = async (first: boolean) => {
       const local: any[] = p.redemptions || [];
       if (!uid) { setItems(local); setLoading(false); return; }
       try {
-        setLoading(true);
-        const res: any = await Waste2GoodsAPI.fetchRedemptions();
+        if (first) setLoading(true);
+        const tk = Waste2GoodsAPI.getAuthState()?.token || "";
+        const resp = await fetch(`${getApiBaseUrl()}/users/${encodeURIComponent(uid)}/redemptions`, {
+          headers: { Authorization: `Bearer ${tk}` },
+        });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const res: any = await resp.json();
         if (cancelled) return;
         const rows: any[] = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
-        const server = rows
-          .filter((r: any) => String(r.userId ?? r.user_id ?? "").toUpperCase() === uid.toUpperCase())
-          .map((r: any, i: number) => {
-            const cat: any = rewards.find(x => String(x.id) === String(r.rewardId ?? r.reward_id));
-            const cost = Number(r.totalPoints ?? r.pointsUsed ?? r.pointsSpent ?? r.points_spent ?? r.cost ?? 0);
-            const st = String(r.status ?? "").toLowerCase();
-            const rid = r.redemptionId ?? r.redemption_id ?? r.id;
-            const when = r.createdAt ?? r.created_at ?? r.redeemedAt ?? r.date;
-            return {
-              id: String(rid ?? `row-${i}`),
-              n: String(r.rewardName ?? r.reward_name ?? r.name ?? cat?.name ?? "Reward"),
-              pts: `${cost.toLocaleString()} pts`,
-              i: r.icon ?? cat?.icon ?? "🎁",
-              status: st === "pending" ? "pending" : st === "rejected" ? "rejected" : ["claimed", "completed", "delivered", "picked_up"].includes(st) ? "claimed" : "ready",
-              t: r.delivery ?? cat?.delivery ?? "Barangay Pick-up",
-              code: String(r.code ?? r.voucherCode ?? r.voucher_code ?? r.claimCode ?? rid ?? "-"),
-              pickupLocation: r.pickupLocation ?? "Barangay Hall",
-              pickupHours: r.pickupHours ?? "Mon-Fri: 8:00 AM – 5:00 PM",
-              instructions: r.instructions ?? "Present your claim code or Resident ID at the barangay hall to claim this reward.",
-              date: when
-                ? new Date(when).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                : "-",
-            };
-          });
-        const extra = local.filter(l => !server.some(s => s.id === l.id || s.n === l.n));
-        setItems([...server, ...extra]);
+        const server = rows.map((r: any, i: number) => {
+          const cost = Number(r.totalPoints ?? r.pointsUsed ?? r.pointsSpent ?? r.cost ?? 0);
+          const st = String(r.status ?? "").toLowerCase();
+          const rid = r.redemptionId ?? r.id;
+          const when = r.redemptionDate ?? r.createdAt ?? r.date;
+          return {
+            id: String(rid ?? `row-${i}`),
+            n: String(r.rewardName ?? r.name ?? "Reward"),
+            pts: `${cost.toLocaleString()} pts`,
+            i: r.icon ?? "🎁",
+            status: st === "pending" ? "pending" : st === "rejected" ? "rejected" : ["claimed", "completed", "delivered", "picked_up"].includes(st) ? "claimed" : "ready",
+            t: r.delivery ?? "Barangay Pick-up",
+            code: String(r.code ?? r.voucherCode ?? r.claimCode ?? rid ?? "-"),
+            pickupLocation: r.pickupLocation ?? "Barangay Hall",
+            pickupHours: r.pickupHours ?? "Mon-Fri: 8:00 AM – 5:00 PM",
+            instructions: r.instructions ?? "Present your claim code or Resident ID at the barangay hall to claim this reward.",
+            date: when
+              ? new Date(when).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+              : "-",
+          };
+        });
+        setItems(server);
       } catch (err) {
         console.warn("Fetch redemptions failed:", err);
         if (!cancelled) setItems(local);
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    load(true);
+    const t = setInterval(() => load(false), 8000);
+    return () => { cancelled = true; clearInterval(t); };
   }, [uid, p.redemptions]);
 
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
@@ -3264,9 +3267,27 @@ export default function App() {
     }
 
     // 1) save the redemption on the server first
-    const result: any = await Waste2GoodsAPI.redeemReward({ userId, rewardId: r.id, quantity: 1 });
+    let result: any = null;
+    try {
+      const tk = Waste2GoodsAPI.getAuthState()?.token || "";
+      const resp = await fetch(`${getApiBaseUrl()}/rewards/redeem`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${tk}` },
+        body: JSON.stringify({ userId, rewardId: r.id, quantity: 1 }),
+      });
+      const body: any = await resp.json().catch(() => ({}));
+      result = resp.ok
+        ? body
+        : {
+          error: resp.status === 401
+            ? "Your session expired. Please sign out and sign in again."
+            : (body?.error || body?.message || `Server error (HTTP ${resp.status})`)
+        };
+    } catch {
+      result = { error: "Could not reach the server. Please check your connection and try again." };
+    }
     if (!result || result.error) {
-      alert(result?.error || "Could not redeem right now. Please check your connection and try again.");
+      alert(result?.error || "Could not redeem right now.");
       return;
     }
 

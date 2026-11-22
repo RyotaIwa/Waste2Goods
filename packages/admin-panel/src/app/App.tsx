@@ -2183,7 +2183,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
               <button type="button" onClick={() => setRedemptionAction(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
             </div>
             <div className="flex items-center gap-3 mb-4 bg-muted/30 p-3 rounded-xl">
-              <span className="text-3xl">ðŸ</span>
+              <span className="text-3xl">🎁</span>
               <div className="min-w-0">
                 <p className="font-black text-sm text-foreground truncate">{redemptionAction.rewardName}</p>
                 <p className="text-xs text-muted-foreground">Resident ID: {redemptionAction.userId}</p>

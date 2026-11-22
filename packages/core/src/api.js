@@ -272,10 +272,21 @@ async function fetchApi(endpoint, options) {
   };
 
   try {
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    let response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       headers,
       ...options,
     });
+
+    // Expired access token: renew it once and retry the same request.
+    if (response.status === 401 && auth?.refreshToken) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+          ...options,
+          headers: { ...headers, Authorization: `Bearer ${newToken}` },
+        });
+      }
+    }
 
     if (!response.ok) {
       console.warn(`API Error: ${response.status} ${response.statusText} for ${endpoint}`);
@@ -447,6 +458,8 @@ export const Waste2GoodsAPI = {
         isAuthenticated: true,
         user: result.user,
         token: result.token,
+        refreshToken: result.refreshToken || result.refresh_token,
+        refreshFamilyId: result.refreshFamilyId,
       };
       setStoredAuth(authState);
       return authState;

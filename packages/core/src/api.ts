@@ -238,7 +238,13 @@ export async function testApiConnection(): Promise<{ ok: boolean; message: strin
 // splash/onboarding screen. To the user that reads as "I tap Sign In and it
 // restarts from the beginning". A successful sign-in must at minimum survive for
 // the lifetime of the tab.
-const AUTH_STORAGE_KEY = "w2g_auth_state";
+const AUTH_STORAGE_KEY = (() => {
+  try {
+    const p = (typeof window !== "undefined" && window.location && window.location.pathname) || "";
+    if (p === "/admin" || p.startsWith("/admin/")) return "w2g_auth_state_admin";
+  } catch { /* ignore */ }
+  return "w2g_auth_state";
+})();
 
 /** Most recent auth state for this tab. Valid even when web storage is unusable. */
 let cachedAuthState: AuthState | null = null;
@@ -509,6 +515,10 @@ export const Waste2GoodsAPI = {
         user: result.user,
         token: result.token,
       };
+      Object.assign(authState as any, {
+        refreshToken: result.refreshToken || result.refresh_token,
+        refreshFamilyId: result.refreshFamilyId,
+      });
       setStoredAuth(authState);
       return authState;
     } catch (e) {
@@ -535,6 +545,10 @@ export const Waste2GoodsAPI = {
         token: result.token,
       };
       setStoredAuth(authState);
+      Object.assign(authState as any, {
+        refreshToken: result.refreshToken || result.refresh_token,
+        refreshFamilyId: result.refreshFamilyId,
+      });
       return authState;
     } catch (e) {
       throw e instanceof Error ? e : new Error("Login failed — check backend connection or credentials");
