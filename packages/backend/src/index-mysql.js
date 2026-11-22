@@ -1254,7 +1254,7 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
     // Create pending redemption request — points NOT deducted yet, stock NOT decremented yet
     // Admin must approve via PUT /api/redemptions/:id/status before points are deducted
     await db.query(
-      'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
       [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'pending']
     );
     CacheBust.redemptions();
