@@ -557,18 +557,37 @@ export default function App() {
     }
   };
 
-  const quickRedemption = async (n: any, status: "approved" | "rejected") => {
+  const [confirmNotif, setConfirmNotif] = useState<{ n: any; status: "approved" | "rejected" } | null>(null);
+  const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [handled, setHandled] = useState<Record<string, string>>({});
+  const showToast = (type: "ok" | "err", text: string) => {
+    setToast({ type, text });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const quickRedemption = (n: any, status: "approved" | "rejected") => {
+    if (!n.meta?.redemptionId || approving) return;
+    setConfirmNotif({ n, status });
+  };
+
+  const runQuickRedemption = async () => {
+    if (!confirmNotif) return;
+    const { n, status } = confirmNotif;
     const id = n.meta?.redemptionId;
-    if (!id || approving) return;
-    const label = status === "approved" ? "Approve" : "Reject";
-    if (!window.confirm(`${label} "${n.meta?.rewardName || "this reward"}" for ${n.meta?.userId || "this resident"}?`)) return;
     setApproving(true);
     try {
       const res: any = await Waste2GoodsAPI.approveRedemption(id, status === "approved" ? "ready" : status, "A-001");
       if (!res || res.error || res.ok === false) {
-        alert(res?.error || "Could not update this redemption. Please try again.");
+        showToast("err", res?.error || "Could not update this redemption. It may already be processed.");
+        setConfirmNotif(null);
         return;
       }
+      setHandled(h => ({ ...h, [id]: status === "approved" ? "ready" : "rejected" }));
+      setNotifUnread((u: any) => Math.max(0, Number(u || 0) - 1));
+      showToast("ok", status === "approved"
+        ? `Approved ${n.meta?.rewardName || "redemption"}. Points deducted.`
+        : `Rejected ${n.meta?.rewardName || "redemption"}.`);
+      setConfirmNotif(null);
       await refreshData();
     } finally {
       setApproving(false);
@@ -754,7 +773,12 @@ export default function App() {
                   )}
                   {(notifications ?? []).slice(0, 20).map(n => {
                     const isRedemption = n.type === "redemption";
-                    const isPending = isRedemption && n.meta?.status === "pending";
+                    const rid = n.meta?.redemptionId;
+                    const effStatus = handled[rid] ?? n.meta?.status;
+                    const isPending = isRedemption && effStatus === "pending";
+                    const shownMessage = handled[rid]
+                      ? String(n.message || "").replace(/status:\s*\w+/i, `status: ${effStatus}`)
+                      : n.message;
                     const handleNotifClick = () => {
                       if (isRedemption) {
                         setSection("rewards");
@@ -772,7 +796,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-semibold text-foreground leading-tight">{n.title || ''}</p>
-                          {n.message && <p className="text-[11px] text-muted-foreground mt-0.5">{n.message}</p>}
+                          {shownMessage && <p className="text-[11px] text-muted-foreground mt-0.5">{shownMessage}</p>}
                           <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.time || Date.now()).toLocaleString()}</p>
                           {isPending && (
                             <div className="flex gap-1 mt-2">
@@ -812,6 +836,48 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {confirmNotif && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="w-full max-w-sm bg-white rounded-3xl shadow-2xl overflow-hidden">
+            <div className={`px-6 pt-6 pb-4 flex items-center gap-3 ${confirmNotif.status === "approved" ? "bg-green-50" : "bg-red-50"}`}>
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center ${confirmNotif.status === "approved" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                {confirmNotif.status === "approved" ? <Check className="w-5 h-5" /> : <X className="w-5 h-5" />}
+              </div>
+              <div>
+                <h3 className="font-black text-foreground">{confirmNotif.status === "approved" ? "Approve redemption?" : "Reject redemption?"}</h3>
+                <p className="text-xs text-muted-foreground">Resident {confirmNotif.n.meta?.userId || ""}</p>
+              </div>
+            </div>
+            <div className="px-6 py-4 space-y-3">
+              <div className="rounded-2xl border border-border p-3">
+                <p className="font-black text-sm text-foreground">{confirmNotif.n.meta?.rewardName || "Reward"}</p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{new Date(confirmNotif.n.time || Date.now()).toLocaleString()}</p>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {confirmNotif.status === "approved"
+                  ? "Approving deducts the points from the resident's balance and reduces the reward stock."
+                  : "Rejecting keeps the resident's points unchanged."}
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex gap-2">
+              <button type="button" disabled={approving} onClick={() => setConfirmNotif(null)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors disabled:opacity-60">
+                Cancel
+              </button>
+              <button type="button" disabled={approving} onClick={runQuickRedemption}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-colors disabled:opacity-60 ${confirmNotif.status === "approved" ? "bg-green-600 hover:bg-green-700" : "bg-red-600 hover:bg-red-700"}`}>
+                {approving ? "Processing..." : confirmNotif.status === "approved" ? "Approve" : "Reject"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[70] px-4 py-3 rounded-2xl shadow-xl text-sm font-semibold flex items-center gap-2 text-white ${toast.type === "ok" ? "bg-green-600" : "bg-red-600"}`}>
+          {toast.type === "ok" ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}{toast.text}
+        </div>
+      )}
 
       {/* Point Adjustment Modal */}
       {showAdjustModal && selectedUser && (
