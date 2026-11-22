@@ -1,4 +1,4 @@
-
+﻿
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Waste2GoodsAPI, getApiHost, setApiHost as persistApiHost, getApiBaseUrl, testApiConnection, isServerIpPanelEnabled } from "@waste2goods/core";
 import { Html5QrcodeScanner } from "html5-qrcode";
@@ -11,7 +11,7 @@ import {
   ChevronRight, Shield, Mail, Phone, Leaf,
   Settings, Lock, Info, Flame, Camera, Globe,
   ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
-  Copy, Check, Loader2, AlertTriangle, Clock
+  Copy, Check
 } from "lucide-react";
 import ScreenRedeemCode from "./ScreenRedeemCode";
 
@@ -54,12 +54,12 @@ const DEMO_LEADERBOARD_FALLBACK = [
 const rewards = [
   { id: 1, name: "School Supplies Kit", points: 500, cost: 500, category: "Education", stock: 23, icon: "📚", seasonal: false, description: "Complete school essentials set including notebooks, pens, and bag.", delivery: "Barangay Pick-up", validity: "30 Days" },
   { id: 2, name: "Grocery Voucher ₱100", points: 800, cost: 800, category: "Grocery", stock: 15, icon: "🛒", seasonal: false, description: "₱100 voucher redeemable at all participating local grocery stores.", delivery: "Digital Code", validity: "60 Days" },
-  { id: 3, name: "Eco Water Bottle", points: 350, cost: 350, category: "Lifestyle", stock: 41, icon: "🝶", seasonal: false, description: "BPA-free stainless steel insulated 750ml eco water bottle.", delivery: "Barangay Pick-up", validity: "30 Days" },
+  { id: 3, name: "Eco Water Bottle", points: 350, cost: 350, category: "Lifestyle", stock: 41, icon: "🍶", seasonal: false, description: "BPA-free stainless steel insulated 750ml eco water bottle.", delivery: "Barangay Pick-up", validity: "30 Days" },
   { id: 4, name: "Rice (5kg)", points: 1200, cost: 1200, category: "Grocery", stock: 8, icon: "🌾", seasonal: false, description: "5kg premium white rice bag for family consumption.", delivery: "Kiosk Pickup", validity: "14 Days" },
   { id: 5, name: "Plant Seedling Set", points: 250, cost: 250, category: "Garden", stock: 60, icon: "🌱", seasonal: true, description: "Assorted vegetable seedlings set for home gardening.", delivery: "Barangay Pick-up", validity: "14 Days" },
   { id: 6, name: "Reusable Bag Bundle", points: 180, cost: 180, category: "Lifestyle", stock: 88, icon: "👜", seasonal: false, description: "3x heavy-duty canvas reusable shopping bags.", delivery: "Barangay Pick-up", validity: "60 Days" },
   { id: 7, name: "Back-to-School Bundle", points: 650, cost: 650, category: "Education", stock: 12, icon: "🎒", seasonal: true, description: "Backpack, water flask, and basic stationery kit.", delivery: "Barangay Pick-up", validity: "30 Days" },
-  { id: 8, name: "Herbal Tea Set", points: 300, cost: 300, category: "Wellness", stock: 35, icon: "🝵", seasonal: true, description: "Organic herbal tea selection with bamboo strainer.", delivery: "Barangay Pick-up", validity: "30 Days" },
+  { id: 8, name: "Herbal Tea Set", points: 300, cost: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true, description: "Organic herbal tea selection with bamboo strainer.", delivery: "Barangay Pick-up", validity: "30 Days" },
 ];
 const tasks = [
   { id: 1, title: "Submit 2kg of PET bottles", reward: 100, progress: 1.4, goal: 2, unit: "kg", type: "daily", done: false },
@@ -250,6 +250,24 @@ function getRedeemButtonLabel(loading: boolean, success: any): string {
   if (loading) return "Processing...";
   if (success) return "✅ Done — back to Rewards Catalog";
   return "Confirm Redemption";
+}
+
+function redemptionsKey(userId: any) {
+  return `w2g_redemptions_${userId || "guest"}`;
+}
+
+function loadSavedRedemptions(userId: any): any[] {
+  try {
+    const raw = localStorage.getItem(redemptionsKey(userId));
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRedemptions(userId: any, list: any[]) {
+  try { localStorage.setItem(redemptionsKey(userId), JSON.stringify(list)); } catch { /* ignore */ }
 }
 
 
@@ -1004,7 +1022,6 @@ type MobileAppRouterProps = Readonly<{
   setProvince: string;
   notifItems: any[];
   notifUnread: number;
-  redeemRequests: any[];
   kioskSession: { connected: boolean; kioskId?: string; connectedAt?: number };
   kioskChecking: boolean;
   kioskElapsedLabel?: string;
@@ -1047,7 +1064,6 @@ type MobileAppRouterProps = Readonly<{
   setSetProvince: SetState<string>;
   setLoginServerBanner: SetState<{ type: "ok" | "err"; text: string } | null>;
   setApiHost: SetState<string>;
-  setRedeemRequests: SetState<any[]>;
   handleSaveProfile: () => Promise<void>;
   handleDisconnectKiosk: () => Promise<void>;
   onLogin: () => Promise<void>;
@@ -1059,6 +1075,7 @@ type MobileAppRouterProps = Readonly<{
   onRewardRedeem: () => Promise<void>;
   onRewardClose: () => void;
   onSubmitConfirm: () => void;
+  redemptions: any[];
   onClaimed: (r: { newBalance: number; pointsAwarded: number; bottles: number }) => void;
   go: (s: MobileScreen) => void;
 }>;
@@ -1157,7 +1174,7 @@ function ScreenOnboard1({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
     <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
       <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
         <div className="w-48 h-48 rounded-full bg-green-100 border-4 border-green-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(22,163,74,0.15)" }}>
-          <div className="text-8xl">♻︝</div>
+          <div className="text-8xl">♻️</div>
         </div>
         <div className="text-center">
           <h2 className="text-3xl font-black text-foreground">Recycle for Rewards</h2>
@@ -1180,7 +1197,7 @@ function ScreenOnboard2({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
     <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #eff6ff 0%, #dbeafe 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
       <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
         <div className="w-48 h-48 rounded-full bg-blue-100 border-4 border-blue-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(14,165,233,0.15)" }}>
-          <div className="text-8xl">🝆</div>
+          <div className="text-8xl">🏆</div>
         </div>
         <div className="text-center">
           <h2 className="text-3xl font-black text-foreground">Climb the Leaderboard</h2>
@@ -1203,7 +1220,7 @@ function ScreenOnboard3({ go }: Readonly<{ go: (s: MobileScreen) => void }>) {
     <div className="h-full min-h-[100dvh] flex flex-col max-w-xl w-full mx-auto" style={{ background: "linear-gradient(180deg, #fef3c7 0%, #fde68a 100%)", paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
       <div className="flex-1 flex flex-col items-center justify-center px-8 gap-6">
         <div className="w-48 h-48 rounded-full bg-amber-100 border-4 border-amber-200 flex items-center justify-center" style={{ boxShadow: "0 20px 60px rgba(217,119,6,0.15)" }}>
-          <div className="text-8xl">🎝</div>
+          <div className="text-8xl">🎁</div>
         </div>
         <div className="text-center">
           <h2 className="text-3xl font-black text-foreground">Redeem Real Rewards</h2>
@@ -1355,7 +1372,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
             )}
             <div className="grid grid-cols-4 gap-3 my-4">
               {[
-                { i: "📱", l: "SMS" }, { i: "🔝", l: "Authenticator" },
+                { i: "📱", l: "SMS" }, { i: "🔐", l: "Authenticator" },
                 { i: "📧", l: "Email" }, { i: "🆔", l: "Barangay ID" },
               ].map((o) => (
                 <label key={o.l} className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${o.l === "SMS" ? "border-primary bg-primary/5" : "border-border bg-white"}`}>
@@ -1585,7 +1602,7 @@ function ScreenSubmit({
         <div className="bg-white p-4 rounded-2xl border border-border space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-xs font-black text-foreground uppercase tracking-wide">Quick Connect: Nearby Kiosks</p>
-            <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">◝ Ready</span>
+            <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Ready</span>
           </div>
           <div className="space-y-2">
             {nearbyKiosks.map(k => (
@@ -1755,7 +1772,7 @@ function ScreenSubmitDone({ go, currentUser }: Readonly<{ go: (s: MobileScreen) 
         </div>
         <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
           <Leaf className="w-5 h-5 text-amber-600 flex-shrink-0" />
-          <p className="text-xs text-amber-700 font-semibold leading-relaxed">🌝 You saved ~2.5 kg CO₂ today. Keep going!</p>
+          <p className="text-xs text-amber-700 font-semibold leading-relaxed">🌍 You saved ~2.5 kg CO₂ today. Keep going!</p>
         </div>
         <button type="button" onClick={() => go("home")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Back to Home</button>
       </div>
@@ -1839,43 +1856,6 @@ function ScreenHome(p: MobileAppRouterProps) {
           </div>
           <ChevronRight className="w-4 h-4 text-muted-foreground" />
         </button>
-
-        {/* Pending Redemptions Section */}
-        {(function() {
-          const myRedemptions = (p.notifItems || []).filter((n: any) => n.type === "redemption" && (n.meta?.status === "pending" || n.meta?.status === "approved" || n.meta?.status === "rejected"));
-          if (myRedemptions.length === 0) return null;
-          return (
-            <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-black text-foreground">My Redemption Requests</p>
-                <button type="button" onClick={() => p.go("redeem-history")} className="text-xs font-bold text-primary hover:underline">View All →</button>
-              </div>
-              {myRedemptions.map((n: any) => {
-                const status = n.meta?.status || "pending";
-                const statusLabel = status === "pending" ? "Pending Approval" : status === "approved" || status === "ready" ? "Approved - Ready to Claim" : status === "rejected" ? "Rejected" : status;
-                const statusColor = status === "pending" ? "bg-amber-50 text-amber-700 border-amber-200" : status === "approved" || status === "ready" ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200";
-                return (
-                  <button
-                    key={n.id}
-                    type="button"
-                    onClick={() => p.go("redeem-history")}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-colors hover:bg-muted/50 ${statusColor}`}
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-xl">�??</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-black text-foreground">{n.meta?.rewardName || "Reward Redemption"}</p>
-                      <p className="text-[10px] text-muted-foreground font-semibold">{statusLabel}</p>
-                    </div>
-                    <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${status === "pending" ? "bg-amber-100 text-amber-700" : status === "approved" || status === "ready" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                      {status.toUpperCase()}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()}
-
         {p.kioskSession.connected && (
           <button type="button" onClick={p.handleDisconnectKiosk} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 transition-colors">
             <div className="flex items-center gap-3">
@@ -1977,28 +1957,22 @@ function ScreenRewards(p: MobileAppRouterProps) {
           {p.filteredRewards.map(r => {
             const canRedeem = (Number(p.currentUser.points || 0) >= r.cost);
             const cls = canRedeem ? "bg-primary text-white" : "bg-muted text-muted-foreground";
-            const pendingReq = (p.redeemRequests || []).find((q: any) => String(q.rewardId) === String(r.id) && q.status === "pending");
-            const alreadyRequested = Boolean(pendingReq);
             return (
               <button
                 type="button"
                 key={r.name}
-                disabled={alreadyRequested || !canRedeem}
-                onClick={() => !alreadyRequested && p.setSelectedReward(r)}
-                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${alreadyRequested
-                  ? "border-amber-200 bg-amber-50/50"
-                  : canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
-                }`}
+                onClick={() => p.setSelectedReward(r)}
+                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
+                  }`}
               >
                 <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
                   <div className="text-5xl">{r.icon}</div>
-                  {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭝ Seasonal</div>}
-                  {alreadyRequested && <div className="absolute top-2 left-2 text-xs font-bold px-2 py-1 rounded-full bg-primary text-white">Requested</div>}
+                  {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
                 </div>
                 <div className="p-3 space-y-1.5">
                   <p className="text-sm font-black text-foreground line-clamp-2 leading-tight min-h-[2.5rem]">{r.name}</p>
                   <div className="flex items-center justify-between pt-1">
-                    <span className={`font-black px-2.5 py-1 rounded-full ${alreadyRequested ? "bg-amber-100 text-amber-800" : cls}`}>{alreadyRequested ? "Requested" : r.cost + " pts"}</span>
+                    <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{r.cost} pts</span>
                     <span className="text-[10px] text-muted-foreground font-bold capitalize">{r.category}</span>
                   </div>
                 </div>
@@ -2019,53 +1993,13 @@ type DetailProps = MobileAppRouterProps & Readonly<{ onClose: () => void; onRede
 function ScreenRewardDetail(p: DetailProps) {
   const r = p.selectedReward!;
   const canRedeem = Number(p.currentUser.points || 0) >= r.cost;
-  const [showConfirm, setShowConfirm] = useState(false);
-  const [redeemLoading, setRedeemLoading] = useState(false);
-  const [redeemDone, setRedeemDone] = useState(false);
-
-  const handleConfirmRedeem = async () => {
-    setRedeemLoading(true);
-    try {
-      await p.onRedeem();
-      setRedeemDone(true);
-    } catch (e) {
-      console.error(e instanceof Error ? e.message : "Redemption failed");
-    } finally {
-      setRedeemLoading(false);
-    }
-  };
-
-  if (redeemDone) {
-    return (
-      <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
-        <div className="w-full max-w-lg bg-white rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-8 duration-300">
-          <div className="p-8 text-center space-y-4">
-            <div className="w-20 h-20 rounded-full bg-green-50 flex items-center justify-center text-4xl mx-auto mb-4">�??�?</div>
-            <h2 className="text-2xl font-black text-foreground">Request Submitted!</h2>
-            <p className="text-sm text-muted-foreground leading-relaxed">
-              Thank you! Your request to redeem <strong>{r.name}</strong> has been submitted. Please claim it at your barangay once approved.
-            </p>
-            <div className="rounded-xl border border-border bg-amber-50 p-4 mt-4">
-              <p className="text-xs font-bold text-amber-800 mb-1">Status: Pending Approval</p>
-              <p className="text-[10px] text-amber-700">We will notify you once the admin approves or rejects your request.</p>
-            </div>
-            <div className="flex gap-2 pt-6">
-              <button type="button" onClick={() => { setRedeemDone(false); p.onClose(); }} className="flex-1 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Close</button>
-              <button type="button" onClick={() => { setRedeemDone(false); p.onClose(); p.go("redeem-history"); }} className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors">View My Redemptions</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
       <div className="w-full max-w-lg bg-background rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-8 duration-300">
         <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center">
           <div className="text-[8rem]">{r.icon}</div>
           <button type="button" onClick={p.onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur border border-border flex items-center justify-center"><X className="w-5 h-5 text-foreground" /></button>
-          {r.seasonal && <div className="absolute top-4 left-4 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">⭝ Limited Seasonal</div>}
+          {r.seasonal && <div className="absolute top-4 left-4 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Limited Seasonal</div>}
         </div>
         <div className="p-6 space-y-4 overflow-y-auto">
           <div className="flex items-start justify-between gap-3">
@@ -2089,41 +2023,16 @@ function ScreenRewardDetail(p: DetailProps) {
           <div className={`rounded-2xl p-4 flex items-center gap-3 ${canRedeem ? BADGE_OK_BG : BADGE_DANGER_BG}`}>
             <Wallet className={`w-5 h-5 ${canRedeem ? "text-green-700" : "text-red-700"}`} />
             <div>
-              <p className="text-xs font-black">{canRedeem ? "✅ You have enough points" : "⚠︝ Need more points"}</p>
+              <p className="text-xs font-black">{canRedeem ? "✅ You have enough points" : "⚠️ Need more points"}</p>
               <p className="text-[10px] font-semibold mt-0.5">{canRedeem ? `Balance after redeem: ${(Number(p.currentUser.points || 0) - r.cost).toLocaleString()} pts` : `Short by ${(r.cost - Number(p.currentUser.points || 0)).toLocaleString()} pts — submit more recycling!`}</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 pt-2">
             <button type="button" onClick={p.onClose} className={`py-4 ${BTN_SECONDARY_CLS} text-base`}>Close</button>
-            <button type="button" disabled={!canRedeem} onClick={() => setShowConfirm(true)} className={`py-4 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60`}>Redeem Now</button>
+            <button type="button" disabled={!canRedeem} onClick={p.onRedeem} className={`py-4 ${BTN_PRIMARY_CLS} text-base disabled:opacity-60`}>Redeem Now</button>
           </div>
         </div>
       </div>
-
-      {/* Confirmation Dialog Overlay */}
-      {showConfirm && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center">
-          <div className="bg-white rounded-3xl p-6 w-full max-w-md space-y-5 shadow-2xl">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 flex items-center justify-center text-3xl">{r.icon}</div>
-              <div>
-                <h3 className="font-black text-lg text-foreground">Confirm Redemption</h3>
-                <p className="text-sm text-muted-foreground">Spend {r.cost} pts for <strong>{r.name}</strong>?</p>
-              </div>
-            </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-              <p className="text-xs font-bold text-amber-800 mb-1">�??�? Request goes to admin for approval</p>
-              <p className="text-[10px] text-amber-700">Points will be deducted only after admin approves your request.</p>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button type="button" onClick={() => setShowConfirm(false)} className="flex-1 py-3 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
-              <button type="button" disabled={redeemLoading} onClick={handleConfirmRedeem} className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold disabled:opacity-60 hover:bg-green-700 transition-colors flex items-center justify-center gap-2">
-                {redeemLoading ? <Loader2 className="w-4 h-4" /> : ""} {redeemLoading ? "Processing..." : "Yes, Redeem"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2189,7 +2098,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
       <div className="sticky top-0 z-10 bg-background border-b border-border" style={{ paddingTop: "calc(0.5rem + var(--sat))" }}>
         <div className="px-5 py-3 flex items-center justify-between">
           <div>
-            <h2 className="text-xl font-black text-foreground">🝆 Community Leaderboard</h2>
+            <h2 className="text-xl font-black text-foreground">🏆 Community Leaderboard</h2>
             <p className="text-xs text-muted-foreground mt-0.5">Top residents &amp; community recyclers in <strong>{p.currentUser.barangay || "Cabantian"}</strong></p>
           </div>
           <button
@@ -2239,7 +2148,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
             <div className="grid grid-cols-3 gap-2 items-end">
               {[
                 { r: 2, u: p.mergedLeaderboard[1], c: "from-slate-100 to-slate-200 border-slate-300", h: "h-32", pl: "🥈" },
-                { r: 1, u: p.mergedLeaderboard[0], c: "from-amber-100 to-amber-200 border-amber-300", h: "h-40", pl: "🝆" },
+                { r: 1, u: p.mergedLeaderboard[0], c: "from-amber-100 to-amber-200 border-amber-300", h: "h-40", pl: "🏆" },
                 { r: 3, u: p.mergedLeaderboard[2], c: "from-orange-100 to-orange-200 border-orange-300", h: "h-28", pl: "🥉" },
               ].map(pod => (
                 <div key={pod.r} className={`rounded-2xl border bg-gradient-to-b ${pod.c} p-3 flex flex-col items-center justify-end ${pod.h} relative shadow-xs`}>
@@ -2300,41 +2209,12 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
 }
 
 function ScreenNotifications(p: MobileAppRouterProps) {
-  const items = (p.notifItems || []).map((n: any, idx: number) => ({
-    id: String(n.id ?? `notif-${idx}`),
-    title: n.title || "Notification",
-    desc: n.message || "",
-    time: n.time ? new Date(n.time).toLocaleString() : "",
-    type: n.type || "info",
-    severity: n.severity || "info",
-    unread: n.read === false,
-    meta: n.meta || {},
-  })).filter(n => n.type !== "submission");
-
-  const getIcon = (type: string, severity: string) => {
-    if (type === "redemption") {
-      if (severity === "success") return "�??�?";
-      if (severity === "danger") return "�?�";
-      return "�??�?";
-    }
-    if (severity === "success") return "😊";
-    if (severity === "danger") return "🦭";
-    return "📋";
-  };
-
-  const getColor = (severity: string) => {
-    if (severity === "success") return "bg-green-50 border-green-200 text-green-700";
-    if (severity === "danger") return "bg-red-50 border-red-200 text-red-700";
-    if (severity === "info") return "bg-blue-50 border-blue-200 text-blue-700";
-    return "bg-muted border-border text-muted-foreground";
-  };
-
-  const onNotifPress = (n: any) => {
-    if (n.type === "redemption") {
-      p.go("redeem-history");
-    }
-  };
-
+  const items = p.notifItems.length > 0 ? p.notifItems : [
+    { title: "+23 Points Earned", desc: "You recycled 2.3 kg at Kiosk 01", time: "2h ago", i: "🎁", c: "bg-green-50 border-green-200", unread: true },
+    { title: "New Weekly Task", desc: "Submit 1kg to unlock bonus 50 points", time: "8h ago", i: "📋", c: "bg-blue-50 border-blue-200", unread: true },
+    { title: "Seasonal Reward: Christmas Grocery", desc: "Now available in the catalog!", time: "1d ago", i: "🎄", c: "bg-red-50 border-red-200", unread: false },
+    { title: "Welcome to Waste2Goods!", desc: "+50 bonus points for completing onboarding", time: "3d ago", i: "🎉", c: "bg-amber-50 border-amber-200", unread: false },
+  ];
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
@@ -2342,20 +2222,9 @@ function ScreenNotifications(p: MobileAppRouterProps) {
         <p className="text-xs font-bold text-muted-foreground">{p.notifUnread || 0} unread</p>
       </div>
       <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-32">
-        {items.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-center text-xs text-muted-foreground">
-            <Bell className="w-12 h-12 text-muted-foreground/40 mb-3" />
-            <p>No notifications yet.</p>
-          </div>
-        )}
         {items.map((n: any) => (
-          <button
-            key={n.id}
-            type="button"
-            onClick={() => onNotifPress(n)}
-            className={`rounded-2xl p-4 flex items-start gap-4 border transition-colors hover:bg-muted/50 ${getColor(n.severity)}`}
-          >
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl flex-shrink-0 border border-white shadow-sm">{getIcon(n.type, n.severity)}</div>
+          <div key={String(n.id ?? n.title)} className={`rounded-2xl p-4 flex items-start gap-4 border ${n.c}`}>
+            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl flex-shrink-0 border border-white shadow-sm">{n.i}</div>
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-black text-foreground">{n.title}</p>
@@ -2364,8 +2233,7 @@ function ScreenNotifications(p: MobileAppRouterProps) {
               <p className="text-xs text-foreground/80 mt-0.5">{n.desc}</p>
               <p className="text-[10px] text-muted-foreground mt-1.5 font-semibold">{n.time}</p>
             </div>
-            <ChevronRight className="w-4 h-4 text-muted-foreground" />
-          </button>
+          </div>
         ))}
       </div>
       <MobileBottomNav screen={p.screen} go={p.go} />
@@ -2424,7 +2292,7 @@ function ScreenProfile(p: MobileAppRouterProps) {
             { t: "Recycled PET bottles", v: "+8 pts", sub: "K-01 · 2h ago", i: "🧴", c: "bg-blue-50" },
             { t: "Redeemed: P50 Load", v: "-500 pts", sub: "Today · 9:12 AM", i: "📱", c: "bg-purple-50" },
             { t: "Daily streak", v: "+25 pts", sub: "3 days in a row!", i: "🔥", c: "bg-orange-50" },
-            { t: "Level 2 Milestone", v: "+100 pts", sub: "2 days ago", i: "⭝", c: "bg-amber-50" },
+            { t: "Level 2 Milestone", v: "+100 pts", sub: "2 days ago", i: "⭐", c: "bg-amber-50" },
           ].map(a => (
             <div key={a.t} className={`rounded-xl p-3 flex items-center gap-3 ${a.c}`}>
               <div className="text-2xl">{a.i}</div>
@@ -2507,7 +2375,7 @@ function ScreenSettings(p: MobileAppRouterProps) {
 
 function ScreenHistory(p: MobileAppRouterProps) {
   const items = [
-    { t: "Mixed recyclables", v: "+23 pts", sub: "2.3 kg · K-01 · 2h ago", i: "♻︝", c: "bg-green-50", kg: "2.3kg", p: "+23" },
+    { t: "Mixed recyclables", v: "+23 pts", sub: "2.3 kg · K-01 · 2h ago", i: "♻️", c: "bg-green-50", kg: "2.3kg", p: "+23" },
     { t: "PET Bottles (15x)", v: "+8 pts", sub: "0.8 kg · K-01 · Yesterday", i: "🧴", c: "bg-blue-50", kg: "0.8kg", p: "+8" },
     { t: "Cardboard boxes", v: "+12 pts", sub: "1.2 kg · K-02 · 2 days ago", i: "📦", c: "bg-amber-50", kg: "1.2kg", p: "+12" },
     { t: "Aluminum cans (20x)", v: "+3 pts", sub: "0.3 kg · K-01 · 4 days ago", i: "🥫", c: "bg-emerald-50", kg: "0.3kg", p: "+3" },
@@ -2553,32 +2421,55 @@ function ScreenHistory(p: MobileAppRouterProps) {
 }
 
 function ScreenRedeemHistory(p: MobileAppRouterProps) {
-  const [items, setItems] = useState<any[]>([]);
+  const uid = String(p.currentUser?.id || p.currentUser?.userId || "");
+  const [items, setItems] = useState<any[]>(p.redemptions || []);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const local: any[] = p.redemptions || [];
+      if (!uid) { setItems(local); setLoading(false); return; }
       try {
         setLoading(true);
-        const uid = p.currentUser.id || p.currentUser.userId;
-        if (!uid) { setLoading(false); return; }
-        const res = (await Waste2GoodsAPI.fetchRedemptions()) as any[];
+        const res: any = await Waste2GoodsAPI.fetchRedemptions();
         if (cancelled) return;
-        const all = Array.isArray(res) ? res : [];
-        const apiItems = all.filter((r: any) => String(r.userId || r.user_id) === String(uid));
-        // Merge API redemptions with local pending requests so the user always sees their requests
-        const merged = [...(p.redeemRequests || []), ...apiItems];
-        setItems(merged);
+        const rows: any[] = Array.isArray(res) ? res : (Array.isArray(res?.items) ? res.items : []);
+        const server = rows
+          .filter((r: any) => String(r.userId ?? r.user_id ?? "").toUpperCase() === uid.toUpperCase())
+          .map((r: any, i: number) => {
+            const cat: any = rewards.find(x => String(x.id) === String(r.rewardId ?? r.reward_id));
+            const cost = Number(r.pointsSpent ?? r.points_spent ?? r.cost ?? r.points ?? cat?.cost ?? 0);
+            const st = String(r.status ?? "").toLowerCase();
+            const rid = r.redemptionId ?? r.redemption_id ?? r.id;
+            const when = r.createdAt ?? r.created_at ?? r.redeemedAt ?? r.date;
+            return {
+              id: String(rid ?? `row-${i}`),
+              n: String(r.rewardName ?? r.reward_name ?? r.name ?? cat?.name ?? "Reward"),
+              pts: `${cost.toLocaleString()} pts`,
+              i: r.icon ?? cat?.icon ?? "🎁",
+              status: ["claimed", "completed", "delivered", "picked_up"].includes(st) ? "claimed" : "ready",
+              t: r.delivery ?? cat?.delivery ?? "Barangay Pick-up",
+              code: String(r.code ?? r.voucherCode ?? r.voucher_code ?? r.claimCode ?? rid ?? "-"),
+              pickupLocation: r.pickupLocation ?? "Barangay Hall",
+              pickupHours: r.pickupHours ?? "Mon-Fri: 8:00 AM – 5:00 PM",
+              instructions: r.instructions ?? "Present your claim code or Resident ID at the barangay hall to claim this reward.",
+              date: when
+                ? new Date(when).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                : "-",
+            };
+          });
+        const extra = local.filter(l => !server.some(s => s.id === l.id || s.n === l.n));
+        setItems([...server, ...extra]);
       } catch (err) {
         console.warn("Fetch redemptions failed:", err);
-        setItems(p.redeemRequests || []);
+        if (!cancelled) setItems(local);
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [p.currentUser, p.redeemRequests]);
+  }, [uid, p.redemptions]);
 
   const [selectedClaim, setSelectedClaim] = useState<any>(null);
   const [copied, setCopied] = useState(false);
@@ -2591,7 +2482,6 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
 
   const markAsClaimed = (id: string) => {
     setItems(prev => prev.map(item => item.id === id ? { ...item, status: "claimed" } : item));
-    p.setRedeemRequests((p.redeemRequests || []).map((r: any) => r.id === id ? { ...r, status: "claimed" } : r));
     if (selectedClaim?.id === id) {
       setSelectedClaim((prev: any) => prev ? { ...prev, status: "claimed" } : null);
     }
@@ -2605,39 +2495,33 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
       </div>
       <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-20">
         <p className="text-xs text-muted-foreground font-semibold">Tap on any item to view claim details, pickup instructions, and voucher codes.</p>
+        {items.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-10">No redemptions yet.</p>
+        )}
         {items.map(h => {
-          const status = h.status || "pending";
-          const isReady = status === "ready" || status === "approved";
-          const statusLabel = status === "pending" ? "Pending Approval" : status === "approved" || status === "ready" ? "Approved - Ready to Claim" : status === "rejected" ? "Rejected - Not Approved" : status === "claimed" || status === "completed" ? "Claimed" : status;
-          const statusColor = status === "pending" ? "bg-amber-50 text-amber-700 border-amber-200" : status === "approved" || status === "ready" ? "bg-green-50 text-green-700 border-green-200" : status === "rejected" ? "bg-red-50 text-red-700 border-red-200" : "bg-green-50 text-green-700 border-green-200";
-          const statusBadge = status === "pending" ? "bg-amber-100 text-amber-700" : status === "approved" || status === "ready" ? "bg-green-100 text-green-700" : status === "rejected" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700";
-          const rewardName = h.rewardName || h.n || "Reward";
-          const icon = h.icon || "�??";
-          const points = h.totalPoints || h.pts || h.pointsUsed || 0;
-          const date = h.redemptionDate || h.date || "";
-          const code = h.redemptionId || h.code || "";
+          const isReady = h.status === "ready";
           return (
             <button
-              key={h.redemptionId || h.id}
+              key={h.id}
               type="button"
               onClick={() => setSelectedClaim(h)}
               className={`w-full text-left rounded-2xl border transition-all p-4 flex items-start gap-4 ${isReady
                 ? "bg-white border-green-300 hover:border-primary hover:shadow-md cursor-pointer ring-1 ring-green-100"
-                : status === "rejected" ? "bg-white/80 border-red-200 hover:border-red-400 cursor-pointer" : "bg-white/80 border-border hover:border-muted-foreground/40 cursor-pointer"
+                : "bg-white/80 border-border hover:border-muted-foreground/40 cursor-pointer"
                 }`}
             >
-              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{icon}</div>
+              <div className="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-3xl flex-shrink-0">{h.i}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <p className="text-sm font-black text-foreground">{rewardName}</p>
+                  <p className="text-sm font-black text-foreground">{h.n}</p>
                   {isReady && <span className="text-[10px] bg-green-50 text-green-700 font-black px-1.5 py-0.5 rounded border border-green-200">Tap to view</span>}
                 </div>
-                <p className="text-xs text-muted-foreground mt-0.5">{date} · <span className="font-mono font-bold text-foreground">{code}</span></p>
-                <p className="text-xs font-black text-primary mt-0.5">{points} pts spent</p>
+                <p className="text-xs text-muted-foreground mt-0.5">{h.t} · <span className="font-mono font-bold text-foreground">{h.code}</span></p>
+                <p className="text-xs font-black text-primary mt-0.5">{h.pts} spent</p>
               </div>
               <div className="flex flex-col items-end gap-1">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${statusColor}`}>
-                  {statusLabel}
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${isReady ? "bg-green-100 text-green-700 font-black" : "bg-muted text-muted-foreground"}`}>
+                  {isReady ? "Ready to pick up" : "Claimed"}
                 </span>
                 <ChevronRight className="w-4 h-4 text-muted-foreground" />
               </div>
@@ -2653,10 +2537,10 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-3">
-                <span className="text-4xl">{selectedClaim.icon || "�??"}</span>
+                <span className="text-4xl">{selectedClaim.i}</span>
                 <div>
-                  <h3 className="font-black text-lg text-foreground leading-tight">{selectedClaim.rewardName || selectedClaim.n || "Reward"}</h3>
-                  <p className="text-xs text-muted-foreground">Requested on {selectedClaim.redemptionDate || selectedClaim.date || ""} • {selectedClaim.totalPoints || selectedClaim.pts || 0} pts</p>
+                  <h3 className="font-black text-lg text-foreground leading-tight">{selectedClaim.n}</h3>
+                  <p className="text-xs text-muted-foreground">Redeemed on {selectedClaim.date} • {selectedClaim.pts}</p>
                 </div>
               </div>
               <button
@@ -2674,19 +2558,19 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
               <div className="flex items-center justify-between relative px-2">
                 <div className="flex flex-col items-center gap-1 z-10">
                   <div className="w-7 h-7 rounded-full bg-green-500 text-white flex items-center justify-center text-xs font-bold"><Check className="w-4 h-4" /></div>
-                  <span className="text-[10px] font-bold text-foreground">Submitted</span>
+                  <span className="text-[10px] font-bold text-foreground">Redeemed</span>
                 </div>
-                <div className={`h-1 flex-1 ${["pending","approved","ready","claimed","completed"].includes(selectedClaim.status) ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
+                <div className={`h-1 flex-1 ${selectedClaim.status === "claimed" || selectedClaim.status === "ready" ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
                 <div className="flex flex-col items-center gap-1 z-10">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "approved" || selectedClaim.status === "ready" || selectedClaim.status === "claimed" ? "bg-green-500 text-white" : "bg-primary text-white ring-4 ring-primary/20"}`}>
-                    {selectedClaim.status === "approved" || selectedClaim.status === "ready" ? <Package className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "claimed" ? "bg-green-500 text-white" : "bg-primary text-white ring-4 ring-primary/20"}`}>
+                    {selectedClaim.status === "claimed" ? <Check className="w-4 h-4" /> : <Package className="w-4 h-4" />}
                   </div>
-                  <span className="text-[10px] font-bold text-foreground">{selectedClaim.status === "rejected" ? "Rejected" : "Approved"}</span>
+                  <span className="text-[10px] font-bold text-foreground">Ready to Pick</span>
                 </div>
-                <div className={`h-1 flex-1 ${selectedClaim.status === "claimed" || selectedClaim.status === "completed" ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
+                <div className={`h-1 flex-1 ${selectedClaim.status === "claimed" ? "bg-green-500" : "bg-border"} -mx-2 mb-4`} />
                 <div className="flex flex-col items-center gap-1 z-10">
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "claimed" || selectedClaim.status === "completed" ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
-                    {selectedClaim.status === "claimed" || selectedClaim.status === "completed" ? <Check className="w-4 h-4" /> : <Circle className="w-3 h-3" />}
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selectedClaim.status === "claimed" ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>
+                    {selectedClaim.status === "claimed" ? <Check className="w-4 h-4" /> : <Circle className="w-3 h-3" />}
                   </div>
                   <span className="text-[10px] font-bold text-muted-foreground">Claimed</span>
                 </div>
@@ -2694,79 +2578,63 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             </div>
 
             {/* Claim Code Box */}
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 flex items-center justify-between">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 border border-green-200 flex items-center justify-between">
               <div>
-                <p className="text-[11px] font-black text-amber-800 uppercase tracking-wide">Redemption ID</p>
-                <p className="text-xl font-mono font-black text-amber-900 tracking-wider mt-0.5">{selectedClaim.redemptionId || selectedClaim.code || ""}</p>
+                <p className="text-[11px] font-black text-green-800 uppercase tracking-wide">Claim / Voucher Code</p>
+                <p className="text-xl font-mono font-black text-green-900 tracking-wider mt-0.5">{selectedClaim.code}</p>
               </div>
               <button
                 type="button"
-                onClick={() => copyCode(selectedClaim.redemptionId || selectedClaim.code || "")}
-                className="px-3.5 py-2 rounded-xl bg-white border border-amber-300 text-amber-800 text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-amber-50 transition-all"
+                onClick={() => copyCode(selectedClaim.code)}
+                className="px-3.5 py-2 rounded-xl bg-white border border-green-300 text-green-800 text-xs font-bold flex items-center gap-1.5 shadow-xs hover:bg-green-50 transition-all"
               >
-                {copied ? <Check className="w-4 h-4 text-amber-600" /> : <Copy className="w-4 h-4 text-amber-700" />}
+                {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-green-700" />}
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
 
-            {/* Status Info */}
+            {/* Pickup Location & Hours */}
             <div className="p-4 rounded-2xl border border-border bg-white space-y-2">
               <div className="flex items-start gap-2.5">
-                <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5
-                  {selectedClaim.status === 'pending' ? 'bg-amber-100 text-amber-700' : selectedClaim.status === 'approved' || selectedClaim.status === 'ready' ? 'bg-green-100 text-green-700' : selectedClaim.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}"
-                >
-                  {selectedClaim.status === 'pending' ? '?' : selectedClaim.status === 'approved' || selectedClaim.status === 'ready' ? '�??�?' : selectedClaim.status === 'rejected' ? '�?�' : '�??�?'}
-                </div>
+                <MapPin className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-xs font-black text-foreground">Request Status</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.status === "pending" ? "Your request is pending admin approval. You will be notified once approved or rejected." : selectedClaim.status === "approved" || selectedClaim.status === "ready" ? "Your request has been approved! You can now claim your reward at the barangay." : selectedClaim.status === "rejected" ? "Your redemption request was not approved. Please contact the barangay office for details." : selectedClaim.status === "claimed" || selectedClaim.status === "completed" ? "You have successfully claimed your reward." : selectedClaim.status}</p>
+                  <p className="text-xs font-black text-foreground">Pickup Location</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.pickupLocation}</p>
                 </div>
               </div>
-              {selectedClaim.approvedBy && (
-                <div className="flex items-start gap-2.5 pt-2 border-t border-border">
-                  <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-xs font-black text-foreground">Approved By</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.approvedBy}</p>
-                  </div>
+              <div className="flex items-start gap-2.5 pt-2 border-t border-border">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-black text-foreground">Operating Schedule</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{selectedClaim.pickupHours}</p>
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Step-by-Step Claim Instructions */}
-            {selectedClaim.status === "approved" || selectedClaim.status === "ready" && (
-              <div className="p-4 rounded-2xl bg-green-50 border border-green-200">
-                <p className="text-xs font-black text-green-800 mb-2">How to Claim Your Reward</p>
-                <ul className="text-xs text-green-700 space-y-1.5 list-disc list-inside">
-                  <li>Visit the barangay office during official hours.</li>
-                  <li>Present your <strong>Redemption ID</strong> or Resident ID to the desk officer.</li>
-                  <li>Verify your item and receive your reward package.</li>
-                </ul>
-              </div>
-            )}
+            <div className="p-4 rounded-2xl bg-muted/20 border border-border">
+              <p className="text-xs font-black text-foreground mb-2">How to Claim Your Reward</p>
+              <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
+                <li>Visit the pickup location during official hours.</li>
+                <li>Present your <strong>Claim Code</strong> or Resident ID to the desk officer.</li>
+                <li>Verify your item and receive your reward package.</li>
+              </ul>
+            </div>
 
             {/* Action Buttons */}
             <div className="flex gap-2 pt-2">
               {selectedClaim.status === "ready" ? (
                 <button
                   type="button"
-                  onClick={() => markAsClaimed(selectedClaim.redemptionId || selectedClaim.id)}
+                  onClick={() => markAsClaimed(selectedClaim.id)}
                   className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-xs"
                 >
                   <CheckCircle2 className="w-4 h-4" />
                   Mark as Claimed (Simulate)
                 </button>
-              ) : selectedClaim.status === "claimed" || selectedClaim.status === "completed" ? (
+              ) : (
                 <div className="flex-1 py-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center flex items-center justify-center gap-2">
                   <Check className="w-4 h-4" /> Reward Successfully Claimed
-                </div>
-              ) : selectedClaim.status === "rejected" ? (
-                <div className="flex-1 py-3 rounded-xl bg-red-100 text-red-700 text-sm font-bold text-center flex items-center justify-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Request Not Approved
-                </div>
-              ) : (
-                <div className="flex-1 py-3 rounded-xl bg-amber-100 text-amber-700 text-sm font-bold text-center flex items-center justify-center gap-2">
-                  <Clock className="w-4 h-4" /> Waiting for Admin Approval
                 </div>
               )}
               <button
@@ -2826,6 +2694,7 @@ export default function App() {
   const [leaderTab, setLeaderTab] = useState<"weekly" | "monthly">("weekly");
   const [regStep, setRegStep] = useState(0);
   const [selectedReward, setSelectedReward] = useState<typeof rewards[0] | null>(null);
+  const [redemptions, setRedemptions] = useState<any[]>([]);
   const [rewardFilter, setRewardFilter] = useState("All");
   const [mfaCode, setMfaCode] = useState(["", "", "", "", "", ""]);
   const [weighing, setWeighing] = useState(false);
@@ -2874,8 +2743,6 @@ export default function App() {
   // ── Notifications state (for mobile 🔔 bell) ──
   const [notifItems, setNotifItems] = useState<any[]>([]);
   const [notifUnread, setNotifUnread] = useState(0);
-  // ── Local redemption requests (fallback when backend returns empty) ──
-  const [redeemRequests, setRedeemRequests] = useState<any[]>([]);
   const [kioskSession, setKioskSession] = useState<{ connected: boolean; kioskId?: string; connectedAt?: number }>({ connected: false });
   const [kioskChecking, setKioskChecking] = useState(false);
   const [apiHost, setApiHost] = useState(() => getApiHost());
@@ -3005,7 +2872,7 @@ export default function App() {
     if (!UNPROTECTED_SCREENS.has(screen)) {
       const auth = Waste2GoodsAPI.getAuthState();
       if (!auth?.isAuthenticated || !auth?.token) {
-        console.log("🔝 Mobile auth guard: no valid token — returning to login");
+        console.log("🔐 Mobile auth guard: no valid token — returning to login");
         Waste2GoodsAPI.logout();
         setScreen("login");
       }
@@ -3208,10 +3075,10 @@ export default function App() {
         if (fresh) setProfileUser({ ...fresh });
         setProfileBanner({ type: "ok", text: "✅ Profile saved successfully!" });
       } else {
-        setProfileBanner({ type: "err", text: "⚠︝ Failed to save. Check backend connection." });
+        setProfileBanner({ type: "err", text: "⚠️ Failed to save. Check backend connection." });
       }
     } catch (e) {
-      setProfileBanner({ type: "err", text: e instanceof Error ? e.message : "⚠︝ Save failed" });
+      setProfileBanner({ type: "err", text: e instanceof Error ? e.message : "⚠️ Save failed" });
     } finally {
       setProfileSaving(false);
     }
@@ -3344,60 +3211,63 @@ export default function App() {
 
   const onToggleLoginServer = () => setShowLoginServer(prev => !prev);
 
+  // load this user's saved redemptions when they log in
+  useEffect(() => {
+    const uid = (currentUser as any)?.userId || (currentUser as any)?.id;
+    if (uid) setRedemptions(loadSavedRedemptions(uid));
+  }, [(currentUser as any)?.userId, (currentUser as any)?.id]);
+
   const onRewardRedeem = async () => {
     if (!selectedReward) return;
-    const uid = currentUser.id || currentUser.userId;
-    if (!uid) {
-      console.error("User not logged in");
+    const r: any = selectedReward;
+    const cost = Number(r.cost ?? r.points ?? 0);
+    const userId = (currentUser as any).userId || (currentUser as any).id;
+
+    if (Number(currentUser.points || 0) < cost) {
+      alert("You do not have enough points.");
       return;
     }
-    try {
-      // Send redemption request to admin (status: pending � points NOT deducted yet)
-      await Waste2GoodsAPI.redeemReward({
-        userId: uid,
-        rewardId: Number(selectedReward.id ?? 0),
-        quantity: 1,
-      });
-      // Persist locally so redeem-history shows the request even if backend returns empty
-      const now = new Date();
-      const request = {
-        id: `REQ-${Date.now()}`,
-        redemptionId: `R-${Date.now()}`,
-        userId: uid,
-        rewardId: Number(selectedReward.id ?? 0),
-        rewardName: selectedReward.name,
-        totalPoints: selectedReward.cost,
-        pointsUsed: selectedReward.cost,
-        status: "pending",
-        redemptionDate: now.toISOString(),
-        date: now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-        time: now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-        icon: selectedReward.icon,
-        delivery: selectedReward.delivery,
-        validity: selectedReward.validity,
-        category: selectedReward.category,
-        createdAt: now.toISOString(),
-      };
-      setRedeemRequests(prev => [request, ...prev]);
-      // Add notification for the user
-      const notif = {
-        id: `notif-${Date.now()}`,
-        title: "Redemption Request Submitted",
-        message: `Your request to redeem "${selectedReward.name}" has been submitted. Please claim it at your barangay once approved.`,
-        type: "redemption",
-        severity: "info",
-        time: now.toISOString(),
-        read: false,
-        meta: { rewardId: selectedReward.id, rewardName: selectedReward.name },
-      };
-      setNotifItems(prev => [notif, ...prev]);
-      setNotifUnread(prev => prev + 1);
-      // Points are deducted ONLY when admin approves via PUT /api/redemptions/:id/status
-      setSelectedReward(null);
-      go("redeem-history");
-    } catch (e) {
-      console.error(e instanceof Error ? e.message : "Redemption request failed");
+
+    // 1) save the redemption on the server first
+    const result: any = await Waste2GoodsAPI.redeemReward({ userId, rewardId: r.id, quantity: 1 });
+    if (!result || result.error) {
+      alert(result?.error || "Could not redeem right now. Please check your connection and try again.");
+      return;
     }
+
+    // 2) new balance: use the server's number when it sends one
+    const serverBal = result.newBalance ?? result.pointsBalance ?? result.balance;
+    const newBal = serverBal !== undefined
+      ? Number(serverBal)
+      : Math.max(0, Number(currentUser.points || 0) - cost);
+    patchAuthBalance(newBal);
+    setProfileUser((prev: any) => ({
+      ...(prev || currentUser),
+      points: newBal,
+      pointsBalance: newBal,
+      redeemed: Number(currentUser.redeemed || 0) + 1,
+    }));
+
+    // 3) add it to My Redemptions
+    const item = {
+      id: String(result.redemptionId ?? result.id ?? Date.now()),
+      n: r.name,
+      pts: `${cost.toLocaleString()} pts`,
+      i: r.icon,
+      status: "ready",
+      t: r.delivery ?? "Pick up at Barangay Hall",
+      code: result.code ?? result.voucherCode ?? result.claimCode ?? "Pending",
+      pickupLocation: r.pickupLocation ?? "Barangay Hall",
+      pickupHours: "Mon-Fri: 8:00 AM – 5:00 PM",
+      instructions: "Present your claim code or Resident ID at the barangay hall to claim this reward.",
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+    };
+    const next = [item, ...redemptions];
+    setRedemptions(next);
+    saveRedemptions(userId, next);
+
+    setSelectedReward(null);
+    go("redeem-history");
   };
 
   const onRewardClose = () => setSelectedReward(null);
@@ -3481,7 +3351,6 @@ export default function App() {
         currentUser={currentUser}
         notifItems={notifItems}
         notifUnread={notifUnread}
-        redeemRequests={redeemRequests}
         rewardCategories={rewardCategories}
         filteredRewards={filteredRewards}
         profileSinceLabel={profileSinceLabel}
@@ -3515,7 +3384,6 @@ export default function App() {
         setSetBrgy={setSetBrgy}
         setLoginServerBanner={setLoginServerBanner}
         setApiHost={setApiHost}
-        setRedeemRequests={setRedeemRequests}
         handleSaveProfile={handleSaveProfile}
         handleDisconnectKiosk={handleDisconnectKiosk}
         onLogin={onLogin}
@@ -3527,6 +3395,7 @@ export default function App() {
         onRewardRedeem={onRewardRedeem}
         onRewardClose={onRewardClose}
         onSubmitConfirm={onSubmitConfirm}
+        redemptions={redemptions}
         onClaimed={onClaimed}
         go={go}
 
@@ -3534,3 +3403,4 @@ export default function App() {
     </div>
   );
 }
+
