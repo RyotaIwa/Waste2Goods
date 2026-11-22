@@ -153,7 +153,13 @@ export async function testApiConnection() {
 // splash/onboarding screen. To the user that reads as "I tap Sign In and it
 // restarts from the beginning". A successful sign-in must at minimum survive for
 // the lifetime of the tab.
-const AUTH_STORAGE_KEY = "w2g_auth_state";
+const AUTH_STORAGE_KEY = (() => {
+  try {
+    const p = (typeof window !== "undefined" && window.location && window.location.pathname) || "";
+    if (p === "/admin" || p.startsWith("/admin/")) return "w2g_auth_state_admin";
+  } catch { /* ignore */ }
+  return "w2g_auth_state";
+})();
 
 /** Most recent auth state for this tab. Valid even when web storage is unusable. */
 let cachedAuthState = null;
