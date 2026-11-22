@@ -557,6 +557,31 @@ export default function App() {
     }
   };
 
+    const quickRedemption = async (n: any, status: "approved" | "rejected") => {
+    const id = n.meta?.redemptionId;
+    if (!id || approving) return;
+    const label = status === "approved" ? "Approve" : "Reject";
+    if (!window.confirm(`${label} "${n.meta?.rewardName || "this reward"}" for ${n.meta?.userId || "this resident"}?`)) return;
+    setApproving(true);
+    try {
+      const res: any = await Waste2GoodsAPI.approveRedemption(id, status, "A-001");
+      if (!res || res.error || res.ok === false) {
+        alert(res?.error || "Could not update this redemption. Please try again.");
+        return;
+      }
+      await refreshData();
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  // live updates: re-check the server every 8 seconds while logged in
+  useEffect(() => {
+    if (screen === "login") return;
+    const t = setInterval(() => { refreshData(); }, 8000);
+    return () => clearInterval(t);
+  }, [screen]);
+
   // ── Approve/Reject redemption request ──
   const handleApproveRedemption = async () => {
     if (!redemptionAction) return;
@@ -748,7 +773,7 @@ export default function App() {
                             <div className="flex gap-1 mt-2">
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setRedemptionAction({ id: n.meta?.redemptionId, status: "approved", userId: n.meta?.userId, rewardName: n.meta?.rewardName || "Reward" }); }}
+                                onClick={(e) => { e.stopPropagation(); quickRedemption(n, "approved"); }}
                                 disabled={approving}
                                 className="px-2 py-1 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-60 transition-colors"
                               >
@@ -756,7 +781,7 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); setRedemptionAction({ id: n.meta?.redemptionId, status: "rejected", userId: n.meta?.userId, rewardName: n.meta?.rewardName || "Reward" }); }}
+                                onClick={(e) => { e.stopPropagation(); quickRedemption(n, "rejected"); }}
                                 disabled={approving}
                                 className="px-2 py-1 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors"
                               >
@@ -1327,6 +1352,19 @@ function AdminUserProfileDetail({
   openEdit: (u: any) => void;
   toggleStatus: (u: any) => void;
 }>) {
+    const profileUid = String(selectedUser.userId || selectedUser.id || "");
+  const [userRedemptions, setUserRedemptions] = useState<any[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      const res: any = await Waste2GoodsAPI.fetchRedemptions();
+      if (!alive || !Array.isArray(res)) return;
+      setUserRedemptions(res.filter((r: any) => String(r.userId) === profileUid));
+    };
+    load();
+    const t = setInterval(load, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, [profileUid]);
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
@@ -1377,6 +1415,25 @@ function AdminUserProfileDetail({
           </div>
           <div className="bg-white rounded-2xl border border-border p-4">
             <h3 className="font-black text-sm mb-3">Recent Transactions</h3>
+                        <div className="space-y-1.5 mb-3 pb-3 border-b border-border">
+              {userRedemptions.length === 0 && <p className="text-xs text-muted-foreground">No redemptions yet.</p>}
+              {userRedemptions.map((r: any) => {
+                const st = String(r.status || "pending").toLowerCase();
+                const label = st === "pending" ? "Pending" : st === "rejected" ? "Rejected" : "Approved";
+                const cls = st === "pending" ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : st === "rejected" ? "bg-red-50 text-red-700 border-red-200"
+                  : "bg-green-50 text-green-700 border-green-200";
+                const pts = Number(r.totalPoints || r.pointsUsed || 0).toLocaleString();
+                return (
+                  <div key={r.redemptionId} className="flex items-center gap-2 py-1 text-xs">
+                    <span className="text-muted-foreground">{r.redemptionDate ? new Date(r.redemptionDate).toLocaleDateString() : ""}</span>
+                    <span className="flex-1 truncate font-semibold">{r.icon || "🎁"} {r.rewardName || "Reward"}</span>
+                    <span className={`font-black ${st === "approved" || st === "ready" ? "text-red-500" : "text-muted-foreground"}`}>{st === "approved" || st === "ready" ? "-" : ""}{pts}</span>
+                    <span className={`px-2 py-0.5 rounded-full border text-[10px] font-bold ${cls}`}>{label}</span>
+                  </div>
+                );
+              })}
+            </div>
             <div className="space-y-1.5">
               {transactions.slice(0,4).map(t => (
                 <div key={t.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0 text-xs">

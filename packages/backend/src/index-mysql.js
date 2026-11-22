@@ -1815,6 +1815,15 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
     const [existing] = await db.query('SELECT * FROM reward_redemptions WHERE redemptionId = ?', [redemptionId]);
     if (!existing.length) return res.status(404).json({ error: 'Redemption not found' });
     const redemption = existing[0];
+        if (String(redemption.status).toLowerCase() !== 'pending') {
+      return res.status(409).json({ error: `This redemption was already ${redemption.status}.` });
+    }
+    if (status === 'approved' || status === 'ready') {
+      const [bal] = await db.query('SELECT pointsBalance FROM users WHERE userId = ?', [redemption.userId]);
+      if (!bal.length || Number(bal[0].pointsBalance || 0) < Number(redemption.totalPoints || 0)) {
+        return res.status(400).json({ error: 'Resident no longer has enough points.' });
+      }
+    }
 
     await db.query('START TRANSACTION');
     try {
