@@ -1250,33 +1250,21 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
     }
 
     const redemptionId = `RR-${Date.now()}`;
-    const approvedBy = 'A-001';
 
-    await db.query('START TRANSACTION');
-    try {
-      await db.query(
-        'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, approvedBy, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
-        [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'ready', approvedBy]
-      );
-      await db.query('UPDATE users SET pointsBalance = pointsBalance - ? WHERE userId = ?', [totalPoints, userId]);
-      await db.query('UPDATE rewards SET stockQuantity = stockQuantity - ?, stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE rewardId = ?', [quantity, quantity, rewardId]);
-      await db.query('COMMIT');
-    } catch (txErr) {
-      await db.query('ROLLBACK');
-      throw txErr;
-    }
-
-    const [updatedUserRows] = await db.query('SELECT * FROM users WHERE userId = ?', [userId]);
-    const updatedUser = updatedUserRows[0];
+    // Create pending redemption request — points NOT deducted yet, stock NOT decremented yet
+    // Admin must approve via PUT /api/redemptions/:id/status before points are deducted
+    await db.query(
+      'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'pending']
+    );
     CacheBust.redemptions();
     res.json({
       ok: true,
       redemptionId,
-      status: 'ready',
-      newBalance: Number(updatedUser.pointsBalance || 0),
+      status: 'pending',
       totalPointsUsed: totalPoints,
       rewardName: reward.rewardName || reward.name,
-      message: 'Pick up at Barangay Hall within 7 days. Bring a valid ID.'
+      message: 'Redemption request submitted successfully. Waiting for admin approval. You will be notified once approved or rejected.'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1826,9 +1814,25 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
     const { status, adminId = 'A-001' } = req.body;
     const [existing] = await db.query('SELECT * FROM reward_redemptions WHERE redemptionId = ?', [redemptionId]);
     if (!existing.length) return res.status(404).json({ error: 'Redemption not found' });
-    await db.query('UPDATE reward_redemptions SET status = ?, approvedBy = ? WHERE redemptionId = ?', [status, adminId, redemptionId]);
+    const redemption = existing[0];
+
+    await db.query('START TRANSACTION');
+    try {
+      await db.query('UPDATE reward_redemptions SET status = ?, approvedBy = ? WHERE redemptionId = ?', [status, adminId, redemptionId]);
+
+      // When approved/ready: deduct points and decrement stock
+      if (status === 'ready' || status === 'approved') {
+        await db.query('UPDATE users SET pointsBalance = pointsBalance - ? WHERE userId = ?', [Number(redemption.totalPoints || 0), redemption.userId]);
+        await db.query('UPDATE rewards SET stockQuantity = stockQuantity - ?, stock_quantity = GREATEST(stock_quantity - ?, 0) WHERE rewardId = ?', [Number(redemption.quantity || 1), Number(redemption.quantity || 1), redemption.rewardId]);
+      }
+      await db.query('COMMIT');
+    } catch (txErr) {
+      await db.query('ROLLBACK');
+      throw txErr;
+    }
+
     CacheBust.redemptions();
-    res.json({ ok: true, redemptionId, status });
+    res.json({ ok: true, redemptionId, status, message: status === 'ready' || status === 'approved' ? 'Redemption approved — points deducted and stock updated.' : 'Redemption rejected.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

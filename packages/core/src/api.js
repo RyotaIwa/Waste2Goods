@@ -237,11 +237,7 @@ async function refreshAccessToken() {
     const res = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        refresh_token: auth.refreshToken,
-        refreshToken: auth.refreshToken,
-        refreshFamilyId: auth.refreshFamilyId,
-      }),
+      body: JSON.stringify({ refresh_token: auth.refreshToken }),
     });
     if (!res.ok) { clearStoredAuth(); return null; }
     const data = await res.json().catch(() => null);
@@ -251,7 +247,6 @@ async function refreshAccessToken() {
       ...auth,
       token,
       refreshToken: data.refreshToken || data.refresh_token || auth.refreshToken,
-      refreshFamilyId: data.refreshFamilyId || auth.refreshFamilyId,
     });
     return token;
   } catch {
@@ -271,19 +266,10 @@ async function fetchApi(endpoint, options) {
   };
 
   try {
-    let response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       headers,
       ...options,
     });
-    if (response.status === 401 && !endpoint.startsWith("/auth/")) {
-      const newToken = await refreshAccessToken();
-      if (newToken) {
-        response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
-          ...options,
-          headers: { ...headers, Authorization: `Bearer ${newToken}` },
-        });
-      }
-    }
 
     if (!response.ok) {
       console.warn(`API Error: ${response.status} ${response.statusText} for ${endpoint}`);
@@ -429,6 +415,7 @@ export const Waste2GoodsAPI = {
         isAuthenticated: true,
         user: result.user,
         token: result.token,
+        refreshToken: result.refreshToken || result.refresh_token,
       };
       setStoredAuth(authState);
       return authState;
@@ -454,7 +441,6 @@ export const Waste2GoodsAPI = {
         isAuthenticated: true,
         user: result.user,
         token: result.token,
-        refreshToken: result.refreshToken || result.refresh_token,
       };
       setStoredAuth(authState);
       return authState;

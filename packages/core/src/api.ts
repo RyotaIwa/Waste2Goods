@@ -903,6 +903,11 @@ export const Waste2GoodsAPI = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  approveRedemption: (redemptionId: string, status: "approved" | "ready" | "rejected" | "claimed" | "completed", adminId?: string) =>
+    fetchApi<any>(`/redemptions/${redemptionId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status, adminId: adminId || "A-001" }),
+    }),
 
   // Rewards CRUD (Admin)
   createReward: (data: {

@@ -5,7 +5,7 @@ import {
   X, Plus, Download, Eye, Edit, Trash2,
   AlertCircle, Cpu, RefreshCw, Gift,
   Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore,
-  Activity, Upload
+  Activity, Upload, ChevronRight
 } from "lucide-react";
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
@@ -341,6 +341,10 @@ type SectionRenderProps = {
   liveRedemptions: any[] | null;
   liveMonthly: any[] | null;
   liveKiosks: any[] | null;
+  redemptionAction: any;
+  setRedemptionAction: (v: any) => void;
+  approving: boolean;
+  handleApproveRedemption: () => Promise<void>;
 };
 
 function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
@@ -382,6 +386,10 @@ function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
         liveRedemptions={p.liveRedemptions}
         searchQuery={p.searchQuery}
         onRefresh={p.refreshData}
+        redemptionAction={p.redemptionAction}
+        setRedemptionAction={p.setRedemptionAction}
+        approving={p.approving}
+        handleApproveRedemption={p.handleApproveRedemption}
       />
     ),
     analytics: (
@@ -503,6 +511,9 @@ export default function App() {
   const [adjustReason, setAdjustReason] = useState<string>("Community event participation");
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const [adjustMsg, setAdjustMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  // Redemption approve/reject action state (shared between notifications drawer and AdminRewards)
+  const [redemptionAction, setRedemptionAction] = useState<{ id: string; status: "approved" | "rejected"; userId: string; rewardName: string } | null>(null);
+  const [approving, setApproving] = useState(false);
   // ── Live data state (merged with demo fallbacks) ──
   const [liveUsers, setLiveUsers] = useState<Array<any> | null>(null);
   const [liveRewards, setLiveRewards] = useState<Array<any> | null>(null);
@@ -543,6 +554,22 @@ export default function App() {
       applyAdminDataSet(results, dataSetters, true);
     } catch {
       setAdminProfile(Waste2GoodsAPI.getAuthState()?.user || null);
+    }
+  };
+
+  // ── Approve/Reject redemption request ──
+  const handleApproveRedemption = async () => {
+    if (!redemptionAction) return;
+    setApproving(true);
+    try {
+      const res = await Waste2GoodsAPI.approveRedemption(redemptionAction.id, redemptionAction.status, "A-001");
+      if (!res || !(res as any).ok) throw new Error((res as any)?.error || "Action failed");
+      setRedemptionAction(null);
+      await refreshData();
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : "Redemption action failed");
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -606,6 +633,10 @@ export default function App() {
     liveRedemptions,
     liveMonthly,
     liveKiosks,
+    redemptionAction,
+    setRedemptionAction,
+    approving,
+    handleApproveRedemption,
   });
 
   return (
@@ -691,9 +722,21 @@ export default function App() {
                       No notifications yet.
                     </div>
                   )}
-                  {(notifications ?? []).slice(0, 20).map(n => (
-                    <div key={n.id} className="px-4 py-3 hover:bg-muted/30 transition-colors">
-                      <div className="flex items-start gap-2">
+                  {(notifications ?? []).slice(0, 20).map(n => {
+                    const isRedemption = n.type === "redemption";
+                    const isPending = isRedemption && n.meta?.status === "pending";
+                    const handleNotifClick = () => {
+                      if (isRedemption) {
+                        setSection("rewards");
+                      }
+                    };
+                    return (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onClick={handleNotifClick}
+                        className={`w-full text-left px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors flex items-start gap-2`}
+                      >
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${getNotifSeverityBg(n.severity)}`}>
                           {getNotifIcon(n.type, n.severity)}
                         </div>
@@ -701,10 +744,31 @@ export default function App() {
                           <p className="text-xs font-semibold text-foreground leading-tight">{n.title || ''}</p>
                           {n.message && <p className="text-[11px] text-muted-foreground mt-0.5">{n.message}</p>}
                           <p className="text-[10px] text-muted-foreground mt-1">{new Date(n.time || Date.now()).toLocaleString()}</p>
+                          {isPending && (
+                            <div className="flex gap-1 mt-2">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setRedemptionAction({ id: n.meta?.redemptionId, status: "approved", userId: n.meta?.userId, rewardName: n.meta?.rewardName || "Reward" }); }}
+                                disabled={approving}
+                                className="px-2 py-1 rounded text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-60 transition-colors"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setRedemptionAction({ id: n.meta?.redemptionId, status: "rejected", userId: n.meta?.userId, rewardName: n.meta?.rewardName || "Reward" }); }}
+                                disabled={approving}
+                                className="px-2 py-1 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors"
+                              >
+                                Reject
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                        <ChevronRight className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="px-4 py-3 border-t border-border bg-muted/20">
                   <button type="button" onClick={() => refreshData()} className="w-full py-2 rounded-xl bg-primary/10 text-primary text-xs font-bold hover:bg-primary/20 transition-colors flex items-center justify-center gap-1">
@@ -1644,7 +1708,7 @@ function getRewardSubmitButtonText(saving: boolean, editing: boolean): string {
   return editing ? "Save Changes" : "Create Reward";
 }
 
-function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh }: Readonly<{ liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }>) {
+function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefresh, redemptionAction, setRedemptionAction, approving, handleApproveRedemption }: Readonly<{ liveRewards: any[] | null; liveRedemptions: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void>; redemptionAction: any; setRedemptionAction: (v: any) => void; approving: boolean; handleApproveRedemption: () => Promise<void> }>) {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [restock, setRestock] = useState<any>(null);
@@ -1871,6 +1935,120 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
           </div>
         )}
       </div>
+
+      {/* Redemption Requests Management */}
+      <div className="rounded-2xl border border-border bg-white p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-black text-sm text-foreground">Redemption Requests</h3>
+            <p className="text-[10px] text-muted-foreground">Review and approve or reject resident redemption requests</p>
+          </div>
+          <div className="text-xs font-bold text-muted-foreground">
+            {(liveRedemptions || []).length} total · {(liveRedemptions || []).filter((r: any) => r.status === "pending").length} pending
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border text-left">
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Resident</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Reward</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Points</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Date</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Status</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(liveRedemptions || []).length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-4 text-center text-xs text-muted-foreground">No redemption requests yet.</td>
+                </tr>
+              )}
+              {(liveRedemptions || []).map((rr: any) => {
+                const status = rr.status || "pending";
+                const statusColor = status === "pending" ? "bg-amber-50 text-amber-700 border-amber-200" : status === "approved" || status === "ready" ? "bg-green-50 text-green-700 border-green-200" : status === "rejected" ? "bg-red-50 text-red-700 border-red-200" : "bg-muted text-muted-foreground";
+                const isPending = status === "pending";
+                return (
+                  <tr key={rr.redemptionId || rr.id} className="border-b border-border/50 hover:bg-muted/20 transition-colors">
+                    <td className="p-3">
+                      <p className="text-xs font-black text-foreground">{rr.firstName && rr.lastName ? `${rr.firstName} ${rr.lastName}` : rr.userId || "Unknown"}</p>
+                      <p className="text-[10px] text-muted-foreground">ID: {rr.userId}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs font-black text-foreground">{rr.rewardName || rr.rewardId || "Reward"}</p>
+                      <p className="text-[10px] text-muted-foreground">#{rr.rewardId}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs font-black text-foreground">{rr.totalPoints || rr.pointsUsed || 0} pts</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs font-black text-foreground">{rr.redemptionDate ? new Date(rr.redemptionDate).toLocaleDateString() : "-"}</p>
+                      <p className="text-[10px] text-muted-foreground">{rr.redemptionDate ? new Date(rr.redemptionDate).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"}</p>
+                    </td>
+                    <td className="p-3">
+                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${statusColor}`}>{status.toUpperCase()}</span>
+                    </td>
+                    <td className="p-3 text-right">
+                      {isPending ? (
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            type="button"
+                            disabled={approving}
+                            onClick={() => setRedemptionAction({ id: rr.redemptionId, status: "approved", userId: rr.userId, rewardName: rr.rewardName || "Reward" })}
+                            className="px-2 py-1.5 rounded text-xs font-bold bg-green-50 text-green-700 border border-green-200 hover:bg-green-100 disabled:opacity-60 transition-colors flex items-center gap-1"
+                          >
+                            <Check className="w-3 h-3" /> Approve
+                          </button>
+                          <button
+                            type="button"
+                            disabled={approving}
+                            onClick={() => setRedemptionAction({ id: rr.redemptionId, status: "rejected", userId: rr.userId, rewardName: rr.rewardName || "Reward" })}
+                            className="px-2 py-1.5 rounded text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 disabled:opacity-60 transition-colors flex items-center gap-1"
+                          >
+                            <AlertTriangle className="w-3 h-3" /> Reject
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-muted-foreground font-bold">{status === "approved" || status === "ready" ? "Approved" : status === "rejected" ? "Rejected" : status}</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Redemption Action Confirm Modal */}
+      {redemptionAction && (
+        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
+          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-black text-foreground">{redemptionAction.status === "approved" ? "Approve Request?" : "Reject Request?"}</h3>
+              <button type="button" onClick={() => setRedemptionAction(null)}><X className="w-5 h-5 text-muted-foreground" /></button>
+            </div>
+            <div className="flex items-center gap-3 mb-4 bg-muted/30 p-3 rounded-xl">
+              <span className="text-3xl">ðŸ</span>
+              <div className="min-w-0">
+                <p className="font-black text-sm text-foreground truncate">{redemptionAction.rewardName}</p>
+                <p className="text-xs text-muted-foreground">Resident ID: {redemptionAction.userId}</p>
+                <p className="text-xs text-muted-foreground">Action: <span className={`font-bold ${redemptionAction.status === "approved" ? "text-green-700" : "text-red-700"}`}>{redemptionAction.status.toUpperCase()}</span></p>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              {redemptionAction.status === "approved"
+                ? "Approving will deduct the points from the resident's balance and decrement the reward stock."
+                : "Rejecting will cancel the resident's redemption request. No points will be deducted."}
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setRedemptionAction(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+              <button type="button" disabled={approving} onClick={handleApproveRedemption} className={`flex-1 py-2.5 rounded-xl text-sm font-bold hover:opacity-90 transition-colors disabled:opacity-60 ${redemptionAction.status === "approved" ? "bg-green-600 text-white hover:bg-green-700" : "bg-red-600 text-white hover:bg-red-700"}`}>{approving ? "Processing..." : redemptionAction.status === "approved" ? "Approve" : "Reject"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Restock Modal */}
       {restock && (
