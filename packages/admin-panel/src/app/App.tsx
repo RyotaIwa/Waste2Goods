@@ -572,7 +572,7 @@ export default function App() {
         const data: any = await r.json().catch(() => ({}));
         if (r.ok) return { ...data, ok: data?.ok !== false };
         const reason = r.status === 401 ? "Session expired. Please sign out and sign in again"
-          : r.status === 403 ? "This admin account is not allowed to approve redemptions"
+          : r.status === 403 ? (data?.error || data?.message || "Forbidden")
             : (data?.error || data?.message || "Request failed");
         return { ok: false, httpStatus: r.status, error: `${reason} (HTTP ${r.status})` };
       } catch (e) {
