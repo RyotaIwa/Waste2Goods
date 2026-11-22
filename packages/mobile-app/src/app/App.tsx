@@ -2422,7 +2422,7 @@ function ScreenHistory(p: MobileAppRouterProps) {
 
 function ScreenRedeemHistory(p: MobileAppRouterProps) {
   const uid = String(p.currentUser?.id || p.currentUser?.userId || "");
-  const [items, setItems] = useState<any[]>(p.redemptions || []);
+  const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   useEffect(() => {
@@ -2505,7 +2505,10 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             Showing saved copy. Could not load from the server ({loadError}).
           </div>
         )}
-        {items.length === 0 && (
+        {loading && items.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-10">Loading your redemptions…</p>
+        )}
+        {!loading && items.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-10">No redemptions yet.</p>
         )}
         {items.map(h => {
