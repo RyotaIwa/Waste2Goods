@@ -96,7 +96,7 @@ async function handleNotificationToggle(
         setItems((n as any).items);
         setUnread(Number((n as any).unread || 0));
       }
-    } catch {}
+    } catch { }
   }
 }
 
@@ -557,14 +557,14 @@ export default function App() {
     }
   };
 
-    const quickRedemption = async (n: any, status: "approved" | "rejected") => {
+  const quickRedemption = async (n: any, status: "approved" | "rejected") => {
     const id = n.meta?.redemptionId;
     if (!id || approving) return;
     const label = status === "approved" ? "Approve" : "Reject";
     if (!window.confirm(`${label} "${n.meta?.rewardName || "this reward"}" for ${n.meta?.userId || "this resident"}?`)) return;
     setApproving(true);
     try {
-      const res: any = await Waste2GoodsAPI.approveRedemption(id, status, "A-001");
+      const res: any = await Waste2GoodsAPI.approveRedemption(id, status === "approved" ? "ready" : status, "A-001");
       if (!res || res.error || res.ok === false) {
         alert(res?.error || "Could not update this redemption. Please try again.");
         return;
@@ -587,12 +587,17 @@ export default function App() {
     if (!redemptionAction) return;
     setApproving(true);
     try {
-      const res = await Waste2GoodsAPI.approveRedemption(redemptionAction.id, redemptionAction.status, "A-001");
-      if (!res || !(res as any).ok) throw new Error((res as any)?.error || "Action failed");
+      // the server stores approved requests as "ready"
+      const sendStatus = redemptionAction.status === "approved" ? "ready" : redemptionAction.status;
+      const res: any = await Waste2GoodsAPI.approveRedemption(redemptionAction.id, sendStatus as any, "A-001");
+      if (!res || !res.ok) {
+        alert(res?.error || "Could not update this redemption. It may already be processed, or the server rejected the request.");
+        return;
+      }
       setRedemptionAction(null);
       await refreshData();
     } catch (e) {
-      console.error(e instanceof Error ? e.message : "Redemption action failed");
+      alert(e instanceof Error ? e.message : "Redemption action failed");
     } finally {
       setApproving(false);
     }
@@ -1098,8 +1103,8 @@ function AdminDashboard({
   // Maps each waste material to its pie chart colour
   const getWastePieColor = (material: string): string => {
     const palette: Record<string, string> = {
-      "PET Plastic":   "#16a34a",
-      "Cardboard":     "#f59e0b",
+      "PET Plastic": "#16a34a",
+      "Cardboard": "#f59e0b",
       "Aluminum Cans": "#3b82f6",
       "Glass Bottles": "#8b5cf6",
     };
@@ -1134,14 +1139,14 @@ function AdminDashboard({
 
   const dynamicWasteComposition = wasteFilter === "all"
     ? [
-        { name: "PET Plastic", value: 65, color: "#16a34a" },
-        { name: "Cardboard", value: 20, color: "#f59e0b" },
-        { name: "Aluminum Cans", value: 10, color: "#3b82f6" },
-        { name: "Glass Bottles", value: 5, color: "#8b5cf6" },
-      ]
+      { name: "PET Plastic", value: 65, color: "#16a34a" },
+      { name: "Cardboard", value: 20, color: "#f59e0b" },
+      { name: "Aluminum Cans", value: 10, color: "#3b82f6" },
+      { name: "Glass Bottles", value: 5, color: "#8b5cf6" },
+    ]
     : [
-        { name: wasteFilter, value: 100, color: getWastePieColor(wasteFilter) }
-      ];
+      { name: wasteFilter, value: 100, color: getWastePieColor(wasteFilter) }
+    ];
 
   const totalFilteredKg = filteredWeekly.reduce((acc, curr) => acc + curr.kg, 0);
 
@@ -1352,7 +1357,7 @@ function AdminUserProfileDetail({
   openEdit: (u: any) => void;
   toggleStatus: (u: any) => void;
 }>) {
-    const profileUid = String(selectedUser.userId || selectedUser.id || "");
+  const profileUid = String(selectedUser.userId || selectedUser.id || "");
   const [userRedemptions, setUserRedemptions] = useState<any[]>([]);
   useEffect(() => {
     let alive = true;
@@ -1366,7 +1371,7 @@ function AdminUserProfileDetail({
     return () => { alive = false; clearInterval(t); };
   }, [profileUid]);
   return (
-    <div className="space-y-5">
+    <div className="flex flex-col gap-4 relative">
       <div className="flex items-center gap-3">
         <button type="button" onClick={onBack} className="p-2 rounded-xl border border-border hover:bg-muted transition-colors"><ArrowLeft className="w-4 h-4" /></button>
         <h2 className="font-black text-foreground">User Profile</h2>
@@ -1379,14 +1384,14 @@ function AdminUserProfileDetail({
       <div className="grid grid-cols-3 gap-4">
         <div className="col-span-1 bg-white rounded-2xl border border-border p-5 flex flex-col items-center gap-3 text-center">
           <div className="w-16 h-16 rounded-full bg-primary flex items-center justify-center text-xl font-black text-white">
-            {selectedUser.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}
+            {selectedUser.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
           </div>
           <div>
             <p className="font-black text-foreground">{selectedUser.name}</p>
             <p className="text-xs text-muted-foreground">{selectedUser.barangay}</p>
             <p className="text-xs text-muted-foreground mt-0.5">Joined {selectedUser.joined}</p>
           </div>
-          <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${selectedUser.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
+          <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex items-center gap-1 ${selectedUser.status === "active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
             <StatusPip status={selectedUser.status} />{selectedUser.status}
           </span>
           <div className="w-full space-y-1.5 text-xs">
@@ -1400,13 +1405,13 @@ function AdminUserProfileDetail({
           <button type="button" onClick={() => openEdit(selectedUser)} className="w-full py-2.5 rounded-xl border border-border text-xs font-bold hover:bg-muted transition-colors flex items-center justify-center gap-1.5">
             <Edit className="w-3.5 h-3.5" /> Edit Profile
           </button>
-          <button type="button" onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status==="active" ? BADGE_DANGER_CLS + " hover:bg-red-100" : BADGE_OK_CLS + " hover:bg-green-100"}`}>
-            {selectedUser.status==="active" ? "🚫 Suspend User" : "✅ Reactivate User"}
+          <button type="button" onClick={() => toggleStatus(selectedUser)} className={`w-full py-2.5 rounded-xl text-xs font-bold transition-colors ${selectedUser.status === "active" ? BADGE_DANGER_CLS + " hover:bg-red-100" : BADGE_OK_CLS + " hover:bg-green-100"}`}>
+            {selectedUser.status === "active" ? "🚫 Suspend User" : "✅ Reactivate User"}
           </button>
         </div>
         <div className="col-span-2 space-y-4">
           <div className="grid grid-cols-3 gap-3">
-            {[["Points Balance", (selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString()+" pts","text-primary"],["Submissions",(selectedUser.submissions??0)+" times","text-blue-600"],["Redeemed",(selectedUser.redeemed??0)+" items","text-purple-600"]].map(([l,v,c]) => (
+            {[["Points Balance", (selectedUser.points ?? selectedUser.pointsBalance ?? 0).toLocaleString() + " pts", "text-primary"], ["Submissions", (selectedUser.submissions ?? 0) + " times", "text-blue-600"], ["Redeemed", (selectedUser.redeemed ?? 0) + " items", "text-purple-600"]].map(([l, v, c]) => (
               <div key={String(l)} className="bg-white rounded-2xl border border-border p-3 text-center">
                 <p className={`text-xl font-black ${c}`}>{v}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">{l}</p>
@@ -1415,14 +1420,14 @@ function AdminUserProfileDetail({
           </div>
           <div className="bg-white rounded-2xl border border-border p-4">
             <h3 className="font-black text-sm mb-3">Recent Transactions</h3>
-                        <div className="space-y-1.5 mb-3 pb-3 border-b border-border">
+            <div className="space-y-1.5 mb-3 pb-3 border-b border-border">
               {userRedemptions.length === 0 && <p className="text-xs text-muted-foreground">No redemptions yet.</p>}
               {userRedemptions.map((r: any) => {
                 const st = String(r.status || "pending").toLowerCase();
                 const label = st === "pending" ? "Pending" : st === "rejected" ? "Rejected" : "Approved";
                 const cls = st === "pending" ? "bg-amber-50 text-amber-700 border-amber-200"
                   : st === "rejected" ? "bg-red-50 text-red-700 border-red-200"
-                  : "bg-green-50 text-green-700 border-green-200";
+                    : "bg-green-50 text-green-700 border-green-200";
                 const pts = Number(r.totalPoints || r.pointsUsed || 0).toLocaleString();
                 return (
                   <div key={r.redemptionId} className="flex items-center gap-2 py-1 text-xs">
@@ -1435,11 +1440,11 @@ function AdminUserProfileDetail({
               })}
             </div>
             <div className="space-y-1.5">
-              {transactions.slice(0,4).map(t => (
+              {transactions.slice(0, 4).map(t => (
                 <div key={t.id} className="flex items-center gap-2 py-1 border-b border-border last:border-0 text-xs">
                   <span className="text-muted-foreground">{t.date}</span>
                   <span className="flex-1 truncate font-semibold">{t.desc}</span>
-                  <span className={`font-black ${t.pts>0?"text-primary":"text-red-500"}`}>{t.pts>0?"+":""}{t.pts}</span>
+                  <span className={`font-black ${t.pts > 0 ? "text-primary" : "text-red-500"}`}>{t.pts > 0 ? "+" : ""}{t.pts}</span>
                 </div>
               ))}
             </div>
@@ -1553,13 +1558,13 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
   const mergedUsers = getMergedAndFilteredUsers(liveUsers, searchQuery);
 
   const exportCSV = () => {
-    const rows = [["User ID","Name","Barangay","Email","Phone","Points","Submissions","Joined","Status"]];
+    const rows = [["User ID", "Name", "Barangay", "Email", "Phone", "Points", "Submissions", "Joined", "Status"]];
     mergedUsers.forEach((u: any) => rows.push([u.userId || u.id, u.name || "", u.barangay || "", u.email || "", u.phone || "", String(u.points || 0), String(u.submissions || 0), u.joined || "", u.status || ""]));
-    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = `waste2goods-users-${new Date().toISOString().slice(0,10)}.csv`;
+    a.href = url; a.download = `waste2goods-users-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -1719,7 +1724,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border bg-muted/40">
-              {["Resident","Barangay","Points","Submissions","Joined","Status","Actions"].map(h => (
+              {["Resident", "Barangay", "Points", "Submissions", "Joined", "Status", "Actions"].map(h => (
                 <th key={h} className="text-left px-4 py-3 font-black text-muted-foreground uppercase tracking-wide" style={{ fontSize: 10 }}>{h}</th>
               ))}
             </tr>
@@ -1732,7 +1737,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
               <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors cursor-pointer" onClick={() => onSelect(u)}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.name.split(" ").map((n: string)=>n[0]).join("").slice(0,2)}</div>
+                    <div className="w-7 h-7 rounded-full bg-primary flex items-center justify-center text-xs font-black text-white flex-shrink-0">{u.name.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}</div>
                     <div><p className="font-semibold text-foreground">{u.name}</p><p className="text-muted-foreground">{u.id}{u.email ? ` · ${u.email}` : ""}</p></div>
                   </div>
                 </td>
@@ -1741,7 +1746,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
                 <td className="px-4 py-3 font-semibold">{u.submissions}</td>
                 <td className="px-4 py-3 text-muted-foreground">{u.joined}</td>
                 <td className="px-4 py-3">
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold ${u.status==="active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
+                  <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full font-bold ${u.status === "active" ? BADGE_SUCCESS_CLS : "bg-gray-100 text-gray-500"}`}>
                     <StatusPip status={u.status} />{u.status}
                   </span>
                 </td>
@@ -1749,7 +1754,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
                   <div className="flex gap-1">
                     <button type="button" onClick={() => onSelect(u)} className="p-1.5 rounded-lg hover:bg-blue-50 text-blue-600 transition-colors" title="View"><Eye className="w-3.5 h-3.5" /></button>
                     <button type="button" onClick={() => openEdit(u)} className="p-1.5 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-3.5 h-3.5" /></button>
-                    <button type="button" onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status==="active" ? "Suspend" : "Reactivate"}>{u.status==="active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
+                    <button type="button" onClick={() => toggleStatus(u)} className="p-1.5 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title={u.status === "active" ? "Suspend" : "Reactivate"}>{u.status === "active" ? <Trash2 className="w-3.5 h-3.5" /> : <Check className="w-3.5 h-3.5" />}</button>
                   </div>
                 </td>
               </tr>
@@ -1878,8 +1883,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
     redeemedCounts[key] = (redeemedCounts[key] || 0) + Number(rr.quantity || 1);
   });
   const totalLiveRedemptions = (liveRedemptions || []).length;
-  const ICON_CHOICES = ["🥤","🥢","👜","🛍️","📓","✏️","🖊️","🍚","🍜","🐟","☕","🧂","🧺","🧽","🧼","🪥","🧸","🌟","🎨","🌱","👕","🎊","🎁","🎄","🥬","🧃","📱","🪴","🎟️","🎒","🖼️","🎮"];
-  const CAT_CHOICES = ["Eco Essentials","School Supplies","Groceries","Household","Kids","Community","Seasonal","Other"];
+  const ICON_CHOICES = ["🥤", "🥢", "👜", "🛍️", "📓", "✏️", "🖊️", "🍚", "🍜", "🐟", "☕", "🧂", "🧺", "🧽", "🧼", "🪥", "🧸", "🌟", "🎨", "🌱", "👕", "🎊", "🎁", "🎄", "🥬", "🧃", "📱", "🪴", "🎟️", "🎒", "🖼️", "🎮"];
+  const CAT_CHOICES = ["Eco Essentials", "School Supplies", "Groceries", "Household", "Kids", "Community", "Seasonal", "Other"];
 
   return (
     <div className="space-y-4 relative">
@@ -1959,7 +1964,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-3 order-last">
         {mergedRewards.map(r => (
           <div key={r.id} className="bg-white rounded-2xl border border-border p-4 flex flex-col gap-2 relative">
             <div className="flex items-start justify-between">
@@ -1976,7 +1981,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             </div>
             <div className="flex justify-between text-xs mt-auto">
               <div><p className="text-muted-foreground">Cost</p><p className="font-black text-primary">{r.points} pts</p></div>
-              <div className="text-right"><p className="text-muted-foreground">Stock</p><p className={`font-black ${Number(r.stock)<10?"text-red-500":"text-foreground"}`}>{r.stock}</p></div>
+              <div className="text-right"><p className="text-muted-foreground">Stock</p><p className={`font-black ${Number(r.stock) < 10 ? "text-red-500" : "text-foreground"}`}>{r.stock}</p></div>
             </div>
             {Number(r.stock) < 10 && <div className="flex items-center gap-1 text-xs text-amber-600 bg-amber-50 p-1.5 rounded-lg"><AlertCircle className="w-3 h-3" />Low stock</div>}
             <div className="flex gap-1.5 pt-1">
@@ -2080,7 +2085,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
 
       {/* Redemption Action Confirm Modal */}
       {redemptionAction && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
           <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-black text-foreground">{redemptionAction.status === "approved" ? "Approve Request?" : "Reject Request?"}</h3>
@@ -2156,15 +2161,15 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
 }
 
 function exportAnalyticsDataCSV(mergedMonthly: any[], mergedWeekly: any[], liveRedemptions: any[] | null) {
-  const rows = [["Dataset","Key","Collected (kg)","Redeemed","Active Users","Notes"]];
+  const rows = [["Dataset", "Key", "Collected (kg)", "Redeemed", "Active Users", "Notes"]];
   mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.kg || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
-  mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i+1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
+  mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i + 1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
   (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
-  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url; a.download = `waste2goods-analytics-${new Date().toISOString().slice(0,10)}.csv`;
+  a.href = url; a.download = `waste2goods-analytics-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -2237,8 +2242,8 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions, searchQuery 
               <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="collected" name="Collected (kg)" fill="#16a34a" radius={[4,4,0,0]} />
-              <Bar dataKey="redeemed" name="Redeemed" fill="#0ea5e9" radius={[4,4,0,0]} />
+              <Bar dataKey="collected" name="Collected (kg)" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="redeemed" name="Redeemed" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -2333,16 +2338,16 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh, searchQuery = "" }: Re
 
   let mergedKiosks: any[] = liveKiosks && liveKiosks.length > 0
     ? liveKiosks.map((k, i) => ({
-        id: k.kioskId || k.id || `K-0${i + 1}`,
-        kioskId: k.kioskId || k.id || `K-0${i + 1}`,
-        location: k.locationName || k.location || "Cabantian",
-        status: k.status || (k.isOnline ? "online" : "offline"),
-        weight: `${Number(k.weightKg || k.lastWeight || 0).toFixed(1)} kg`,
-        submissions: Number(k.todaySubmissions || k.submissionsToday || k.totalSubmissions || 0),
-        temp: k.temperature ? `${k.temperature}°C` : k.temp || "29°C",
-        lastPing: k.lastPing || (k.lastHeartbeatAt ? new Date(String(k.lastHeartbeatAt)).toLocaleTimeString() : "5 min ago"),
-        battery: Number(k.batteryPct || k.battery || 85),
-      }))
+      id: k.kioskId || k.id || `K-0${i + 1}`,
+      kioskId: k.kioskId || k.id || `K-0${i + 1}`,
+      location: k.locationName || k.location || "Cabantian",
+      status: k.status || (k.isOnline ? "online" : "offline"),
+      weight: `${Number(k.weightKg || k.lastWeight || 0).toFixed(1)} kg`,
+      submissions: Number(k.todaySubmissions || k.submissionsToday || k.totalSubmissions || 0),
+      temp: k.temperature ? `${k.temperature}°C` : k.temp || "29°C",
+      lastPing: k.lastPing || (k.lastHeartbeatAt ? new Date(String(k.lastHeartbeatAt)).toLocaleTimeString() : "5 min ago"),
+      battery: Number(k.batteryPct || k.battery || 85),
+    }))
     : kiosks.slice();
 
   if (searchQuery.trim()) {
@@ -2559,11 +2564,11 @@ function AdminAdmins({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
   const q = searchQuery.trim().toLowerCase();
   const searchFilteredAdmins = q
     ? admins.filter(a => {
-        const name = `${a.firstName || ""} ${a.lastName || ""} ${a.name || ""}`.toLowerCase();
-        const em = String(a.email || "").toLowerCase();
-        const id = String(a.adminId || "").toLowerCase();
-        return name.includes(q) || em.includes(q) || id.includes(q);
-      })
+      const name = `${a.firstName || ""} ${a.lastName || ""} ${a.name || ""}`.toLowerCase();
+      const em = String(a.email || "").toLowerCase();
+      const id = String(a.adminId || "").toLowerCase();
+      return name.includes(q) || em.includes(q) || id.includes(q);
+    })
     : admins;
 
   const activeAdmins = searchFilteredAdmins.filter(a => (a.status || "active") === "active");
@@ -2740,7 +2745,7 @@ function AdminAdmins({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
           )}
           {!loading && displayedAdmins.map(a => {
             const fullName = a.name || `${a.firstName || ""} ${a.lastName || ""}`.trim();
-            const initials = fullName.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0,2).toUpperCase();
+            const initials = fullName.split(' ').filter(Boolean).map(n => n[0]).join('').slice(0, 2).toUpperCase();
             const date = a.createdAt ? new Date(a.createdAt) : null;
             const joined = date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "—";
             const isArchived = (a.status || "active") === "archived";
@@ -2779,11 +2784,10 @@ function AdminAdmins({ searchQuery = "" }: Readonly<{ searchQuery?: string }>) {
                     type="button"
                     disabled={deletingId === (a.adminId || a.email)}
                     onClick={() => handleToggleArchiveAdmin(a, a.status || "active")}
-                    className={`px-3 py-2 rounded-xl border transition-colors text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 ${
-                      isArchived
-                        ? "border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
-                        : "border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-100/70"
-                    }`}
+                    className={`px-3 py-2 rounded-xl border transition-colors text-xs font-bold flex items-center gap-1.5 disabled:opacity-50 ${isArchived
+                      ? "border-green-300 text-green-700 bg-green-50 hover:bg-green-100"
+                      : "border-amber-200 text-amber-700 bg-amber-50/50 hover:bg-amber-100/70"
+                      }`}
                     title={isArchived ? "Restore to Active" : "Archive Admin (Preserve in Database)"}
                   >
                     {isArchived ? (
