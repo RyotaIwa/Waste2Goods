@@ -321,7 +321,14 @@ export function clearStoredAuth(): void {
   removeAuthStorage(AUTH_STORAGE_KEY);
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+let refreshInFlight: Promise<string | null> | null = null;
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefreshAccessToken().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+async function doRefreshAccessToken(): Promise<string | null> {
   const auth = getStoredAuth() as any;
   if (!auth?.refreshToken) return null;
   try {
@@ -544,11 +551,11 @@ export const Waste2GoodsAPI = {
         user: result.user,
         token: result.token,
       };
-      setStoredAuth(authState);
       Object.assign(authState as any, {
         refreshToken: result.refreshToken || result.refresh_token,
         refreshFamilyId: result.refreshFamilyId,
       });
+      setStoredAuth(authState);
       return authState;
     } catch (e) {
       throw e instanceof Error ? e : new Error("Login failed — check backend connection or credentials");

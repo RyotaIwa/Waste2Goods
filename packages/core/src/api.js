@@ -236,7 +236,15 @@ export function clearStoredAuth() {
   removeAuthStorage(AUTH_STORAGE_KEY);
 }
 
-async function refreshAccessToken() {
+let refreshInFlight = null;
+function refreshAccessToken() {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefreshAccessToken().finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doRefreshAccessToken() {
   const auth = getStoredAuth();
   if (!auth?.refreshToken) return null;
   try {
