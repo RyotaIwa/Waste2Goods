@@ -2424,7 +2424,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
   const uid = String(p.currentUser?.id || p.currentUser?.userId || "");
   const [items, setItems] = useState<any[]>(p.redemptions || []);
   const [loading, setLoading] = useState(true);
-
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
     let cancelled = false;
     const load = async (first: boolean) => {
@@ -2462,8 +2462,10 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
           };
         });
         setItems(server);
+        setLoadError("");
       } catch (err) {
         console.warn("Fetch redemptions failed:", err);
+        if (!cancelled) setLoadError(String((err as any)?.message || err));
         if (!cancelled) setItems(local);
       } finally {
         if (!cancelled) setLoading(false);
@@ -2498,6 +2500,11 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
       </div>
       <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-20">
         <p className="text-xs text-muted-foreground font-semibold">Tap on any item to view claim details, pickup instructions, and voucher codes.</p>
+        {loadError && (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold px-3 py-2">
+            Showing saved copy. Could not load from the server ({loadError}).
+          </div>
+        )}
         {items.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-10">No redemptions yet.</p>
         )}
@@ -2635,9 +2642,17 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
                   <CheckCircle2 className="w-4 h-4" />
                   Mark as Claimed (Simulate)
                 </button>
-              ) : (
+              ) : selectedClaim.status === "claimed" ? (
                 <div className="flex-1 py-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center flex items-center justify-center gap-2">
                   <Check className="w-4 h-4" /> Reward Successfully Claimed
+                </div>
+              ) : selectedClaim.status === "rejected" ? (
+                <div className="flex-1 py-3 rounded-xl bg-red-100 text-red-800 text-sm font-bold text-center">
+                  Redemption was not approved
+                </div>
+              ) : (
+                <div className="flex-1 py-3 rounded-xl bg-amber-100 text-amber-800 text-sm font-bold text-center">
+                  Waiting for admin approval
                 </div>
               )}
               <button
