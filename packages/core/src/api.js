@@ -619,6 +619,12 @@ export const Waste2GoodsAPI = {
   // Redeem
   redeemReward: (data) => fetchApi("/rewards/redeem", { method: "POST", body: JSON.stringify(data) }),
 
+  approveRedemption: (redemptionId, status, adminId) =>
+    fetchApi(`/redemptions/${redemptionId}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status, adminId: adminId || "A-001" }),
+    }),
+
   // Rewards CRUD (Admin)
   createReward: (data) => fetchApi("/rewards", { method: "POST", body: JSON.stringify(data) }),
   updateReward: (rewardId, data) => fetchApi(`/rewards/${rewardId}`, { method: "PUT", body: JSON.stringify(data) }),

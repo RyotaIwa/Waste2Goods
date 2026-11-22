@@ -12,7 +12,7 @@ import {
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend
 } from "recharts";
 import { SCard, RankIcon, StatusPip } from "./components/SCard";
-import { Waste2GoodsAPI } from "@waste2goods/core";
+import { Waste2GoodsAPI, getApiBaseUrl } from "@waste2goods/core";
 
 // Data constants
 const weeklyData = [
@@ -561,13 +561,27 @@ export default function App() {
   const [toast, setToast] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [handled, setHandled] = useState<Record<string, string>>({});
   const sendRedemptionStatus = async (id: string, status: "approved" | "rejected"): Promise<any> => {
-    const first: any = await Waste2GoodsAPI.approveRedemption(id, status, "A-001");
-    if (first && first.ok) return first;
-    if (status === "approved") {
-      const second: any = await Waste2GoodsAPI.approveRedemption(id, "ready", "A-001");
-      if (second && second.ok) return second;
-    }
-    return first;
+    const token = Waste2GoodsAPI.getAuthState()?.token || "";
+    const attempt = async (s: string): Promise<any> => {
+      try {
+        const r = await fetch(`${getApiBaseUrl()}/redemptions/${encodeURIComponent(id)}/status`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ status: s, adminId: "A-001" }),
+        });
+        const data: any = await r.json().catch(() => ({}));
+        if (r.ok) return { ...data, ok: data?.ok !== false };
+        const reason = r.status === 401 ? "Session expired. Please sign out and sign in again"
+          : r.status === 403 ? "This admin account is not allowed to approve redemptions"
+            : (data?.error || data?.message || "Request failed");
+        return { ok: false, httpStatus: r.status, error: `${reason} (HTTP ${r.status})` };
+      } catch (e) {
+        return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+      }
+    };
+    const first = await attempt(status);
+    if (first.ok || status !== "approved" || first.httpStatus !== 400) return first;
+    return attempt("ready");
   };
   const showToast = (type: "ok" | "err", text: string) => {
     setToast({ type, text });
@@ -598,6 +612,9 @@ export default function App() {
         : `Rejected ${n.meta?.rewardName || "redemption"}.`);
       setConfirmNotif(null);
       await refreshData();
+    } catch (e) {
+      showToast("err", e instanceof Error ? e.message : "Approval failed");
+      setConfirmNotif(null);
     } finally {
       setApproving(false);
     }
@@ -1657,7 +1674,7 @@ function AdminUsers({ liveUsers, searchQuery = "", onRefresh, onSelect, selected
   }
 
   return (
-    <div className="space-y-4 relative">
+    <div className="flex flex-col gap-4 relative">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <p className="text-sm font-black text-foreground">{mergedUsers.length} registered residents <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveUsers && liveUsers.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveUsers && liveUsers.length > 0 ? "● LIVE DB" : "DEMO FALLBACK"}</span></p>
@@ -1961,7 +1978,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
   const CAT_CHOICES = ["Eco Essentials", "School Supplies", "Groceries", "Household", "Kids", "Community", "Seasonal", "Other"];
 
   return (
-    <div className="space-y-4 relative">
+    <div className="flex flex-col gap-4 relative">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm font-black text-foreground">{mergedRewards.length} reward items <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveRewards && liveRewards.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveRewards && liveRewards.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
