@@ -38,7 +38,7 @@ const PERMISSION_MATRIX = {
     analytics:     { list: true, read: true },
     leaderboard:   { list: true, read: true },
     notification:  { list: true, read: true, create: true, delete: false },
-    task:          { list: true, read: true, create: true, update: true, delete: false },
+    task:          { list: true, read: true, create: true, update: true, delete: true },
     kiosk_session: { list: true, read: true, create: true, delete: true },
   },
   [ROLES.BARANGAY_ADMIN]: {

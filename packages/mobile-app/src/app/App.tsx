@@ -2015,13 +2015,25 @@ function ScreenProfile(p: MobileAppRouterProps) {
         </div>
         <div className="rounded-2xl border border-border bg-white p-4 space-y-3">
           <p className="text-xs font-black text-muted-foreground uppercase tracking-wide">Recent activity</p>
-          {[
-            { t: "Recycled PET bottles", v: "+8 pts", sub: "K-01 · 2h ago", i: "🧴", c: "bg-blue-50" },
-            { t: "Redeemed: P50 Load", v: "-500 pts", sub: "Today · 9:12 AM", i: "📱", c: "bg-purple-50" },
-            { t: "Quest completed", v: "+25 pts", sub: "10 Bottles in a Day", i: "🎯", c: "bg-orange-50" },
-            { t: "Level 2 Milestone", v: "+100 pts", sub: "2 days ago", i: "⭐", c: "bg-amber-50" },
-          ].map(a => (
-            <div key={a.t} className={`rounded-xl p-3 flex items-center gap-3 ${a.c}`}>
+          {p.notifItems.filter((n: any) => String(n.id || "").startsWith("tx-") || n.type === "redemption").length === 0 && (
+            <p className="text-xs text-muted-foreground text-center py-3">No activity yet.</p>
+          )}
+          {p.notifItems
+            .filter((n: any) => String(n.id || "").startsWith("tx-") || n.type === "redemption")
+            .slice(0, 4)
+            .map((n: any) => {
+              const isTx = String(n.id || "").startsWith("tx-");
+              const bottles = Number(n.meta?.quantity || 0);
+              return {
+                key: n.id,
+                t: isTx ? `Recycled ${bottles} bottle${bottles === 1 ? "" : "s"}` : String(n.title || "Reward").replace(/^[^\w]+/, ""),
+                v: isTx ? `+${Number(n.meta?.pointsEarned || 0)} pts` : String(n.meta?.status || "").toUpperCase(),
+                sub: `${isTx ? "Drop-off" : String(n.message || "").split(" · ")[0]} · ${notifTimeLabel(n.time)}`,
+                i: isTx ? "🧴" : "🎁",
+                c: isTx ? "bg-blue-50" : "bg-purple-50",
+              };
+            }).map(a => (
+            <div key={a.key} className={`rounded-xl p-3 flex items-center gap-3 ${a.c}`}>
               <div className="text-2xl">{a.i}</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-foreground truncate">{a.t}</p>
@@ -2100,14 +2112,31 @@ function ScreenSettings(p: MobileAppRouterProps) {
   );
 }
 
+// Real drop-offs, built from the resident's notification feed (tx-* ids carry quantity + points).
+function realDropoffs(notifItems: any[]) {
+  return (notifItems || [])
+    .filter((n: any) => String(n.id || "").startsWith("tx-"))
+    .map((n: any) => ({
+      id: n.id,
+      bottles: Number(n.meta?.quantity || 0),
+      pts: Number(n.meta?.pointsEarned || 0),
+      time: n.time,
+      message: n.message,
+    }));
+}
+
 function ScreenHistory(p: MobileAppRouterProps) {
-  const items = [
-    { t: "Mixed recyclables", v: "+23 pts", sub: "5 bottles · K-01 · 2h ago", i: "♻️", c: "bg-green-50", kg: "5 bottles", p: "+23" },
-    { t: "PET Bottles (15x)", v: "+8 pts", sub: "15 bottles · K-01 · Yesterday", i: "🧴", c: "bg-blue-50", kg: "15 bottles", p: "+8" },
-    { t: "Cardboard boxes", v: "+12 pts", sub: "3 boxes · K-02 · 2 days ago", i: "📦", c: "bg-amber-50", kg: "3 boxes", p: "+12" },
-    { t: "Aluminum cans (20x)", v: "+3 pts", sub: "20 cans · K-01 · 4 days ago", i: "🥫", c: "bg-emerald-50", kg: "20 cans", p: "+3" },
-    { t: "Mixed paper", v: "+5 pts", sub: "1 bundle · K-03 · 1 week ago", i: "📄", c: "bg-purple-50", kg: "1 bundle", p: "+5" },
-  ];
+  const drops = realDropoffs(p.notifItems);
+  const items = drops.map(d => ({
+    t: `${d.bottles} bottle${d.bottles === 1 ? "" : "s"} recycled`,
+    v: `+${d.pts} pts`,
+    sub: notifTimeLabel(d.time),
+    i: "🧴",
+    c: "bg-green-50",
+    label: `${d.bottles} bottles`,
+    key: d.id,
+  }));
+  const pointsEarned = drops.reduce((a, d) => a + d.pts, 0);
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
@@ -2118,8 +2147,8 @@ function ScreenHistory(p: MobileAppRouterProps) {
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
             { l: "Total bottles", v: `${Number(p.currentUser.totalBottles || 0)}`, c: "from-primary to-emerald-600" },
-            { l: "Submissions", v: `${items.length}`, c: "from-blue-500 to-cyan-600" },
-            { l: "Points earned", v: `+51`, c: "from-amber-500 to-orange-600" },
+            { l: "Submissions", v: `${Number(p.currentUser.submissions || 0)}`, c: "from-blue-500 to-cyan-600" },
+            { l: "Recent pts", v: `+${pointsEarned}`, c: "from-amber-500 to-orange-600" },
           ].map(s => (
             <div key={s.l} className={`rounded-2xl p-3 bg-gradient-to-br ${s.c} text-white`}>
               <p className="text-xs font-bold opacity-80">{s.l}</p>
@@ -2128,8 +2157,9 @@ function ScreenHistory(p: MobileAppRouterProps) {
           ))}
         </div>
         <div className="rounded-2xl border border-border bg-white overflow-hidden">
+          {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">No recycling yet. Drop bottles at the machine, then enter your receipt code.</p>}
           {items.map((a, i) => (
-            <div key={a.t} className={`flex items-center gap-3 px-4 py-3 ${i !== items.length - 1 ? "border-b border-border" : ""}`}>
+            <div key={a.key} className={`flex items-center gap-3 px-4 py-3 ${i !== items.length - 1 ? "border-b border-border" : ""}`}>
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl ${a.c}`}>{a.i}</div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-black text-foreground">{a.t}</p>
@@ -2137,7 +2167,7 @@ function ScreenHistory(p: MobileAppRouterProps) {
               </div>
               <div className="text-right">
                 <p className="text-xs font-black text-primary">{a.v}</p>
-                <p className="text-[10px] text-muted-foreground font-semibold">{a.kg}</p>
+                <p className="text-[10px] text-muted-foreground font-semibold">{a.label}</p>
               </div>
             </div>
           ))}
@@ -2210,13 +2240,6 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
     navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-  };
-
-  const markAsClaimed = (id: string) => {
-    setItems(prev => prev.map(item => item.id === id ? { ...item, status: "claimed" } : item));
-    if (selectedClaim?.id === id) {
-      setSelectedClaim((prev: any) => prev ? { ...prev, status: "claimed" } : null);
-    }
   };
 
   return (
@@ -2364,14 +2387,9 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             {/* Action Buttons */}
             <div className="flex gap-2 pt-2">
               {selectedClaim.status === "ready" ? (
-                <button
-                  type="button"
-                  onClick={() => markAsClaimed(selectedClaim.id)}
-                  className="flex-1 py-3 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors flex items-center justify-center gap-2 shadow-xs"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Mark as Claimed (Simulate)
-                </button>
+                <div className="flex-1 py-3 px-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center">
+                  Approved — show your claim code at the pickup kiosk
+                </div>
               ) : selectedClaim.status === "claimed" ? (
                 <div className="flex-1 py-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center flex items-center justify-center gap-2">
                   <Check className="w-4 h-4" /> Reward Successfully Claimed

@@ -544,13 +544,20 @@ app.get('/api/rewards', authenticate, requirePermission('list', 'reward'), cache
 // Transactions from database
 app.get('/api/transactions', authenticate, requirePermission('list', 'transaction'), cacheRoute(30), async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT * FROM recycling_transactions');
+    // Newest first (was unordered, so "recent activity" showed arbitrary/oldest rows), with the resident's name.
+    const [rows] = await db.query(
+      `SELECT t.*, u.firstName, u.lastName
+         FROM recycling_transactions t
+         LEFT JOIN users u ON u.userId = t.userId
+        ORDER BY t.timestamp DESC
+        LIMIT 200`
+    );
     const transactionsWithCompat = rows.map(tx => ({
       ...tx,
       id: tx.transactionId,
       date: new Date(tx.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       type: 'earn',
-      desc: `PET Plastic · ${tx.quantity} bottles · ${tx.kioskId}`,
+      desc: `${`${tx.firstName || ''} ${tx.lastName || ''}`.trim() || tx.userId} · ${tx.quantity} bottle${Number(tx.quantity) === 1 ? '' : 's'} · ${tx.kioskId}`,
       pts: tx.pointsEarned
     }));
     res.json(transactionsWithCompat);
@@ -1429,6 +1436,7 @@ app.delete('/api/tasks/:id', authenticate, requirePermission('delete', 'task'), 
     const [exists] = await db.query('SELECT * FROM recycling_tasks WHERE taskId = ?', [id]);
     if (!exists.length) return res.status(404).json({ error: 'Quest not found' });
     try {
+      await db.query('DELETE FROM user_task_progress WHERE taskId = ?', [id]);
       await db.query('DELETE FROM recycling_tasks WHERE taskId = ?', [id]);
     } catch {
       await db.query("UPDATE recycling_tasks SET status = 'inactive' WHERE taskId = ?", [id]);

@@ -27,9 +27,6 @@ const monthlyData = [
   { month: "May", collected: 1340, users: 340, redeemed: 134 },
   { month: "Jun", collected: 1450, users: 380, redeemed: 158 }
 ];
-const wasteTypes = [
-  { name: "PET Plastic", value: 100, color: "#16a34a" }
-];
 const leaderboard = [
   { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR" },
   { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM" },
@@ -55,12 +52,9 @@ const rewards = [
   { id: 8, name: "Herbal Tea Set", points: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true },
 ];
 const transactions = [
-  { id: "T-0041", date: "Jun 17, 2026", type: "earn", desc: "PET Plastic · 23 bottles · K-01", pts: 115 },
-  { id: "T-0040", date: "Jun 16, 2026", type: "earn", desc: "Cardboard · 9 boxes · K-02", pts: 93 },
+  { id: "T-0041", date: "Jun 17, 2026", type: "earn", desc: "Resident · 23 bottles · K-01", pts: 115 },
   { id: "T-0039", date: "Jun 15, 2026", type: "redeem", desc: "Eco Water Bottle", pts: -350 },
-  { id: "T-0038", date: "Jun 14, 2026", type: "earn", desc: "Metal Cans · 18 bottles · K-01", pts: 144 },
   { id: "T-0037", date: "Jun 13, 2026", type: "bonus", desc: "Weekly Challenge Complete", pts: 150 },
-  { id: "T-0036", date: "Jun 12, 2026", type: "earn", desc: "Glass Bottles · 20 bottles · K-04", pts: 50 },
 ];
 const adminUsers = [
   { id: "U-001", name: "Maria Santos", barangay: "Cabantian", points: 2840, status: "active", joined: "Mar 12, 2025", submissions: 34, redeemed: 2 },
@@ -1006,7 +1000,7 @@ function mapSingleTxRow(t: any, i: number) {
   const isEarn = hasEarnMarker || t.type === "earn";
   return {
     id: t.transactionId || t.id || `tx-${i}`,
-    date: t.timestamp || t.date || "Today",
+    date: t.date || t.timestamp || "Today",
     type: isEarn ? "earn" : t.type || "earn",
     desc,
     pts: pts || 0,
@@ -1039,13 +1033,11 @@ function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) 
 function WeeklyCollectionCard({
   liveWeekly,
   filteredData,
-  selectedMaterial,
-  selectedKiosk,
+  totalBottles,
 }: Readonly<{
   liveWeekly: any[] | null;
   filteredData: any[];
-  selectedMaterial: string;
-  selectedKiosk: string;
+  totalBottles: number;
 }>) {
   let chartData = weeklyData;
   if (filteredData && filteredData.length > 0) {
@@ -1056,12 +1048,12 @@ function WeeklyCollectionCard({
   const isLive = Boolean(liveWeekly && liveWeekly.length > 0);
 
   return (
-    <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
+    <div className="bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="font-black text-sm text-foreground">Bottles Collected</h3>
           <p className="text-[11px] text-muted-foreground">
-            {selectedMaterial !== "all" ? selectedMaterial : "All Materials"} • {selectedKiosk !== "all" ? selectedKiosk : "All Kiosks"}
+            Last 7 days • <span className="font-bold text-primary">{totalBottles} bottles</span> total
           </p>
         </div>
         {isLive ? <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_SUCCESS_CLS} font-bold`}>● LIVE from DB</span> : <span className={`text-[10px] px-2.5 py-1 rounded-full ${BADGE_WARN_CLS} font-bold`}>DEMO</span>}
@@ -1081,37 +1073,6 @@ function WeeklyCollectionCard({
           <Area type="monotone" dataKey="bottles" stroke="#16a34a" strokeWidth={2.5} fill="url(#wg)" />
         </AreaChart>
       </ResponsiveContainer>
-    </div>
-  );
-}
-
-function WasteCompositionCard({
-  wasteData,
-}: Readonly<{
-  wasteData: { name: string; value: number; color: string }[];
-}>) {
-  const currentWaste = wasteData && wasteData.length > 0 ? wasteData : wasteTypes;
-
-  return (
-    <div className="col-span-2 bg-white rounded-2xl p-4 border border-border">
-      <h3 className="font-black text-sm text-foreground mb-3">Waste Composition</h3>
-      <ResponsiveContainer width="100%" height={130}>
-        <PieChart>
-          <Pie data={currentWaste} cx="50%" cy="50%" innerRadius={32} outerRadius={55} dataKey="value" paddingAngle={3}>
-            {currentWaste.map((e) => <Cell key={e.name} fill={e.color} />)}
-          </Pie>
-          <Tooltip contentStyle={{ borderRadius: 10, fontSize: 11 }} />
-        </PieChart>
-      </ResponsiveContainer>
-      <div className="space-y-1 mt-1">
-        {currentWaste.map(w => (
-          <div key={w.name} className="flex items-center gap-2 text-xs">
-            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: w.color }} />
-            <span className="text-muted-foreground flex-1 truncate">{w.name}</span>
-            <span className="font-bold">{w.value}%</span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }
@@ -1209,127 +1170,14 @@ function AdminDashboard({
   liveTx: any[] | null;
   searchQuery?: string;
 }>) {
-  const [wasteFilter, setWasteFilter] = useState<string>("all");
-  const [kioskFilter, setKioskFilter] = useState<string>("all");
-  const [periodFilter, setPeriodFilter] = useState<string>("7d");
-
-  // Maps each waste material to its pie chart colour
-  const getWastePieColor = (material: string): string => {
-    const palette: Record<string, string> = {
-      "PET Plastic": "#16a34a",
-      "Cardboard": "#f59e0b",
-      "Aluminum Cans": "#3b82f6",
-      "Glass Bottles": "#8b5cf6",
-    };
-    return palette[material] ?? "#6b7280";
-  };
-
-  // Dynamic filter multiplier based on material/kiosk selection
-  const materialMultipliers: Record<string, number> = {
-    all: 1.0,
-    "PET Plastic": 0.65,
-    "Cardboard": 0.20,
-    "Aluminum Cans": 0.10,
-    "Glass Bottles": 0.05,
-  };
-
-  const kioskMultipliers: Record<string, number> = {
-    all: 1.0,
-    "K-01": 0.45,
-    "K-02": 0.25,
-    "K-04": 0.30,
-  };
-
-  const rawWeekly = liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData;
-  const matMult = materialMultipliers[wasteFilter] ?? 1.0;
-  const kskMult = kioskMultipliers[kioskFilter] ?? 1.0;
-  const combinedMult = matMult * kskMult;
-
-  const filteredWeekly = rawWeekly.map(item => ({
-    ...item,
-    bottles: Math.max(1, Math.round(Number(item.bottles || 0) * combinedMult)),
-  }));
-
-  const dynamicWasteComposition = wasteFilter === "all"
-    ? [
-      { name: "PET Plastic", value: 65, color: "#16a34a" },
-      { name: "Cardboard", value: 20, color: "#f59e0b" },
-      { name: "Aluminum Cans", value: 10, color: "#3b82f6" },
-      { name: "Glass Bottles", value: 5, color: "#8b5cf6" },
-    ]
-    : [
-      { name: wasteFilter, value: 100, color: getWastePieColor(wasteFilter) }
-    ];
-
-  const totalFilteredBottles = filteredWeekly.reduce((acc, curr) => acc + curr.bottles, 0);
+  const weekly = (liveWeekly && liveWeekly.length > 0 ? liveWeekly : weeklyData).map((item: any) => ({ ...item, bottles: Number(item.bottles || 0) }));
+  const totalWeeklyBottles = weekly.reduce((acc: number, curr: any) => acc + curr.bottles, 0);
 
   return (
     <div className="space-y-5">
       <DashboardSummaryCards liveSummary={liveSummary} />
 
-      {/* Waste Collected Filter Bar */}
-      <div className="bg-white rounded-2xl p-4 border border-border shadow-xs">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-green-100 flex items-center justify-center">
-              <Recycle className="w-4 h-4 text-green-700" />
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Filter Waste Collected</h4>
-              <p className="text-[11px] text-muted-foreground">Showing: <span className="font-bold text-primary">{totalFilteredBottles} bottles</span> in current view</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Waste Material Filter */}
-            <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border">
-              {["all", "PET Plastic", "Cardboard", "Aluminum Cans", "Glass Bottles"].map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => setWasteFilter(m)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${wasteFilter === m ? "bg-primary text-white shadow-xs" : "text-muted-foreground hover:text-foreground"}`}
-                >
-                  {m === "all" ? "All Materials" : m}
-                </button>
-              ))}
-            </div>
-
-            {/* Kiosk Location Dropdown Filter */}
-            <select
-              value={kioskFilter}
-              onChange={e => setKioskFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="all">All Kiosk Locations</option>
-              <option value="K-01">K-01 Cabantian Hall</option>
-              <option value="K-02">K-02 Cabantian Elementary</option>
-              <option value="K-04">K-04 Covered Court</option>
-            </select>
-
-            {/* Time Period Filter */}
-            <select
-              value={periodFilter}
-              onChange={e => setPeriodFilter(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-border text-xs font-bold bg-white text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-            >
-              <option value="7d">Last 7 Days</option>
-              <option value="30d">Last 30 Days</option>
-              <option value="all">All Time</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-5 gap-4">
-        <WeeklyCollectionCard
-          liveWeekly={liveWeekly}
-          filteredData={filteredWeekly}
-          selectedMaterial={wasteFilter}
-          selectedKiosk={kioskFilter}
-        />
-        <WasteCompositionCard wasteData={dynamicWasteComposition} />
-      </div>
+      <WeeklyCollectionCard liveWeekly={liveWeekly} filteredData={weekly} totalBottles={totalWeeklyBottles} />
       <div className="grid grid-cols-2 gap-4">
         <TopResidentsCard liveLeaderboard={liveLeaderboard} searchQuery={searchQuery} />
         <RecentActivityCard liveTx={liveTx} searchQuery={searchQuery} />
@@ -2277,7 +2125,7 @@ function exportAnalyticsDataCSV(mergedMonthly: any[], mergedWeekly: any[], liveR
   const rows = [["Dataset", "Key", "Bottles Collected", "Redeemed", "Active Users", "Notes"]];
   mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.bottles || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
   mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i + 1}`, String(w.bottles || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
-  (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
+  (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.totalPoints || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
