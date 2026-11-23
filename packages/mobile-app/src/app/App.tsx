@@ -1670,9 +1670,9 @@ function ScreenRewards(p: MobileAppRouterProps) {
                   </div>
                   <div className="px-3 pt-3 space-y-1.5">
                     <p className="text-sm font-black text-foreground line-clamp-2 leading-tight min-h-[2.5rem]">{r.name}</p>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{r.cost} pts</span>
-                      <span className="text-[10px] text-muted-foreground font-bold capitalize">{r.category}</span>
+                    <div className="flex items-center justify-between gap-1.5 pt-1">
+                      <span className={`text-xs font-black px-2.5 py-1 rounded-full whitespace-nowrap flex-shrink-0 ${cls}`}>{r.cost} pts</span>
+                      <span className="text-[10px] text-muted-foreground font-bold capitalize truncate min-w-0">{r.category}</span>
                     </div>
                   </div>
                 </button>
@@ -1716,7 +1716,7 @@ function ScreenRewardDetail(p: DetailProps) {
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-wide">{r.category}</p>
               <h2 className="text-2xl font-black text-foreground mt-1 leading-tight">{r.name}</h2>
             </div>
-            <span className="flex-shrink-0 px-3 py-1.5 rounded-full bg-primary text-white font-black">{r.cost} pts</span>
+            <span className="flex-shrink-0 px-3 py-1.5 rounded-full bg-primary text-white font-black text-sm whitespace-nowrap">{r.cost} pts</span>
           </div>
           <p className="text-sm text-muted-foreground leading-relaxed">{r.description}</p>
           <div className="grid grid-cols-3 gap-2 text-center">
