@@ -26,6 +26,9 @@ export const TransactionSchema = z.object({
   materialId: z.coerce.number().int().positive().default(1),
   weightKg:   z.coerce.number().positive('weightKg must be > 0').max(1000),
   kioskId:    z.string().trim().max(50).default('K-01'),
+  // Real bottle count (there is no load cell on the machine). Optional here since this
+  // endpoint is also used for manual/admin entry where only a weight might be known.
+  quantity:   z.coerce.number().int().positive().max(1000).optional(),
 });
 
 export const RedeemSchema = z.object({

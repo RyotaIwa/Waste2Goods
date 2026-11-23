@@ -233,11 +233,11 @@ async function ensureRecyclingTasksSeed() {
     if (Number(cnt?.cnt || 0) > 0) return 0;
     await db.query(`
       INSERT INTO recycling_tasks (taskId, taskName, description, bonus_points, bonusPoints, targetKg, startDate, endDate, progress, target, frequency, barangayId, materialId, status) VALUES
-      (1, 'Daily Recycling', 'Submit any amount of PET plastic today', 25, 25, 0.50, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-      (2, 'Streak Bonus - 3 Days', '3 days in a row! Keep it up', 100, 100, 1.00, NULL, NULL, 0, 3, 'daily', NULL, NULL, 'active'),
-      (3, '5 kg Weekly Challenge', 'Collect and submit 5 kg total this week', 300, 300, 5.00, NULL, NULL, 0, 1, 'weekly', NULL, NULL, 'active'),
-      (4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 150, 150, 0.20, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-      (5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 20kg target', 1000, 1000, 20.00, NULL, NULL, 0, 1, 'monthly', NULL, NULL, 'active')
+      (1, 'Daily Recycling', 'Submit at least 1 bottle today', 25, 25, 0, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
+      (2, '25 Bottles Milestone', 'Submit 25 bottles total', 100, 100, 0, NULL, NULL, 0, 25, 'daily', NULL, NULL, 'active'),
+      (3, '10 Bottles This Week', 'Submit 10 bottles total this week', 300, 300, 0, NULL, NULL, 0, 10, 'weekly', NULL, NULL, 'active'),
+      (4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 150, 150, 0, NULL, NULL, 0, 10, 'daily', NULL, NULL, 'active'),
+      (5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 50 bottles target', 1000, 1000, 0, NULL, NULL, 0, 50, 'monthly', NULL, NULL, 'active')
     `);
     console.log('✅ Recycling tasks seed data inserted successfully');
     return 1;
@@ -383,6 +383,9 @@ async function applySchemaMigrations() {
       console.debug('Email migration sync skipped:', err.message);
     }
 
+    totalApplied += await migrateTableColumns('recycling_transactions', [
+      { column: 'quantity', definition: 'INT NOT NULL DEFAULT 1' },
+    ]);
     totalApplied += await migrateTableColumns('reward_redemptions', [
       { column: 'redeemCode', definition: 'VARCHAR(8)' },
       { column: 'claimedAt',  definition: 'TIMESTAMP NULL DEFAULT NULL' },

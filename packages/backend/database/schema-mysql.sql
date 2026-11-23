@@ -162,11 +162,11 @@ CREATE TABLE `recycling_tasks` (
 --
 
 INSERT INTO `recycling_tasks` (`taskId`, `taskName`, `description`, `bonus_points`, `bonusPoints`, `targetKg`, `startDate`, `endDate`, `progress`, `target`, `frequency`, `barangayId`, `materialId`, `status`) VALUES
-(1, 'Daily Recycling', 'Submit any amount of PET plastic today', 0, 25, 0.50, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-(2, 'Streak Bonus - 3 Days', '3 days in a row! Keep it up', 0, 100, 1.00, NULL, NULL, 0, 3, 'daily', NULL, NULL, 'active'),
-(3, '5 kg Weekly Challenge', 'Collect and submit 5 kg total this week', 0, 300, 5.00, NULL, NULL, 0, 1, 'weekly', NULL, NULL, 'active'),
-(4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 0, 150, 0.20, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
-(5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 20kg target', 0, 1000, 20.00, NULL, NULL, 0, 1, 'monthly', NULL, NULL, 'active');
+(1, 'Daily Recycling', 'Submit at least 1 bottle today', 0, 25, 0, NULL, NULL, 0, 1, 'daily', NULL, NULL, 'active'),
+(2, '25 Bottles Milestone', 'Submit 25 bottles total', 0, 100, 0, NULL, NULL, 0, 25, 'daily', NULL, NULL, 'active'),
+(3, '10 Bottles This Week', 'Submit 10 bottles total this week', 0, 300, 0, NULL, NULL, 0, 10, 'weekly', NULL, NULL, 'active'),
+(4, '10 Bottles in a Day', 'Submit 10+ PET bottles in a single day', 0, 150, 0, NULL, NULL, 0, 10, 'daily', NULL, NULL, 'active'),
+(5, 'Pasko Big Cleanup Drive', 'Barangay-wide Christmas cleanup: 50 bottles target', 0, 1000, 0, NULL, NULL, 0, 50, 'monthly', NULL, NULL, 'active');
 
 -- --------------------------------------------------------
 
@@ -174,6 +174,9 @@ INSERT INTO `recycling_tasks` (`taskId`, `taskName`, `description`, `bonus_point
 -- Table structure for table `recycling_transactions`
 --
 
+-- Migration 005: `quantity` — real bottle count from the ESP32-CAM machine (there is
+-- no load cell). `weightKg` stays NOT NULL for backward compatibility but is now a
+-- derived estimate (quantity x material.kgPerUnit); `quantity` is the real metric.
 CREATE TABLE `recycling_transactions` (
   `transactionId` varchar(50) NOT NULL,
   `userId` varchar(50) NOT NULL,
@@ -181,7 +184,8 @@ CREATE TABLE `recycling_transactions` (
   `weightKg` decimal(10,2) NOT NULL,
   `pointsEarned` int(11) NOT NULL,
   `kioskId` varchar(50) NOT NULL,
-  `timestamp` timestamp NOT NULL DEFAULT current_timestamp()
+  `timestamp` timestamp NOT NULL DEFAULT current_timestamp(),
+  `quantity` int(11) NOT NULL DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------

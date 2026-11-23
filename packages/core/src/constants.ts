@@ -137,12 +137,12 @@ export const MONTHLY_DATA: MonthlyData[] = [
 
 // LEADERBOARD
 export const LEADERBOARD: LeaderboardUser[] = [
-  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR", streak: 14 },
-  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM", streak: 9 },
-  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", streak: 7, isMe: true },
-  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD", streak: 5 },
-  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV", streak: 3 },
-  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 }
+  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR" },
+  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM" },
+  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", isMe: true },
+  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD" },
+  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV" },
+  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP" }
 ];
 
 // REWARDS (updated to use new fields + keep original for compatibility)
@@ -159,10 +159,10 @@ export const REWARDS: Reward[] = [
 
 // TASKS (keep original for compatibility)
 export const TASKS: Task[] = [
-  { id: 1, title: "Submit 2kg of PET bottles", reward: 100, progress: 1.4, goal: 2, unit: "kg", type: "daily", done: false },
-  { id: 2, title: "Visit kiosk 3 days in a row", reward: 150, progress: 2, goal: 3, unit: "days", type: "weekly", done: false },
+  { id: 1, title: "Submit 2 bottles today", reward: 100, progress: 1, goal: 2, unit: "bottles", type: "daily", done: false },
+  { id: 2, title: "Submit 10 bottles this week", reward: 150, progress: 2, goal: 10, unit: "bottles", type: "weekly", done: false },
   { id: 3, title: "Submit 10 bottles in a single day", reward: 150, progress: 10, goal: 10, unit: "bottles", type: "monthly", done: true },
-  { id: 4, title: "Collect 5kg of cardboard", reward: 120, progress: 5, goal: 5, unit: "kg", type: "weekly", done: true },
+  { id: 4, title: "Collect 20 bottles of cardboard", reward: 120, progress: 5, goal: 20, unit: "bottles", type: "weekly", done: true },
   { id: 5, title: "Submit any 3 material types", reward: 80, progress: 2, goal: 3, unit: "types", type: "daily", done: false }
 ];
 

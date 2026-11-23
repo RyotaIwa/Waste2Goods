@@ -8,8 +8,8 @@ import {
   Trophy, Medal, Zap,
   Bell, LogOut,
   ChevronRight, Shield, Mail, Phone, Leaf,
-  Settings, Lock, Info, Flame, Camera, Globe,
-  Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
+  Settings, Lock, Info, Camera, Globe,
+  Hash, Sparkles, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
   Copy, Check
 } from "lucide-react";
 import ScreenRedeemCode from "./ScreenRedeemCode";
@@ -27,28 +27,13 @@ type MobileScreen =
 // instructor/demo setups on a local network — it is never a production endpoint.
 const DEFAULT_DEV_API_HOST = "192.168.1.164"; // NOSONAR - intentional private-range dev/demo default (typescript:S1313)
 
-const weeklyData = [
-  { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
-  { day: "Thu", kg: 89 }, { day: "Fri", kg: 74 }, { day: "Sat", kg: 112 }, { day: "Sun", kg: 95 }
-];
-const monthlyData = [
-  { month: "Jan", collected: 820, users: 210, redeemed: 65 },
-  { month: "Feb", collected: 940, users: 245, redeemed: 80 },
-  { month: "Mar", collected: 1100, users: 290, redeemed: 102 },
-  { month: "Apr", collected: 980, users: 275, redeemed: 89 },
-  { month: "May", collected: 1340, users: 340, redeemed: 134 },
-  { month: "Jun", collected: 1450, users: 380, redeemed: 158 }
-];
-const wasteTypes = [
-  { name: "PET Plastic", value: 38, color: "#16a34a" },
-];
 const DEMO_LEADERBOARD_FALLBACK = [
-  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR", streak: 14 },
-  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM", streak: 9 },
-  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", streak: 7 },
-  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD", streak: 5 },
-  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV", streak: 3 },
-  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 },
+  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR" },
+  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM" },
+  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS" },
+  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD" },
+  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV" },
+  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP" },
 ];
 const rewards = [
   { id: 1, name: "School Supplies Kit", points: 500, cost: 500, category: "Education", stock: 23, icon: "📚", seasonal: false, description: "Complete school essentials set including notebooks, pens, and bag.", delivery: "Barangay Pick-up", validity: "30 Days" },
@@ -59,33 +44,6 @@ const rewards = [
   { id: 6, name: "Reusable Bag Bundle", points: 180, cost: 180, category: "Lifestyle", stock: 88, icon: "👜", seasonal: false, description: "3x heavy-duty canvas reusable shopping bags.", delivery: "Barangay Pick-up", validity: "60 Days" },
   { id: 7, name: "Back-to-School Bundle", points: 650, cost: 650, category: "Education", stock: 12, icon: "🎒", seasonal: true, description: "Backpack, water flask, and basic stationery kit.", delivery: "Barangay Pick-up", validity: "30 Days" },
   { id: 8, name: "Herbal Tea Set", points: 300, cost: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true, description: "Organic herbal tea selection with bamboo strainer.", delivery: "Barangay Pick-up", validity: "30 Days" },
-];
-const tasks = [
-  { id: 1, title: "Submit 2kg of PET bottles", reward: 100, progress: 1.4, goal: 2, unit: "kg", type: "daily", done: false },
-  { id: 2, title: "Visit kiosk 3 days in a row", reward: 150, progress: 2, goal: 3, unit: "days", type: "weekly", done: false },
-  { id: 3, title: "Refer a neighbor", reward: 200, progress: 1, goal: 1, unit: "person", type: "special", done: true },
-  { id: 4, title: "Collect 5kg of cardboard", reward: 120, progress: 5, goal: 5, unit: "kg", type: "weekly", done: true },
-  { id: 5, title: "Submit any 3 material types", reward: 80, progress: 2, goal: 3, unit: "types", type: "daily", done: false },
-];
-const transactions = [
-  { id: "T-0041", date: "Jun 17, 2026", type: "earn", desc: "PET Plastic · 2.3 kg · K-01", pts: 115 },
-  { id: "T-0040", date: "Jun 16, 2026", type: "earn", desc: "Cardboard · 3.1 kg · K-02", pts: 93 },
-  { id: "T-0039", date: "Jun 15, 2026", type: "redeem", desc: "Eco Water Bottle", pts: -350 },
-  { id: "T-0038", date: "Jun 14, 2026", type: "earn", desc: "Metal Cans · 1.8 kg · K-01", pts: 144 },
-  { id: "T-0037", date: "Jun 13, 2026", type: "bonus", desc: "Weekly Challenge Complete", pts: 150 },
-  { id: "T-0036", date: "Jun 12, 2026", type: "earn", desc: "Glass Bottles · 2.0 kg · K-04", pts: 50 },
-];
-const kiosks = [
-  { id: "K-01", location: "Cabantian Hall", status: "online", weight: "2.3 kg", submissions: 12, battery: 94, lastPing: "2 min ago", temp: "28°C" },
-  { id: "K-02", location: "Cabantian Elementary School", status: "online", weight: "0.8 kg", submissions: 7, battery: 78, lastPing: "1 min ago", temp: "27°C" },
-  { id: "K-03", location: "Cabantian Market", status: "offline", weight: "—", submissions: 0, battery: 0, lastPing: "3 hrs ago", temp: "—" },
-  { id: "K-04", location: "Cabantian Covered Court", status: "online", weight: "4.1 kg", submissions: 19, battery: 61, lastPing: "just now", temp: "30°C" },
-  { id: "K-05", location: "Cabantian Gym", status: "maintenance", weight: "—", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
-];
-
-const STYLE_WEEKLY_DATA = [
-  { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
-  { day: "Thu", kg: 89 }, { day: "Fri", kg: 74 }, { day: "Sat", kg: 112 }, { day: "Sun", kg: 95 }
 ];
 const BADGE_SUCCESS_CLS = "bg-green-100 text-green-700";
 const BADGE_WARN_CLS = "bg-amber-100 text-amber-700";
@@ -472,7 +430,7 @@ type MobileUserShape = {
   id: string; userId: string; name: string; initials: string; email: string; phone: string;
   barangay: string; barangayName: string; province: string; city: string; streetAddress: string;
   points: number; submissions: number; redeemed: number; joined: string; createdAt: any;
-  firstName: string; lastName: string; totalKg: number;
+  firstName: string; lastName: string; totalBottles: number;
 };
 
 function initialsFromName(name: string, fallback: string) {
@@ -513,14 +471,14 @@ function buildCurrentUser(profileUser: any): MobileUserShape {
       createdAt: (userObj as any).createdAt || null,
       firstName: (userObj as any).firstName || "",
       lastName: (userObj as any).lastName || "",
-      totalKg: Number((userObj as any).totalKg || 0),
+      totalBottles: Number((userObj as any).totalBottles || 0),
     };
   }
   return {
     id: "", userId: "", name: "", initials: "", email: "", phone: "",
     barangay: "Cabantian", barangayName: "Cabantian", province: "Davao del Sur", city: "Davao City",
     streetAddress: "", points: 0, submissions: 0, redeemed: 0, joined: "", createdAt: null,
-    firstName: "", lastName: "", totalKg: 0,
+    firstName: "", lastName: "", totalBottles: 0,
   };
 }
 
@@ -560,8 +518,6 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
         barangay: u.barangay || u.barangayName || currentUser.barangay || "Cabantian",
         points: pts,
         submissions: subs,
-        totalKg: Number(u.totalKg || (subs * 2.3)),
-        streak: Number(u.streak) || (subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1),
         isMe,
         _isYou: isMe,
       };
@@ -579,8 +535,6 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
         barangay: u.barangay || "Cabantian",
         points: u.points,
         submissions: 10,
-        totalKg: 23.0,
-        streak: u.streak || 5,
         isMe,
         _isYou: isMe,
       };
@@ -600,8 +554,6 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
       barangay: currentUser.barangay || "Cabantian",
       points: Number(currentUser.points || 0),
       submissions: Number(currentUser.submissions || 0),
-      totalKg: Number(currentUser.totalKg || 0),
-      streak: 7,
       isMe: true,
       _isYou: true,
     });
@@ -1516,9 +1468,9 @@ function ScreenHome(p: MobileAppRouterProps) {
             </div>
             <div className="grid grid-cols-3 gap-3 pt-3 border-t border-white/10">
               {[
-                { l: "Recycled", v: `${(p.currentUser.totalKg || 0).toFixed(1)} kg`, i: <Recycle className="w-4 h-4" /> },
-                { l: "Streak", v: `${p.currentUser.streak || 0} d`, i: <Flame className="w-4 h-4" /> },
-                { l: "Badges", v: `${p.currentUser.badges || 0}`, i: <Award className="w-4 h-4" /> },
+                { l: "Recycled", v: `${Number(p.currentUser.totalBottles || 0)}`, i: <Recycle className="w-4 h-4" /> },
+                { l: "Submissions", v: `${Number(p.currentUser.submissions || 0)}`, i: <CheckSquare2 className="w-4 h-4" /> },
+                { l: "Redeemed", v: `${Number(p.currentUser.redeemed || 0)}`, i: <Gift className="w-4 h-4" /> },
               ].map(s => (
                 <div key={s.l} className="flex flex-col items-center gap-1 p-2.5 rounded-xl bg-white/5">
                   <div className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-white">{s.i}</div>
@@ -1593,7 +1545,7 @@ function ScreenHome(p: MobileAppRouterProps) {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
-                    <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
+                    <p className="text-[10px] text-muted-foreground">{Number(u.submissions ?? u.totalSubmissions ?? 0)} submissions</p>
                   </div>
                 </div>
               );
@@ -1618,7 +1570,7 @@ function ScreenHome(p: MobileAppRouterProps) {
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-black text-primary">{Number(myEntry.points || 0).toLocaleString()} pts</p>
-                      <p className="text-[10px] text-muted-foreground">{(myEntry.totalKg || 0).toFixed(1)} kg</p>
+                      <p className="text-[10px] text-muted-foreground">{Number(myEntry.submissions ?? myEntry.totalSubmissions ?? 0)} submissions</p>
                     </div>
                   </div>
                 );
@@ -1922,7 +1874,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
-                    <p className="text-[10px] text-muted-foreground">{(u.totalKg || 0).toFixed(1)} kg</p>
+                    <p className="text-[10px] text-muted-foreground">{Number(u.submissions ?? u.totalSubmissions ?? 0)} submissions</p>
                   </div>
                 </div>
               );
@@ -1937,7 +1889,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
 
 function ScreenNotifications(p: MobileAppRouterProps) {
   const items = p.notifItems.length > 0 ? p.notifItems : [
-    { title: "+23 Points Earned", desc: "You recycled 2.3 kg at Kiosk 01", time: "2h ago", i: "🎁", c: "bg-green-50 border-green-200", unread: true },
+    { title: "+23 Points Earned", desc: "You recycled 3 bottles at Kiosk 01", time: "2h ago", i: "🎁", c: "bg-green-50 border-green-200", unread: true },
     { title: "New Weekly Task", desc: "Submit 1kg to unlock bonus 50 points", time: "8h ago", i: "📋", c: "bg-blue-50 border-blue-200", unread: true },
     { title: "Seasonal Reward: Christmas Grocery", desc: "Now available in the catalog!", time: "1d ago", i: "🎄", c: "bg-red-50 border-red-200", unread: false },
     { title: "Welcome to Waste2Goods!", desc: "+50 bonus points for completing onboarding", time: "3d ago", i: "🎉", c: "bg-amber-50 border-amber-200", unread: false },
@@ -2002,9 +1954,9 @@ function ScreenProfile(p: MobileAppRouterProps) {
           <div className="grid grid-cols-4 gap-2 text-center">
             {[
               { l: "Points", v: Number(p.currentUser.points || 0).toLocaleString(), c: "text-primary" },
-              { l: "Recycled", v: `${(p.currentUser.totalKg || 0).toFixed(1)}kg`, c: "text-emerald-600" },
-              { l: "Streak", v: `${p.currentUser.streak || 0}d`, c: "text-orange-600" },
-              { l: "Badges", v: `${p.currentUser.badges || 0}`, c: "text-blue-600" },
+              { l: "Recycled", v: `${Number(p.currentUser.totalBottles || 0)}`, c: "text-emerald-600" },
+              { l: "Submissions", v: `${Number(p.currentUser.submissions || 0)}`, c: "text-orange-600" },
+              { l: "Redeemed", v: `${Number(p.currentUser.redeemed || 0)}`, c: "text-blue-600" },
             ].map(s => (
               <div key={s.l} className="flex flex-col items-center gap-0.5 py-2">
                 <p className={`text-lg font-black ${s.c} leading-none`}>{s.v}</p>
@@ -2018,7 +1970,7 @@ function ScreenProfile(p: MobileAppRouterProps) {
           {[
             { t: "Recycled PET bottles", v: "+8 pts", sub: "K-01 · 2h ago", i: "🧴", c: "bg-blue-50" },
             { t: "Redeemed: P50 Load", v: "-500 pts", sub: "Today · 9:12 AM", i: "📱", c: "bg-purple-50" },
-            { t: "Daily streak", v: "+25 pts", sub: "3 days in a row!", i: "🔥", c: "bg-orange-50" },
+            { t: "Quest completed", v: "+25 pts", sub: "10 Bottles in a Day", i: "🎯", c: "bg-orange-50" },
             { t: "Level 2 Milestone", v: "+100 pts", sub: "2 days ago", i: "⭐", c: "bg-amber-50" },
           ].map(a => (
             <div key={a.t} className={`rounded-xl p-3 flex items-center gap-3 ${a.c}`}>
@@ -2041,7 +1993,7 @@ function ScreenProfile(p: MobileAppRouterProps) {
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </button>
           <button type="button" onClick={() => p.go("tasks")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
-            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><CheckSquare2 className="w-4 h-4 text-blue-600" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Achievements</p><p className="text-[10px] text-muted-foreground font-semibold">Milestones & badges</p></div></div>
+            <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-blue-50 flex items-center justify-center"><CheckSquare2 className="w-4 h-4 text-blue-600" /></div><div className="text-left"><p className="text-sm font-black text-foreground">Quests</p><p className="text-[10px] text-muted-foreground font-semibold">Your recycling quests</p></div></div>
             <ChevronRight className="w-4 h-4 text-muted-foreground" />
           </button>
           <button type="button" onClick={() => p.go("settings")} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white border border-border hover:border-primary transition-colors">
@@ -2102,11 +2054,11 @@ function ScreenSettings(p: MobileAppRouterProps) {
 
 function ScreenHistory(p: MobileAppRouterProps) {
   const items = [
-    { t: "Mixed recyclables", v: "+23 pts", sub: "2.3 kg · K-01 · 2h ago", i: "♻️", c: "bg-green-50", kg: "2.3kg", p: "+23" },
-    { t: "PET Bottles (15x)", v: "+8 pts", sub: "0.8 kg · K-01 · Yesterday", i: "🧴", c: "bg-blue-50", kg: "0.8kg", p: "+8" },
-    { t: "Cardboard boxes", v: "+12 pts", sub: "1.2 kg · K-02 · 2 days ago", i: "📦", c: "bg-amber-50", kg: "1.2kg", p: "+12" },
-    { t: "Aluminum cans (20x)", v: "+3 pts", sub: "0.3 kg · K-01 · 4 days ago", i: "🥫", c: "bg-emerald-50", kg: "0.3kg", p: "+3" },
-    { t: "Mixed paper", v: "+5 pts", sub: "0.5 kg · K-03 · 1 week ago", i: "📄", c: "bg-purple-50", kg: "0.5kg", p: "+5" },
+    { t: "Mixed recyclables", v: "+23 pts", sub: "5 bottles · K-01 · 2h ago", i: "♻️", c: "bg-green-50", kg: "5 bottles", p: "+23" },
+    { t: "PET Bottles (15x)", v: "+8 pts", sub: "15 bottles · K-01 · Yesterday", i: "🧴", c: "bg-blue-50", kg: "15 bottles", p: "+8" },
+    { t: "Cardboard boxes", v: "+12 pts", sub: "3 boxes · K-02 · 2 days ago", i: "📦", c: "bg-amber-50", kg: "3 boxes", p: "+12" },
+    { t: "Aluminum cans (20x)", v: "+3 pts", sub: "20 cans · K-01 · 4 days ago", i: "🥫", c: "bg-emerald-50", kg: "20 cans", p: "+3" },
+    { t: "Mixed paper", v: "+5 pts", sub: "1 bundle · K-03 · 1 week ago", i: "📄", c: "bg-purple-50", kg: "1 bundle", p: "+5" },
   ];
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
@@ -2117,7 +2069,7 @@ function ScreenHistory(p: MobileAppRouterProps) {
       <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-20">
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
-            { l: "Total", v: `${(Number(p.currentUser.totalKg || 0) + 5.1).toFixed(1)} kg`, c: "from-primary to-emerald-600" },
+            { l: "Total bottles", v: `${Number(p.currentUser.totalBottles || 0)}`, c: "from-primary to-emerald-600" },
             { l: "Submissions", v: `${items.length}`, c: "from-blue-500 to-cyan-600" },
             { l: "Points earned", v: `+51`, c: "from-amber-500 to-orange-600" },
           ].map(s => (

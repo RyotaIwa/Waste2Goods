@@ -16,8 +16,8 @@ import { Waste2GoodsAPI, getApiBaseUrl } from "@waste2goods/core";
 
 // Data constants
 const weeklyData = [
-  { day: "Mon", kg: 42 }, { day: "Tue", kg: 67 }, { day: "Wed", kg: 53 },
-  { day: "Thu", kg: 89 }, { day: "Fri", kg: 74 }, { day: "Sat", kg: 112 }, { day: "Sun", kg: 95 }
+  { day: "Mon", bottles: 42 }, { day: "Tue", bottles: 67 }, { day: "Wed", bottles: 53 },
+  { day: "Thu", bottles: 89 }, { day: "Fri", bottles: 74 }, { day: "Sat", bottles: 112 }, { day: "Sun", bottles: 95 }
 ];
 const monthlyData = [
   { month: "Jan", collected: 820, users: 210, redeemed: 65 },
@@ -31,17 +31,17 @@ const wasteTypes = [
   { name: "PET Plastic", value: 100, color: "#16a34a" }
 ];
 const leaderboard = [
-  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR", streak: 14 },
-  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM", streak: 9 },
-  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS", streak: 7 },
-  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD", streak: 5 },
-  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV", streak: 3 },
-  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 },
+  { rank: 1, name: "Ana Reyes", barangay: "Cabantian", points: 4820, avatar: "AR" },
+  { rank: 2, name: "Carlo Mendoza", barangay: "Cabantian", points: 3950, avatar: "CM" },
+  { rank: 3, name: "Maria Santos", barangay: "Cabantian", points: 2840, avatar: "MS" },
+  { rank: 4, name: "Jose Dela Cruz", barangay: "Cabantian", points: 2310, avatar: "JD" },
+  { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV" },
+  { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP" },
 ];
 const demoTasks = [
-  { id: 1, title: "Daily Recycling", description: "Submit any amount of PET plastic today", reward: 25, goal: 0.5, unit: "kg", type: "daily", status: "active" },
-  { id: 2, title: "5 kg Weekly Challenge", description: "Collect and submit 5 kg total this week", reward: 300, goal: 5, unit: "kg", type: "weekly", status: "active" },
-  { id: 3, title: "10 Bottles in a Day", description: "Submit 10+ PET bottles in a single day", reward: 150, goal: 0.2, unit: "kg", type: "daily", status: "active" },
+  { id: 1, title: "Daily Recycling", description: "Submit at least 1 bottle today", reward: 25, goal: 1, unit: "bottles", type: "daily", status: "active" },
+  { id: 2, title: "10 Bottles This Week", description: "Submit 10 bottles total this week", reward: 300, goal: 10, unit: "bottles", type: "weekly", status: "active" },
+  { id: 3, title: "10 Bottles in a Day", description: "Submit 10+ PET bottles in a single day", reward: 150, goal: 10, unit: "bottles", type: "daily", status: "active" },
 ];
 
 const rewards = [
@@ -55,12 +55,12 @@ const rewards = [
   { id: 8, name: "Herbal Tea Set", points: 300, category: "Wellness", stock: 35, icon: "🍵", seasonal: true },
 ];
 const transactions = [
-  { id: "T-0041", date: "Jun 17, 2026", type: "earn", desc: "PET Plastic · 2.3 kg · K-01", pts: 115 },
-  { id: "T-0040", date: "Jun 16, 2026", type: "earn", desc: "Cardboard · 3.1 kg · K-02", pts: 93 },
+  { id: "T-0041", date: "Jun 17, 2026", type: "earn", desc: "PET Plastic · 23 bottles · K-01", pts: 115 },
+  { id: "T-0040", date: "Jun 16, 2026", type: "earn", desc: "Cardboard · 9 boxes · K-02", pts: 93 },
   { id: "T-0039", date: "Jun 15, 2026", type: "redeem", desc: "Eco Water Bottle", pts: -350 },
-  { id: "T-0038", date: "Jun 14, 2026", type: "earn", desc: "Metal Cans · 1.8 kg · K-01", pts: 144 },
+  { id: "T-0038", date: "Jun 14, 2026", type: "earn", desc: "Metal Cans · 18 bottles · K-01", pts: 144 },
   { id: "T-0037", date: "Jun 13, 2026", type: "bonus", desc: "Weekly Challenge Complete", pts: 150 },
-  { id: "T-0036", date: "Jun 12, 2026", type: "earn", desc: "Glass Bottles · 2.0 kg · K-04", pts: 50 },
+  { id: "T-0036", date: "Jun 12, 2026", type: "earn", desc: "Glass Bottles · 20 bottles · K-04", pts: 50 },
 ];
 const adminUsers = [
   { id: "U-001", name: "Maria Santos", barangay: "Cabantian", points: 2840, status: "active", joined: "Mar 12, 2025", submissions: 34, redeemed: 2 },
@@ -71,11 +71,11 @@ const adminUsers = [
   { id: "U-006", name: "Liza Villareal", barangay: "Cabantian", points: 1990, status: "active", joined: "Feb 1, 2025", submissions: 28, redeemed: 4 },
 ];
 const kiosks = [
-  { id: "K-01", location: "Cabantian Hall", status: "online", weight: "2.3 kg", submissions: 12, battery: 94, lastPing: "2 min ago", temp: "28°C" },
-  { id: "K-02", location: "Cabantian Elementary School", status: "online", weight: "0.8 kg", submissions: 7, battery: 78, lastPing: "1 min ago", temp: "27°C" },
-  { id: "K-03", location: "Cabantian Market", status: "offline", weight: "—", submissions: 0, battery: 0, lastPing: "3 hrs ago", temp: "—" },
-  { id: "K-04", location: "Cabantian Covered Court", status: "online", weight: "4.1 kg", submissions: 19, battery: 61, lastPing: "just now", temp: "30°C" },
-  { id: "K-05", location: "Cabantian Gym", status: "maintenance", weight: "—", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
+  { id: "K-01", location: "Cabantian Hall", status: "online", submissions: 12, battery: 94, lastPing: "2 min ago", temp: "28°C" },
+  { id: "K-02", location: "Cabantian Elementary School", status: "online", submissions: 7, battery: 78, lastPing: "1 min ago", temp: "27°C" },
+  { id: "K-03", location: "Cabantian Market", status: "offline", submissions: 0, battery: 0, lastPing: "3 hrs ago", temp: "—" },
+  { id: "K-04", location: "Cabantian Covered Court", status: "online", submissions: 19, battery: 61, lastPing: "just now", temp: "30°C" },
+  { id: "K-05", location: "Cabantian Gym", status: "maintenance", submissions: 0, battery: 45, lastPing: "45 min ago", temp: "—" },
 ];
 
 const STYLE_MIN_HEIGHT = 740;
@@ -199,8 +199,8 @@ type SettledResult<T> = { status: "fulfilled"; value: T } | { status: "rejected"
 const SETTLED_FULFILLED = "fulfilled";
 
 type DashboardSummaryShape = {
-  totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number;
-  kgDelta: number; newUsers: number; redeemedDelta: number;
+  totalBottles: number; activeResidents: number; pointsAwarded: number; redeemed: number;
+  txCount: number; newUsers: number; redeemedDelta: number;
 };
 
 type AdminDataSetters = {
@@ -228,11 +228,11 @@ function applySettledArray<T>(result: SettledResult<T>, setter: (v: T[] | null) 
 function buildDashboardSummary(raw: any): DashboardSummaryShape | null {
   if (!raw || typeof raw !== "object") return null;
   return {
-    totalKg: Number(raw.totalKgCollected || raw.totalKg || raw.totalCollected || 0),
+    totalBottles: Number(raw.totalBottlesCollected || raw.totalBottles || raw.totalCollected || 0),
     activeResidents: Number(raw.activeResidents || raw.totalUsers || 0),
     pointsAwarded: Number(raw.totalPointsAwarded || raw.pointsAwarded || raw.totalPoints || 0),
     redeemed: Number(raw.rewardsRedeemed || raw.redeemed || 0),
-    kgDelta: Number(raw.totalTransactions || raw.kgDelta || 0),
+    txCount: Number(raw.totalTransactions || raw.txCount || 0),
     newUsers: Number(raw.totalUsers || raw.newUsers || 0),
     redeemedDelta: Number(raw.rewardsRedeemed || raw.redeemedDelta || 0),
   };
@@ -543,8 +543,8 @@ export default function App() {
   const [liveRedemptions, setLiveRedemptions] = useState<Array<any> | null>(null);
   const [liveLeaderboard, setLiveLeaderboard] = useState<Array<any> | null>(null);
   const [dashboardSummary, setDashboardSummary] = useState<{
-    totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number;
-    kgDelta: number; newUsers: number; redeemedDelta: number;
+    totalBottles: number; activeResidents: number; pointsAwarded: number; redeemed: number;
+    txCount: number; newUsers: number; redeemedDelta: number;
   } | null>(null);
   // ── Admin profile state (reactive; refreshed from DB on mount / section change) ──
   const [adminProfile, setAdminProfile] = useState<any>(null);
@@ -978,7 +978,6 @@ function formatDemoVal(s: any, demoStr: string, unit?: string) {
   if (s === null || s === undefined || Number.isNaN(Number(s))) return demoStr;
   const n = Number(s);
   if (!Number.isFinite(n) || n <= 0) return demoStr;
-  if (unit === "kg") return `${n.toLocaleString(undefined, { maximumFractionDigits: 0 })} kg`;
   if (unit === "K") return n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n);
   return n.toLocaleString();
 }
@@ -996,12 +995,12 @@ function formatDashboardLeaderboard(liveLeaderboard: any[] | null) {
 }
 
 function mapSingleTxRow(t: any, i: number) {
-  const kg = Number(t.weightKg || t.kg || 0);
+  const bottles = Number(t.quantity ?? t.bottles ?? 0);
   const material = t.materialName || t.materialId || "PET Plastic";
   const kiosk = t.kioskId || "K-01";
   const pts = Number(t.pointsEarned || t.points || 0);
   const desc = pts > 0
-    ? `${material} · ${kg.toFixed(1)} kg · ${kiosk}`
+    ? `${material} · ${bottles} bottles · ${kiosk}`
     : t.desc || "Reward redemption";
   const hasEarnMarker = pts > 0 && t.pointsEarned !== undefined;
   const isEarn = hasEarnMarker || t.type === "earn";
@@ -1022,14 +1021,14 @@ function formatDashboardTransactions(liveTx: any[] | null) {
 }
 
 function DashboardSummaryCards({ liveSummary }: Readonly<{ liveSummary: any }>) {
-  const totalCollectedStr = liveSummary ? formatDemoVal(liveSummary.totalKg, "12,450 kg", "kg") : "12,450 kg";
+  const totalCollectedStr = liveSummary ? formatDemoVal(liveSummary.totalBottles, "12,450", "") : "12,450";
   const activeResidentsStr = liveSummary ? formatDemoVal(liveSummary.activeResidents, "847") : "847";
   const pointsAwardedStr = liveSummary ? formatDemoVal(liveSummary.pointsAwarded, "284.5K", "K") : "284.5K";
   const redeemedStr = liveSummary ? formatDemoVal(liveSummary.redeemed, "234") : "234";
 
   return (
     <div className="grid grid-cols-4 gap-4">
-      <SCard label="Total Collected" value={totalCollectedStr} sub={liveSummary ? `From ${liveSummary.kgDelta || 0} total recycling transactions` : "↑ 18% vs May"} icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveSummary && liveSummary.kgDelta > 0 ? `Tx:${liveSummary.kgDelta}` : "+18%"} />
+      <SCard label="Bottles Collected" value={totalCollectedStr} sub={liveSummary ? `From ${liveSummary.txCount || 0} total recycling transactions` : "↑ 18% vs May"} icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={liveSummary && liveSummary.txCount > 0 ? `Tx:${liveSummary.txCount}` : "+18%"} />
       <SCard label="Active Residents" value={activeResidentsStr} sub={liveSummary ? `${liveSummary.newUsers || 0} registered users (DB total)` : "34 new this week"} icon={<Users className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={liveSummary && liveSummary.newUsers > 0 ? `Users:${liveSummary.newUsers}` : "+34"} />
       <SCard label="Points Awarded" value={pointsAwardedStr} sub="All time points distributed" icon={<Award className="w-5 h-5 text-amber-600" />} color="bg-amber-100" />
       <SCard label="Rewards Redeemed" value={redeemedStr} sub={liveSummary ? `Total redemptions processed` : "All time total"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={liveSummary && liveSummary.redeemedDelta > 0 ? `Redeemed:${liveSummary.redeemedDelta}` : "+41"} />
@@ -1060,7 +1059,7 @@ function WeeklyCollectionCard({
     <div className="col-span-3 bg-white rounded-2xl p-4 border border-border">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="font-black text-sm text-foreground">Waste Collected (kg)</h3>
+          <h3 className="font-black text-sm text-foreground">Bottles Collected</h3>
           <p className="text-[11px] text-muted-foreground">
             {selectedMaterial !== "all" ? selectedMaterial : "All Materials"} • {selectedKiosk !== "all" ? selectedKiosk : "All Kiosks"}
           </p>
@@ -1079,7 +1078,7 @@ function WeeklyCollectionCard({
           <XAxis dataKey="day" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
           <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11, border: "1px solid #e5e7eb" }} />
-          <Area type="monotone" dataKey="kg" stroke="#16a34a" strokeWidth={2.5} fill="url(#wg)" />
+          <Area type="monotone" dataKey="bottles" stroke="#16a34a" strokeWidth={2.5} fill="url(#wg)" />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -1204,7 +1203,7 @@ function AdminDashboard({
   liveTx,
   searchQuery = "",
 }: Readonly<{
-  liveSummary: null | { totalKg: number; activeResidents: number; pointsAwarded: number; redeemed: number; kgDelta: number; newUsers: number; redeemedDelta: number; };
+  liveSummary: null | { totalBottles: number; activeResidents: number; pointsAwarded: number; redeemed: number; txCount: number; newUsers: number; redeemedDelta: number; };
   liveWeekly: any[] | null;
   liveLeaderboard: any[] | null;
   liveTx: any[] | null;
@@ -1248,7 +1247,7 @@ function AdminDashboard({
 
   const filteredWeekly = rawWeekly.map(item => ({
     ...item,
-    kg: Math.max(1, Math.round(Number(item.kg || 0) * combinedMult)),
+    bottles: Math.max(1, Math.round(Number(item.bottles || 0) * combinedMult)),
   }));
 
   const dynamicWasteComposition = wasteFilter === "all"
@@ -1262,7 +1261,7 @@ function AdminDashboard({
       { name: wasteFilter, value: 100, color: getWastePieColor(wasteFilter) }
     ];
 
-  const totalFilteredKg = filteredWeekly.reduce((acc, curr) => acc + curr.kg, 0);
+  const totalFilteredBottles = filteredWeekly.reduce((acc, curr) => acc + curr.bottles, 0);
 
   return (
     <div className="space-y-5">
@@ -1277,7 +1276,7 @@ function AdminDashboard({
             </div>
             <div>
               <h4 className="text-xs font-black text-foreground uppercase tracking-wide">Filter Waste Collected</h4>
-              <p className="text-[11px] text-muted-foreground">Showing: <span className="font-bold text-primary">{totalFilteredKg} kg</span> in current view</p>
+              <p className="text-[11px] text-muted-foreground">Showing: <span className="font-bold text-primary">{totalFilteredBottles} bottles</span> in current view</p>
             </div>
           </div>
 
@@ -2275,9 +2274,9 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
 }
 
 function exportAnalyticsDataCSV(mergedMonthly: any[], mergedWeekly: any[], liveRedemptions: any[] | null) {
-  const rows = [["Dataset", "Key", "Collected (kg)", "Redeemed", "Active Users", "Notes"]];
-  mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.kg || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
-  mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i + 1}`, String(w.kg || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
+  const rows = [["Dataset", "Key", "Bottles Collected", "Redeemed", "Active Users", "Notes"]];
+  mergedMonthly.forEach((m: any) => rows.push(["Monthly", m.month || m.label || "", String(m.collected || m.bottles || 0), String(m.redeemed || 0), String(m.users || 0), m.note || ""]));
+  mergedWeekly.forEach((w: any, i: number) => rows.push(["Weekly", w.week || w.label || `Week ${i + 1}`, String(w.bottles || w.collected || 0), String(w.redeemed || 0), String(w.users || 0), w.note || ""]));
   (liveRedemptions || []).slice(0, 50).forEach((r: any) => rows.push(["Redemption", r.redemptionId || r.id || "", String(r.weightKg || 0), String(r.quantity || 1), String(r.userId || ""), r.rewardName || r.status || ""]));
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -2340,12 +2339,12 @@ function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ live
   const [confirmDel, setConfirmDel] = useState<any>(null);
   const [qName, setQName] = useState("");
   const [qPoints, setQPoints] = useState<string>("100");
-  const [qTargetKg, setQTargetKg] = useState<string>("2");
+  const [qTarget, setQTarget] = useState<string>("10");
   const [qFrequency, setQFrequency] = useState("weekly");
   const [qDesc, setQDesc] = useState("");
 
   const resetForm = () => {
-    setQName(""); setQPoints("100"); setQTargetKg("2"); setQFrequency("weekly"); setQDesc("");
+    setQName(""); setQPoints("100"); setQTarget("10"); setQFrequency("weekly"); setQDesc("");
   };
 
   const openCreate = () => { resetForm(); setEditing(null); setBanner(null); setShowForm(true); };
@@ -2353,7 +2352,7 @@ function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ live
     setEditing(t);
     setQName(t.title || "");
     setQPoints(String(t.reward ?? 0));
-    setQTargetKg(String(t.goal ?? 1));
+    setQTarget(String(t.goal ?? 1));
     setQFrequency(t.type || "weekly");
     setQDesc(t.description || "");
     setBanner(null); setShowForm(true);
@@ -2361,15 +2360,15 @@ function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ live
 
   const submitForm = async () => {
     setBanner(null);
-    if (!qName.trim() || Number(qPoints) < 0 || Number(qTargetKg) <= 0) {
-      setBanner({ type: "err", text: "Quest name, a valid bonus, and a target (kg) above 0 are required." });
+    if (!qName.trim() || Number(qPoints) < 0 || Number(qTarget) <= 0) {
+      setBanner({ type: "err", text: "Quest name, a valid bonus, and a target (bottles) above 0 are required." });
       return;
     }
     const payload: any = {
       taskName: qName.trim(),
       description: qDesc.trim(),
       bonusPoints: Number(qPoints) || 0,
-      targetKg: Number(qTargetKg) || 0,
+      target: Number(qTarget) || 1,
       frequency: qFrequency,
       status: "active",
     };
@@ -2447,8 +2446,8 @@ function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ live
               <input id="quest-points" type="number" value={qPoints} onChange={e => setQPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div>
-              <label htmlFor="quest-target" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Target (kg) *</label>
-              <input id="quest-target" type="number" step="0.1" value={qTargetKg} onChange={e => setQTargetKg(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+              <label htmlFor="quest-target" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Target (bottles) *</label>
+              <input id="quest-target" type="number" step="1" min="1" value={qTarget} onChange={e => setQTarget(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
             </div>
             <div className="col-span-2">
               <label htmlFor="quest-desc" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Short Description</label>
@@ -2487,7 +2486,7 @@ function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ live
               {t.description && <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>}
             </div>
             <div className="flex justify-between text-xs mt-auto pt-2">
-              <div><p className="text-muted-foreground">Target</p><p className="font-black text-foreground">{t.goal} {t.unit || "kg"}</p></div>
+              <div><p className="text-muted-foreground">Target</p><p className="font-black text-foreground">{t.goal} {t.unit || "bottles"}</p></div>
               <div className="text-right"><p className="text-muted-foreground">Bonus</p><p className="font-black text-primary">{t.reward} pts</p></div>
             </div>
           </div>
@@ -2524,14 +2523,14 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions, searchQuery 
   const isLiveWeekly = Boolean(liveWeekly && liveWeekly.length > 0);
   const isLiveRedemptions = Boolean(liveRedemptions && liveRedemptions.length > 0);
 
-  const avgKg = isLiveWeekly
-    ? (liveWeekly!.reduce((a: any, b: any) => a + Number(b.kg || 0), 0) / Math.max(1, liveWeekly!.length)).toFixed(1) + " kg"
-    : "14.7 kg";
+  const avgBottles = isLiveWeekly
+    ? Math.round(liveWeekly!.reduce((a: any, b: any) => a + Number(b.bottles || 0), 0) / Math.max(1, liveWeekly!.length)).toString()
+    : "15";
 
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-3 gap-4">
-        <SCard label="Avg. kg per user" value={avgKg} sub="Weekly avg." icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={isLiveWeekly ? "LIVE" : "+2.1"} />
+        <SCard label="Avg. bottles per day" value={avgBottles} sub="Weekly avg." icon={<Scale className="w-5 h-5 text-green-600" />} color="bg-green-100" trend={isLiveWeekly ? "LIVE" : "+2.1"} />
         <SCard label="Redemptions Total" value={String(redeemed || 234)} sub={isLiveRedemptions ? "Actual from DB" : "Demo value"} icon={<ShoppingCart className="w-5 h-5 text-purple-600" />} color="bg-purple-100" trend={isLiveRedemptions ? "● LIVE" : "+12%"} />
         <SCard label="Weeks with data" value={String(liveWeekly?.length || 7)} sub={isLiveWeekly ? "Weekly points filled" : "Demo default 7"} icon={<BarChart3 className="w-5 h-5 text-blue-600" />} color="bg-blue-100" trend={isLiveWeekly ? "DB" : "DEMO"} />
       </div>
@@ -2551,7 +2550,7 @@ function AdminAnalytics({ liveWeekly, liveMonthly, liveRedemptions, searchQuery 
               <YAxis tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
               <Tooltip contentStyle={{ borderRadius: 12, fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
-              <Bar dataKey="collected" name="Collected (kg)" fill="#16a34a" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="collected" name="Bottles Collected" fill="#16a34a" radius={[4, 4, 0, 0]} />
               <Bar dataKey="redeemed" name="Redeemed" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -2651,7 +2650,6 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh, searchQuery = "" }: Re
       kioskId: k.kioskId || k.id || `K-0${i + 1}`,
       location: k.locationName || k.location || "Cabantian",
       status: k.status || (k.isOnline ? "online" : "offline"),
-      weight: `${Number(k.weightKg || k.lastWeight || 0).toFixed(1)} kg`,
       submissions: Number(k.todaySubmissions || k.submissionsToday || k.totalSubmissions || 0),
       temp: k.temperature ? `${k.temperature}°C` : k.temp || "29°C",
       lastPing: k.lastPing || (k.lastHeartbeatAt ? new Date(String(k.lastHeartbeatAt)).toLocaleTimeString() : "5 min ago"),
@@ -2717,7 +2715,6 @@ function AdminMonitoring({ liveKiosks, liveTx, onRefresh, searchQuery = "" }: Re
                 <span className="text-xs text-muted-foreground font-semibold">· {k.location}</span>
               </div>
               <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground flex-wrap">
-                <span className="flex items-center gap-1 font-semibold"><Scale className="w-3.5 h-3.5 text-green-600" />{k.weight}</span>
                 <span className="flex items-center gap-1 font-semibold"><Upload className="w-3.5 h-3.5 text-blue-600" />{k.submissions} items today</span>
                 <span className="flex items-center gap-1 font-semibold"><Activity className="w-3.5 h-3.5 text-amber-600" />{k.temp}</span>
                 <span className="flex items-center gap-1.5 font-semibold">

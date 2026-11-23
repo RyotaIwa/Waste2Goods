@@ -186,14 +186,14 @@ async function claimDeposit(req, res) {
             const materialId = Number(material?.materialId || process.env.MACHINE_MATERIAL_ID || 1);
 
             await db.query(
-                'INSERT INTO recycling_transactions (transactionId, userId, materialId, weightKg, pointsEarned, kioskId, timestamp) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-                [newTransactionId(), userId, materialId, weightKg, pointsAwarded, dep.kioskId]
+                'INSERT INTO recycling_transactions (transactionId, userId, materialId, weightKg, pointsEarned, kioskId, timestamp, quantity) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)',
+                [newTransactionId(), userId, materialId, weightKg, pointsAwarded, dep.kioskId, Number(dep.bottles)]
             );
             await db.query(
                 'UPDATE users SET pointsBalance = pointsBalance + ?, totalSubmissions = totalSubmissions + 1 WHERE userId = ?',
                 [pointsAwarded, userId]
             );
-            await updateTaskProgressForUser(userId, materialId, weightKg);
+            await updateTaskProgressForUser(userId, materialId, Number(dep.bottles));
         } catch (err) {
             // Crediting failed: give the code back so the resident can try again.
             await db.query(

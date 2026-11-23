@@ -471,7 +471,7 @@ app.post('/api/auth/introspect', authenticate, (req, res) => {
 app.get('/api/users', authenticate, requirePermission('list', 'user'), cacheRoute(30), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT * FROM users ORDER BY createdAt ASC');
-    const [txCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(weightKg),0) as totalKg, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions GROUP BY userId');
+    const [txCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalBottles, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions GROUP BY userId');
     const [redCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions GROUP BY userId');
     const txByUser = Object.fromEntries(txCounts.map(t => [String(t.userId), t]));
     const rdByUser = Object.fromEntries(redCounts.map(r => [String(r.userId), r]));
@@ -489,7 +489,8 @@ app.get('/api/users/:id', authenticate, requireOwnershipOrRole(['admin', 'super_
       return res.status(404).json({ error: 'User not found' });
     }
     const user = rows[0];
-    const [[txRow]] = await db.query('SELECT COUNT(*) as cnt, COALESCE(SUM(weightKg),0) as totalKg, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions WHERE userId = ?', [user.userId]);
+    // No load cell on the machine — quantity (bottle count) is the real metric, not weightKg.
+    const [[txRow]] = await db.query('SELECT COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalBottles, COALESCE(SUM(pointsEarned),0) as totalPtsEarned FROM recycling_transactions WHERE userId = ?', [user.userId]);
     const [[rdRow]] = await db.query('SELECT COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions WHERE userId = ?', [user.userId]);
     const submissionsLive = Number(txRow?.cnt || 0);
     const redeemedLive = Number(rdRow?.totalQty || rdRow?.cnt || 0);
@@ -503,6 +504,7 @@ app.get('/api/users/:id', authenticate, requireOwnershipOrRole(['admin', 'super_
       points: user.pointsBalance,
       submissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
       totalSubmissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+      totalBottles: Number(txRow?.totalBottles || 0),
       redeemed: redeemedLive,
       joined: new Date(user.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     });
@@ -547,7 +549,7 @@ app.get('/api/transactions', authenticate, requirePermission('list', 'transactio
       id: tx.transactionId,
       date: new Date(tx.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       type: 'earn',
-      desc: `PET Plastic · ${tx.weightKg} kg · ${tx.kioskId}`,
+      desc: `PET Plastic · ${tx.quantity} bottles · ${tx.kioskId}`,
       pts: tx.pointsEarned
     }));
     res.json(transactionsWithCompat);
@@ -559,14 +561,17 @@ app.get('/api/transactions', authenticate, requirePermission('list', 'transactio
 //// Add a new recycling transaction (POST)
 app.post('/api/transactions', authenticate, requirePermission('create', 'transaction'), writeLimiter, validateBody(TransactionSchema), async (req, res) => {
   try {
-    const { userId, materialId, weightKg, kioskId } = req.body;
+    const { userId, materialId, weightKg, kioskId, quantity } = req.body;
     const pointsEarned = Math.round(weightKg * 50);
     const transactionId = `RT-${Date.now()}`;
+    // No load cell on the machine — quantity (bottle count) is the real metric. This
+    // endpoint is manual/admin entry, so fall back to 1 when the caller doesn't know it.
+    const bottleCount = Number(quantity) || 1;
 
     // Insert transaction
     await db.query(
-      'INSERT INTO recycling_transactions (transactionId, userId, materialId, weightKg, pointsEarned, kioskId, timestamp) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-      [transactionId, userId, materialId, weightKg, pointsEarned, kioskId]
+      'INSERT INTO recycling_transactions (transactionId, userId, materialId, weightKg, pointsEarned, kioskId, timestamp, quantity) VALUES (?, ?, ?, ?, ?, ?, NOW(), ?)',
+      [transactionId, userId, materialId, weightKg, pointsEarned, kioskId, bottleCount]
     );
 
     // Update user's points and submissions
@@ -574,7 +579,7 @@ app.post('/api/transactions', authenticate, requirePermission('create', 'transac
       'UPDATE users SET pointsBalance = pointsBalance + ?, totalSubmissions = totalSubmissions + 1 WHERE userId = ?',
       [pointsEarned, userId]
     );
-    await updateTaskProgressForUser(userId, materialId, weightKg);
+    await updateTaskProgressForUser(userId, materialId, bottleCount);
 
     await CacheBust.transactions();
     await CacheBust.tasks();
@@ -758,7 +763,7 @@ function buildAdminTxMilestoneNotif(t) {
     id: `tx-${t.transactionId}`,
     type: 'milestone',
     title: `Big drop-off: ${residentName}`.trim(),
-    message: `${t.weightKg} kg at ${t.kioskId} — earned +${pts} pts`,
+    message: `${t.quantity} bottles at ${t.kioskId} — earned +${pts} pts`,
     time: toIsoTime(t.timestamp),
     severity: 'success',
     meta: { transactionId: t.transactionId, userId: t.userId }
@@ -771,18 +776,18 @@ function sortNotificationsByTime(list) {
 }
 
 function buildTxSubmissionNotif(t) {
-  const kg = Number(t.weightKg || 0).toFixed(1);
+  const bottles = Number(t.quantity || 0);
   const pts = Number(t.pointsEarned || 0);
-  const isBig = pts >= 100 || Number(t.weightKg || 0) >= 5;
+  const isBig = pts >= 100 || bottles >= 10;
   return {
     id: `tx-${t.transactionId}`,
     type: isBig ? 'milestone' : 'submission',
-    title: isBig ? `🎉 Heavy drop-off recorded!` : `✅ Drop-off recorded`,
-    message: `${kg} kg PET plastic at ${t.kioskId || 'Kiosk'} · earned +${pts} points`,
+    title: isBig ? `🎉 Big drop-off recorded!` : `✅ Drop-off recorded`,
+    message: `${bottles} bottles PET plastic at ${t.kioskId || 'Kiosk'} · earned +${pts} points`,
     time: toIsoTime(t.timestamp),
     severity: 'success',
     read: true,
-    meta: { transactionId: t.transactionId, weightKg: t.weightKg, pointsEarned: t.pointsEarned }
+    meta: { transactionId: t.transactionId, quantity: t.quantity, pointsEarned: t.pointsEarned }
   };
 }
 
@@ -981,12 +986,6 @@ function buildRewardCompatRow(r, rdByReward) {
   };
 }
 
-function resolveTaskUnit(t) {
-  if (t.targetKg) return 'kg';
-  if (t.frequency === 'weekly') return 'days';
-  return 'tasks';
-}
-
 const TASKS_COMMON_SELECT = "SELECT taskId, taskName, description, bonusPoints AS pointsReward, targetKg, startDate, endDate, progress, target, frequency, status, COALESCE(materialId, 0) AS materialId FROM ";
 const TASKS_COMMON_WHERE = " WHERE status = 'active' OR status = 1 ORDER BY taskId ASC LIMIT 50";
 
@@ -1065,15 +1064,15 @@ function buildLeaderboardRow(user, index) {
     tier: user.tier || null,
     phone: user.phone || '',
     avatar,
-    streak: subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
   };
 }
 
 // Weekly analytics — GROUP recycling_transactions by DAY of the past 7 days
 app.get('/api/analytics/weekly', authenticate, analyticsHeavyLimiter, requirePermission('read', 'analytics'), cacheRoute(60), async (req, res) => {
   try {
+    // No load cell on the machine — quantity (bottle count) is the real metric, not weightKg.
     const [rows] = await db.query(`
-        SELECT DATE(timestamp) AS day, SUM(weightKg) AS kg
+        SELECT DATE(timestamp) AS day, SUM(quantity) AS bottles
         FROM recycling_transactions
         WHERE timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)
         GROUP BY DATE(timestamp)
@@ -1082,11 +1081,11 @@ app.get('/api/analytics/weekly', authenticate, analyticsHeavyLimiter, requirePer
     if (rows.length === 0) {
       // Empty DB — return classic sample shape as default fallback only, not hardcoded UI
       return res.json([
-        { day: 'Mon', kg: 0 }, { day: 'Tue', kg: 0 }, { day: 'Wed', kg: 0 },
-        { day: 'Thu', kg: 0 }, { day: 'Fri', kg: 0 }, { day: 'Sat', kg: 0 }, { day: 'Sun', kg: 0 }
+        { day: 'Mon', bottles: 0 }, { day: 'Tue', bottles: 0 }, { day: 'Wed', bottles: 0 },
+        { day: 'Thu', bottles: 0 }, { day: 'Fri', bottles: 0 }, { day: 'Sat', bottles: 0 }, { day: 'Sun', bottles: 0 }
       ]);
     }
-    res.json(rows.map(r => ({ day: getDayName(new Date(r.day)), kg: Math.round(Number(r.kg) * 10) / 10 })));
+    res.json(rows.map(r => ({ day: getDayName(new Date(r.day)), bottles: Number(r.bottles) })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1095,9 +1094,10 @@ app.get('/api/analytics/weekly', authenticate, analyticsHeavyLimiter, requirePer
 // Monthly analytics — GROUP transactions & users by MONTH of current year
 app.get('/api/analytics/monthly', authenticate, analyticsHeavyLimiter, requirePermission('read', 'analytics'), cacheRoute(60), async (req, res) => {
   try {
+    // No load cell on the machine — quantity (bottle count) is the real metric, not weightKg.
     const [txRows] = await db.query(`
         SELECT DATE_FORMAT(timestamp, '%Y-%m') AS ym,
-              SUM(weightKg) AS collected,
+              SUM(quantity) AS collected,
               COUNT(DISTINCT userId) AS users
         FROM recycling_transactions
         WHERE YEAR(timestamp) = YEAR(NOW())
@@ -1136,13 +1136,14 @@ app.get('/api/analytics/monthly', authenticate, analyticsHeavyLimiter, requirePe
 });
 
 // NEW: Dashboard Summary endpoint — computes stat card TOTALS from real DB tables
-//    totalKgCollected | totalTransactions | totalUsers | activeResidents | totalPointsAwarded | rewardsRedeemed
+//    totalBottlesCollected | totalTransactions | totalUsers | activeResidents | totalPointsAwarded | rewardsRedeemed
 // +  recentTransactions (top 8 with user names) + top5 leaderboard
 app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePermission('read', 'analytics'), cacheRoute(30), async (req, res) => {
   try {
-    // Total collected kg & points & submissions from transactions
+    // Total collected bottles & points & submissions from transactions.
+    // No load cell on the machine — quantity (bottle count) is the real metric, not weightKg.
     const [sum1] = await db.query(`
-        SELECT COALESCE(SUM(weightKg),0) AS totalKgCollected,
+        SELECT COALESCE(SUM(quantity),0) AS totalBottlesCollected,
               COALESCE(SUM(pointsEarned),0) AS totalPointsAwarded,
               COUNT(*) AS totalTransactions
         FROM recycling_transactions
@@ -1166,7 +1167,7 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
 
     // ── Recent 8 transactions WITH user names ──
     const [recentTx] = await db.query(`
-        SELECT t.transactionId, t.timestamp, t.weightKg, t.pointsEarned, t.kioskId, t.userId,
+        SELECT t.transactionId, t.timestamp, t.quantity, t.pointsEarned, t.kioskId, t.userId,
               u.firstName, u.lastName
         FROM recycling_transactions t
         LEFT JOIN users u ON u.userId = t.userId
@@ -1177,7 +1178,7 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
       id: t.transactionId,
       date: new Date(t.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
       type: 'earn',
-      desc: `${t.firstName || 'Unknown'} ${t.lastName || 'User'} · PET Plastic · ${t.weightKg} kg · ${t.kioskId}`,
+      desc: `${t.firstName || 'Unknown'} ${t.lastName || 'User'} · PET Plastic · ${t.quantity} bottles · ${t.kioskId}`,
       pts: Number(t.pointsEarned),
     }));
 
@@ -1207,12 +1208,11 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
         totalSubmissions: subs,
         tier: u.tier || null,
         avatar,
-        streak: subs > 0 ? Math.min(30, Math.max(1, Math.ceil(subs / 2))) : 1,
       };
     });
 
     res.json({
-      totalKgCollected: Number(sum1[0].totalKgCollected),
+      totalBottlesCollected: Number(sum1[0].totalBottlesCollected),
       totalTransactions: Number(sum1[0].totalTransactions),
       totalPointsAwarded: Number(sum1[0].totalPointsAwarded),
       totalUsers: Number(sum2[0].totalUsers),
@@ -1343,8 +1343,8 @@ app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRout
     const rows = await loadActiveTasks();
     if (rows.length === 0) {
       return res.json([
-        { id: 1, title: 'Submit 2kg of PET bottles', reward: 100, progress: 0, goal: 2, unit: 'kg', type: 'daily', done: false },
-        { id: 2, title: 'Visit kiosk 3 days in a row', reward: 150, progress: 0, goal: 3, unit: 'days', type: 'weekly', done: false },
+        { id: 1, title: 'Submit 2 bottles today', reward: 100, progress: 0, goal: 2, unit: 'bottles', type: 'daily', done: false },
+        { id: 2, title: 'Submit 10 bottles this week', reward: 150, progress: 0, goal: 10, unit: 'bottles', type: 'weekly', done: false },
         { id: 3, title: '10 bottles in a single day', reward: 150, progress: 0, goal: 10, unit: 'bottles', type: 'daily', done: false },
       ]);
     }
@@ -1355,22 +1355,21 @@ app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRout
   }
 });
 
-function mapTaskRow(t, idx, progressKg) {
-  // targetKg is the real completion threshold whenever a quest has one (every
-  // seeded quest does, even count-flavored ones like "10 bottles in a day" via
-  // an equivalent weight) — `target` is only a fallback for a pure count quest.
-  const targetKg = Number(t.targetKg || 0) > 0 ? Number(t.targetKg) : Number(t.target || 1);
-  const progress = progressKg != null ? Number(progressKg) : Number(t.progress || 0);
+function mapTaskRow(t, idx, progressCount) {
+  // No load cell on the machine — `target` (a bottle count) is the real completion
+  // threshold now. `targetKg` is legacy and no longer read.
+  const goal = Number(t.target || 1);
+  const progress = progressCount != null ? Number(progressCount) : Number(t.progress || 0);
   return {
     id: Number(t.taskId) || idx + 1,
     title: String(t.taskName || `Task #${idx + 1}`),
     description: String(t.description || ''),
     reward: Number(t.pointsReward || t.bonusPoints || 0),
     progress,
-    goal: targetKg,
-    unit: resolveTaskUnit(t),
+    goal,
+    unit: 'bottles',
     type: String(t.frequency || 'weekly').toLowerCase(),
-    done: progress >= targetKg && targetKg > 0,
+    done: progress >= goal && goal > 0,
     status: String(t.status || 'active'),
   };
 }
@@ -1767,7 +1766,7 @@ app.get('/api/notifications', authenticate, requirePermission('list', 'notificat
     for (const u of newUsers) notifications.push(buildAdminNewUserNotif(u));
 
     const [tx] = await db.query(
-      "SELECT t.transactionId, t.userId, t.weightKg, t.pointsEarned, t.kioskId, t.timestamp, u.firstName, u.lastName FROM recycling_transactions t LEFT JOIN users u ON t.userId = u.userId ORDER BY t.timestamp DESC LIMIT 5"
+      "SELECT t.transactionId, t.userId, t.quantity, t.pointsEarned, t.kioskId, t.timestamp, u.firstName, u.lastName FROM recycling_transactions t LEFT JOIN users u ON t.userId = u.userId ORDER BY t.timestamp DESC LIMIT 5"
     );
     for (const t of tx) {
       const notif = buildAdminTxMilestoneNotif(t);
@@ -1825,7 +1824,7 @@ app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
   const limit = 25;
   try {
     const [txList] = await db.query(
-      "SELECT t.transactionId, t.weightKg, t.pointsEarned, t.kioskId, t.timestamp FROM recycling_transactions t WHERE t.userId = ? ORDER BY t.timestamp DESC LIMIT ?",
+      "SELECT t.transactionId, t.quantity, t.pointsEarned, t.kioskId, t.timestamp FROM recycling_transactions t WHERE t.userId = ? ORDER BY t.timestamp DESC LIMIT ?",
       [userId, limit]
     );
     for (const t of txList) notifications.push(buildTxSubmissionNotif(t));
@@ -1879,13 +1878,13 @@ app.get('/api/kiosks/:id/logs', authenticate, requirePermission('read', 'kiosk')
   try {
     const kioskId = String(req.params.id).toUpperCase();
     const [tx] = await db.query(
-      'SELECT transactionId, userId, weightKg, pointsEarned, timestamp FROM recycling_transactions WHERE kioskId = ? ORDER BY timestamp DESC LIMIT 10',
+      'SELECT transactionId, userId, quantity, pointsEarned, timestamp FROM recycling_transactions WHERE kioskId = ? ORDER BY timestamp DESC LIMIT 10',
       [kioskId]
     );
     const logs = [
       { level: 'info', time: new Date(Date.now() - 60000).toISOString(), message: `Kiosk ${kioskId} heartbeat OK` },
-      { level: 'info', time: new Date(Date.now() - 5 * 60000).toISOString(), message: 'Scale zero-cal check passed' },
-      ...tx.map((t, i) => ({ level: 'info', time: t.timestamp ? new Date(t.timestamp).toISOString() : new Date(Date.now() - (i + 2) * 60000).toISOString(), message: `Tx ${t.transactionId}: ${t.weightKg}kg → +${t.pointsEarned} pts` })),
+      { level: 'info', time: new Date(Date.now() - 5 * 60000).toISOString(), message: 'Camera bottle-detection check passed' },
+      ...tx.map((t, i) => ({ level: 'info', time: t.timestamp ? new Date(t.timestamp).toISOString() : new Date(Date.now() - (i + 2) * 60000).toISOString(), message: `Tx ${t.transactionId}: ${t.quantity} bottles → +${t.pointsEarned} pts` })),
     ];
     res.json({ ok: true, kioskId, logs });
   } catch (err) {

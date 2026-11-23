@@ -74,7 +74,6 @@ export interface LeaderboardUser {
   barangay: string;
   points: number;
   avatar: string;
-  streak: number;
   isMe?: boolean;
 }
 
