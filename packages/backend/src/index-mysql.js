@@ -1329,7 +1329,7 @@ app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'
         LEFT JOIN users u ON u.userId = r.userId
         LEFT JOIN rewards w ON w.rewardId = r.rewardId
         ORDER BY r.redemptionDate DESC
-        LIMIT 50
+        LIMIT 200
       `);
     res.json(rows.map(r => ({ ...r, code: r.redeemCode })));
   } catch (err) {

@@ -39,7 +39,7 @@ const rewards = [
   { id: 1, name: "School Supplies Kit", points: 500, cost: 500, category: "Education", stock: 23, icon: "📚", seasonal: false, description: "Complete school essentials set including notebooks, pens, and bag.", delivery: "Barangay Pick-up", validity: "30 Days" },
   { id: 2, name: "Grocery Voucher ₱100", points: 800, cost: 800, category: "Grocery", stock: 15, icon: "🛒", seasonal: false, description: "₱100 voucher redeemable at all participating local grocery stores.", delivery: "Digital Code", validity: "60 Days" },
   { id: 3, name: "Eco Water Bottle", points: 350, cost: 350, category: "Lifestyle", stock: 41, icon: "🍶", seasonal: false, description: "BPA-free stainless steel insulated 750ml eco water bottle.", delivery: "Barangay Pick-up", validity: "30 Days" },
-  { id: 4, name: "Rice (5kg)", points: 1200, cost: 1200, category: "Grocery", stock: 8, icon: "🌾", seasonal: false, description: "5kg premium white rice bag for family consumption.", delivery: "Kiosk Pickup", validity: "14 Days" },
+  { id: 4, name: "Rice (5kg)", points: 1200, cost: 1200, category: "Grocery", stock: 8, icon: "🌾", seasonal: false, description: "5kg premium white rice bag for family consumption.", delivery: "Barangay Hall", validity: "14 Days" },
   { id: 5, name: "Plant Seedling Set", points: 250, cost: 250, category: "Garden", stock: 60, icon: "🌱", seasonal: true, description: "Assorted vegetable seedlings set for home gardening.", delivery: "Barangay Pick-up", validity: "14 Days" },
   { id: 6, name: "Reusable Bag Bundle", points: 180, cost: 180, category: "Lifestyle", stock: 88, icon: "👜", seasonal: false, description: "3x heavy-duty canvas reusable shopping bags.", delivery: "Barangay Pick-up", validity: "60 Days" },
   { id: 7, name: "Back-to-School Bundle", points: 650, cost: 650, category: "Education", stock: 12, icon: "🎒", seasonal: true, description: "Backpack, water flask, and basic stationery kit.", delivery: "Barangay Pick-up", validity: "30 Days" },
@@ -2378,7 +2378,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             <div className="p-4 rounded-2xl bg-muted/20 border border-border">
               <p className="text-xs font-black text-foreground mb-2">How to Claim Your Reward</p>
               <ul className="text-xs text-muted-foreground space-y-1.5 list-disc list-inside">
-                <li>Visit the pickup location during official hours.</li>
+                <li>Visit the Barangay Hall during office hours.</li>
                 <li>Present your <strong>Claim Code</strong> or Resident ID to the desk officer.</li>
                 <li>Verify your item and receive your reward package.</li>
               </ul>
@@ -2388,7 +2388,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
             <div className="flex gap-2 pt-2">
               {selectedClaim.status === "ready" ? (
                 <div className="flex-1 py-3 px-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center">
-                  Approved — show your claim code at the pickup kiosk
+                  Approved — show your claim code at the Barangay Hall
                 </div>
               ) : selectedClaim.status === "claimed" ? (
                 <div className="flex-1 py-3 rounded-xl bg-green-100 text-green-800 text-sm font-bold text-center flex items-center justify-center gap-2">

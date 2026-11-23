@@ -270,6 +270,26 @@ async function doRefreshAccessToken() {
 // Generic Fetcher
 // forceMockFallback = true (default for pre-login screens, kiosk) → returns mock on network error.
 // forceMockFallback = false (admin use) → returns null on any error so caller can properly render DEMO badge.
+// Authenticated JSON request that throws the server's error message (fetchApi returns null instead).
+async function authedJson(method, endpoint, body, fallbackMessage) {
+  const send = (token) =>
+    fetch(`${getApiBaseUrl()}${endpoint}`, {
+      method,
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    });
+  let response = await send(getStoredAuth()?.token);
+  if (response.status === 401) {
+    const newToken = await refreshAccessToken();
+    if (newToken) response = await send(newToken);
+  }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `${fallbackMessage} (HTTP ${response.status})`);
+  }
+  return data;
+}
+
 async function fetchApi(endpoint, options) {
   const forceMockFallback = options?.forceMockFallback === true;
   const auth = getStoredAuth();
@@ -651,8 +671,13 @@ export const Waste2GoodsAPI = {
   // Redemptions
   getRedemptions: () => fetchApi("/redemptions"),
 
-  // Resident shows/types this at the kiosk pickup terminal to claim an approved reward.
-  claimRedemptionCode: (code) => fetchApi("/redemptions/claim", { method: "POST", body: JSON.stringify({ code }) }),
+  // Staff hand over an approved reward by its claim code. Uses a direct fetch (not fetchApi, which
+  // swallows errors into null) so the server's message — "already claimed", "not approved yet",
+  // "Invalid code" — reaches the screen.
+  claimRedemptionCode: async (code) => authedJson("POST", "/redemptions/claim", { code }, "Could not verify the code"),
+  // Same as approveRedemption but throws with the server's reason instead of returning null.
+  approveRedemptionStrict: async (redemptionId, status = "approved", adminId = "A-001") =>
+    authedJson("PUT", `/redemptions/${encodeURIComponent(redemptionId)}/status`, { status, adminId }, "Could not update this redemption"),
 
   // Admin Management
   fetchAdminAdmins: () => fetchApi("/admin/admins"),

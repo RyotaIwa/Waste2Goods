@@ -1746,6 +1746,33 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
   const [rIcon, setRIcon] = useState("🎁");
   const [rSeasonal, setRSeasonal] = useState(false);
   const [rRestockQty, setRRestockQty] = useState<string>("50");
+  // Pickup desk: staff at the barangay hall hand over a reward by its claim code.
+  const [deskCode, setDeskCode] = useState("");
+  const [deskBusy, setDeskBusy] = useState(false);
+  const [deskMsg, setDeskMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const cleanDeskCode = deskCode.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const deskMatch = cleanDeskCode.length === 8
+    ? (liveRedemptions || []).find((r: any) => String(r.code || r.redeemCode || "").toUpperCase() === cleanDeskCode) || null
+    : null;
+
+  const handOver = async (rr: any) => {
+    const code = String(rr.code || rr.redeemCode || "");
+    if (!code) { setDeskMsg({ type: "err", text: "This request has no claim code." }); return; }
+    setDeskMsg(null);
+    setDeskBusy(true);
+    try {
+      if ((rr.status || "pending") === "pending") {
+        await Waste2GoodsAPI.approveRedemptionStrict(rr.redemptionId, "approved");
+      }
+      const res: any = await Waste2GoodsAPI.claimRedemptionCode(code);
+      setDeskMsg({ type: "ok", text: `Handed over: ${res.rewardName || rr.rewardName || "Reward"} to ${res.residentName || "resident"}.` });
+      setDeskCode("");
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      setDeskMsg({ type: "err", text: e instanceof Error ? e.message : "Could not hand over this reward." });
+      if (onRefresh) await onRefresh();
+    } finally { setDeskBusy(false); }
+  };
 
   const resetForm = () => {
     setRName(""); setRPoints("100"); setRStock("0"); setRDesc(""); setRCat("Eco Essentials"); setRIcon("🎁"); setRSeasonal(false);
@@ -1970,12 +1997,50 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             {(liveRedemptions || []).length} total · {(liveRedemptions || []).filter((r: any) => r.status === "pending").length} pending
           </div>
         </div>
+
+        {/* Pickup desk */}
+        <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 mb-4 space-y-3">
+          <div>
+            <p className="text-xs font-black text-foreground uppercase tracking-wide">Pickup desk</p>
+            <p className="text-[11px] text-muted-foreground">Resident at the barangay hall? Type the claim code from their My Redemptions screen.</p>
+          </div>
+          <input
+            value={deskCode}
+            onChange={e => { setDeskCode(e.target.value.toUpperCase().slice(0, 12)); setDeskMsg(null); }}
+            placeholder="ABCD2345"
+            aria-label="Claim code"
+            className="w-full max-w-xs px-3 py-2.5 rounded-xl border border-border bg-white font-mono font-black text-lg tracking-[0.25em] text-center"
+          />
+          {deskMsg && (
+            <div className={`text-xs px-3 py-2 rounded-xl font-semibold ${deskMsg.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-700"}`}>{deskMsg.text}</div>
+          )}
+          {cleanDeskCode.length === 8 && !deskMatch && <p className="text-xs font-semibold text-red-600">No redemption found for this code.</p>}
+          {deskMatch && (() => {
+            const st = String(deskMatch.status || "pending");
+            const canHand = st === "pending" || st === "approved" || st === "ready";
+            return (
+              <div className="rounded-xl bg-white border border-border p-3 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-foreground">{deskMatch.rewardName || "Reward"} × {deskMatch.quantity || 1}</p>
+                  <p className="text-xs text-muted-foreground">{deskMatch.firstName ? `${deskMatch.firstName} ${deskMatch.lastName || ""}` : deskMatch.userId} · {deskMatch.totalPoints || deskMatch.pointsUsed || 0} pts · <span className="font-bold uppercase">{st}</span></p>
+                  {!canHand && <p className="text-xs font-semibold text-amber-700 mt-1">{st === "claimed" || st === "completed" ? "Already claimed." : st === "rejected" ? "This request was rejected." : "Not available."}</p>}
+                </div>
+                {canHand && (
+                  <button type="button" disabled={deskBusy} onClick={() => handOver(deskMatch)} className="px-4 py-2.5 rounded-xl bg-primary text-white text-xs font-black hover:bg-green-700 disabled:opacity-60 transition-colors">
+                    {deskBusy ? "Working..." : st === "pending" ? "Approve & hand over" : "Hand over"}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border text-left">
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Resident</th>
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Reward</th>
+                <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Code</th>
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Points</th>
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Date</th>
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Status</th>
@@ -1985,7 +2050,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             <tbody>
               {(liveRedemptions || []).length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-4 text-center text-xs text-muted-foreground">No redemption requests yet.</td>
+                  <td colSpan={7} className="p-4 text-center text-xs text-muted-foreground">No redemption requests yet.</td>
                 </tr>
               )}
               {(liveRedemptions || []).map((rr: any) => {
@@ -2001,6 +2066,9 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                     <td className="p-3">
                       <p className="text-xs font-black text-foreground">{rr.rewardName || rr.rewardId || "Reward"}</p>
                       <p className="text-[10px] text-muted-foreground">#{rr.rewardId}</p>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-xs font-mono font-black text-foreground tracking-wider">{rr.code || rr.redeemCode || "—"}</p>
                     </td>
                     <td className="p-3">
                       <p className="text-xs font-black text-foreground">{rr.totalPoints || rr.pointsUsed || 0} pts</p>
@@ -2032,8 +2100,10 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                             <AlertTriangle className="w-3 h-3" /> Reject
                           </button>
                         </div>
+                      ) : status === "approved" || status === "ready" ? (
+                        <button type="button" disabled={deskBusy} onClick={() => handOver(rr)} className="px-2 py-1.5 rounded text-xs font-bold bg-primary text-white hover:bg-green-700 disabled:opacity-60 transition-colors">Hand over</button>
                       ) : (
-                        <span className="text-[10px] text-muted-foreground font-bold">{status === "approved" || status === "ready" ? "Approved" : status === "rejected" ? "Rejected" : status}</span>
+                        <span className="text-[10px] text-muted-foreground font-bold">{status === "rejected" ? "Rejected" : status === "claimed" || status === "completed" ? "Claimed" : status}</span>
                       )}
                     </td>
                   </tr>
