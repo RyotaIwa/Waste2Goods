@@ -47,6 +47,7 @@ yarn-error.log*
 # hashes, phone numbers, emails). Schema templates stay tracked.
 *.sql
 !packages/backend/database/*.sql
+!packages/backend/migrations/*.sql
 
 # Chat exports, temporary files & binaries
 chat*.txt
