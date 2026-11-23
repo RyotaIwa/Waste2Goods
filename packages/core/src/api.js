@@ -632,9 +632,18 @@ export const Waste2GoodsAPI = {
 
   // Tasks
   getTasks: () => fetchApi("/tasks"),
+  getUserTasks: (userId) => fetchApi(`/users/${userId}/tasks`),
+
+  // Quest Management (Admin) — self-contained recycling quests only, no social types
+  createTask: (data) => fetchApi("/tasks", { method: "POST", body: JSON.stringify(data) }),
+  updateTask: (taskId, data) => fetchApi(`/tasks/${taskId}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteTask: (taskId) => fetchApi(`/tasks/${taskId}`, { method: "DELETE" }),
 
   // Redemptions
   getRedemptions: () => fetchApi("/redemptions"),
+
+  // Resident shows/types this at the kiosk pickup terminal to claim an approved reward.
+  claimRedemptionCode: (code) => fetchApi("/redemptions/claim", { method: "POST", body: JSON.stringify({ code }) }),
 
   // Admin Management
   fetchAdminAdmins: () => fetchApi("/admin/admins"),

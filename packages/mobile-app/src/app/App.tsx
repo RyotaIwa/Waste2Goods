@@ -1,16 +1,15 @@
 ﻿
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Waste2GoodsAPI, getApiHost, setApiHost as persistApiHost, getApiBaseUrl, testApiConnection, isServerIpPanelEnabled } from "@waste2goods/core";
-import { Html5QrcodeScanner } from "html5-qrcode";
 import {
-  Monitor, Recycle, Home, QrCode, Gift,
+  Monitor, Recycle, Home, Gift,
   Target, User, ArrowLeft, AlertCircle, CheckCircle2,
   RefreshCw, MapPin,
   Trophy, Medal, Zap,
   Bell, LogOut,
   ChevronRight, Shield, Mail, Phone, Leaf,
   Settings, Lock, Info, Flame, Camera, Globe,
-  ScanLine, Keyboard, Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
+  Hash, Sparkles, Award, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
   Copy, Check
 } from "lucide-react";
 import ScreenRedeemCode from "./ScreenRedeemCode";
@@ -18,7 +17,7 @@ import ScreenRedeemCode from "./ScreenRedeemCode";
 type MobileScreen =
   | "splash" | "onboard1" | "onboard2" | "onboard3"
   | "login" | "register" | "mfa" | "profile-setup"
-  | "home" | "submit" | "submit-scan" | "submit-confirm" | "submit-done"
+  | "home"
   | "rewards" | "redeem-confirm" | "redeem-history"
   | "tasks" | "profile" | "history" | "settings" | "notifications"
   | "leaderboard" | "redeem-code";
@@ -128,22 +127,6 @@ function elapsedFromTs(ts?: number | string | null): string {
   const diffMin = Math.floor(diffSec / 60);
   if (diffMin < 60) return `${diffMin}m ago`;
   return `${Math.floor(diffMin / 60)}h ago`;
-}
-
-function useAnimatedWeight(target: number, running: boolean) {
-  const [val, setVal] = useState(0);
-  useEffect(() => {
-    if (!running) return;
-    const step = target / 40;
-    let cur = 0;
-    const iv = setInterval(() => {
-      cur = Math.min(cur + step, target);
-      setVal(Number.parseFloat(cur.toFixed(2)));
-      if (cur >= target) clearInterval(iv);
-    }, 60);
-    return () => clearInterval(iv);
-  }, [running, target]);
-  return val;
 }
 
 function Field({
@@ -632,7 +615,7 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
 function MobileBottomNav({ screen, go }: Readonly<{ screen: MobileScreen; go: (s: MobileScreen) => void }>) {
   const items = [
     { icon: <Home className="w-5 h-5" />, label: "Home", s: "home" as MobileScreen },
-    { icon: <QrCode className="w-5 h-5" />, label: "Submit", s: "submit" as MobileScreen },
+    { icon: <Hash className="w-5 h-5" />, label: "Submit", s: "redeem-code" as MobileScreen },
     { icon: <Gift className="w-5 h-5" />, label: "Rewards", s: "rewards" as MobileScreen },
     { icon: <Target className="w-5 h-5" />, label: "Tasks", s: "tasks" as MobileScreen },
     { icon: <User className="w-5 h-5" />, label: "Profile", s: "profile" as MobileScreen },
@@ -640,7 +623,7 @@ function MobileBottomNav({ screen, go }: Readonly<{ screen: MobileScreen; go: (s
   return (
     <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-border px-3 pt-3 flex justify-around z-20" style={{ paddingBottom: "calc(0.75rem + var(--sab))" }}>
       {items.map(i => (
-        <button type="button" key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s || (i.s === "submit" && ["submit", "submit-scan", "submit-confirm", "submit-done"].includes(screen)) ? "text-primary" : "text-muted-foreground"}`}>
+        <button type="button" key={i.label} onClick={() => go(i.s)} className={`flex flex-col items-center gap-1.5 px-4 py-2.5 rounded-xl transition-colors ${screen === i.s ? "text-primary" : "text-muted-foreground"}`}>
           {i.icon}
           <span className="text-xs font-bold">{i.label}</span>
         </button>
@@ -820,36 +803,6 @@ async function persistProfile(
   return res.ok;
 }
 
-function publishQrBridge(decodedText: string, currentUser: MobileUserShape) {
-  const auth = Waste2GoodsAPI.getAuthState();
-  const u = auth?.user || {};
-  const bridgePayload = {
-    user: {
-      id: (u as any).id || (u as any).userId || currentUser.id || "U-001",
-      userId: (u as any).id || (u as any).userId || currentUser.id || "U-001",
-      name: currentUser.name && currentUser.name !== "Guest User"
-        ? currentUser.name
-        : (u as any).name || `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || "Registered User",
-      firstName: (u as any).firstName,
-      lastName: (u as any).lastName,
-      email: currentUser.email || (u as any).email || "",
-      points: currentUser.points ?? (u as any).pointsBalance ?? 0,
-      pointsBalance: currentUser.points ?? (u as any).pointsBalance ?? 0,
-    },
-    kioskPayload: decodedText,
-    timestamp: Date.now(),
-  };
-  localStorage.setItem("w2g_kiosk_qr_bridge", JSON.stringify(bridgePayload));
-  try {
-    window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) }));
-  } catch { /* ignore */ }
-  Waste2GoodsAPI.connectKioskSession?.({
-    userId: bridgePayload.user.id || bridgePayload.user.userId,
-    userName: bridgePayload.user.name,
-    kioskId: decodedText.includes("K-") ? decodedText : "K-01",
-  });
-}
-
 function mapKioskSessionResponse(
   res: { connected?: boolean; kioskId?: string; connectedAt?: number } | null,
   prev: { connected: boolean; kioskId?: string; connectedAt?: number },
@@ -915,29 +868,6 @@ function splitFullName(full: string): { firstName: string; lastName: string } {
   return { firstName: names[0] || "User", lastName: names.slice(1).join(" ") || "Lastname" };
 }
 
-function buildQrBridgePayload(authUser: any, currentUser: any, decodedText: string) {
-  const u = authUser || {};
-  const uid = u.id || u.userId || currentUser.id || "U-001";
-  const rawName = currentUser.name && currentUser.name !== "Guest User"
-    ? currentUser.name
-    : (u.name || `${u.firstName || ""} ${u.lastName || ""}`.trim() || "Registered User");
-  const pts = currentUser.points ?? u.pointsBalance ?? 0;
-  return {
-    user: {
-      id: uid,
-      userId: uid,
-      name: rawName,
-      firstName: u.firstName,
-      lastName: u.lastName,
-      email: currentUser.email || u.email || "",
-      points: pts,
-      pointsBalance: pts,
-    },
-    kioskPayload: decodedText,
-    timestamp: Date.now(),
-  };
-}
-
 type RegisterSubmitCtx = Readonly<{
   full: string;
   email: string;
@@ -993,7 +923,6 @@ type MobileAppRouterProps = Readonly<{
   selectedReward: typeof rewards[number] | null;
   rewardFilter: string;
   mfaCode: string[];
-  weighing: boolean;
   email: string;
   password: string;
   loginError: string;
@@ -1028,7 +957,6 @@ type MobileAppRouterProps = Readonly<{
   apiHost: string;
   showLoginServer: boolean;
   loginServerBanner: { type: "ok" | "err"; text: string } | null;
-  weight: any;
   mfaRefs: React.RefObject<(HTMLInputElement | null)[]>;
   availableCities: string[];
   availableBarangays: string[];
@@ -1074,7 +1002,6 @@ type MobileAppRouterProps = Readonly<{
   onToggleLoginServer: () => void;
   onRewardRedeem: () => Promise<void>;
   onRewardClose: () => void;
-  onSubmitConfirm: () => void;
   redemptions: any[];
   onClaimed: (r: { newBalance: number; pointsAwarded: number; bottles: number }) => void;
   go: (s: MobileScreen) => void;
@@ -1130,10 +1057,6 @@ function MobileScreenContent(p: MobileAppRouterProps) {
     case "mfa": return <ScreenMFA mfaCode={p.mfaCode} setMfaCode={p.setMfaCode} mfaRefs={p.mfaRefs} go={p.go} />;
     case "home": return <ScreenHome {...p} />;
     case "rewards": return <ScreenRewards {...p} />;
-    case "submit": return <ScreenSubmit go={p.go} screen={s} currentUser={p.currentUser} />;
-    case "submit-scan": return <ScreenSubmitScan />;
-    case "submit-confirm": return <ScreenSubmitConfirm weight={p.weight} weighing={p.weighing} onConfirm={p.onSubmitConfirm} />;
-    case "submit-done": return <ScreenSubmitDone go={p.go} currentUser={p.currentUser} />;
     case "tasks": return <ScreenTasks {...p} />;
     case "leaderboard": return <ScreenLeaderboard {...p} />;
     case "redeem-code": return <ScreenRedeemCode go={p.go} onClaimed={p.onClaimed} />;
@@ -1560,226 +1483,6 @@ function ScreenMFA({ mfaCode, setMfaCode, mfaRefs, go }: ScreenMFAProps) {
   );
 }
 
-function ScreenSubmit({
-  go,
-  screen,
-  currentUser,
-}: Readonly<{
-  go: (s: MobileScreen) => void;
-  screen: MobileScreen;
-  currentUser: MobileUserShape;
-}>) {
-  const [manualCode, setManualCode] = useState("K-01");
-  const [connecting, setConnecting] = useState(false);
-
-  const handleConnectKiosk = (code: string) => {
-    const kId = code.trim().toUpperCase() || "K-01";
-    setConnecting(true);
-    publishQrBridge(kId, currentUser);
-    setTimeout(() => {
-      setConnecting(false);
-      go("submit-confirm");
-    }, 600);
-  };
-
-  const nearbyKiosks = [
-    { id: "K-01", name: "Cabantian Barangay Hall Kiosk", status: "Online", dist: "50m away" },
-    { id: "K-02", name: "Cabantian Elementary School", status: "Online", dist: "320m away" },
-    { id: "K-04", name: "Cabantian Covered Court", status: "Online", dist: "650m away" },
-  ];
-
-  return (
-    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ top: "var(--sat)" }}>
-        <button type="button" onClick={() => go("home")}><ArrowLeft className="w-5 h-5 text-foreground" /></button>
-        <div>
-          <h2 className="text-base font-black text-foreground">Submit Recycling</h2>
-          <p className="text-xs text-muted-foreground">Select a kiosk, enter code, or scan QR</p>
-        </div>
-      </div>
-      <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-28">
-        {/* Quick Kiosk Selection */}
-        <div className="bg-white p-4 rounded-2xl border border-border space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs font-black text-foreground uppercase tracking-wide">Quick Connect: Nearby Kiosks</p>
-            <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">● Ready</span>
-          </div>
-          <div className="space-y-2">
-            {nearbyKiosks.map(k => (
-              <button
-                key={k.id}
-                type="button"
-                onClick={() => handleConnectKiosk(k.id)}
-                className="w-full p-3 rounded-xl border border-border hover:border-primary hover:bg-green-50/50 transition-all flex items-center justify-between text-left"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center font-mono font-black text-xs text-green-800">
-                    {k.id}
-                  </div>
-                  <div>
-                    <p className="text-xs font-black text-foreground">{k.name}</p>
-                    <p className="text-[10px] text-muted-foreground">{k.dist} • {k.status}</p>
-                  </div>
-                </div>
-                <span className="text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg hover:bg-primary hover:text-white transition-colors">
-                  Connect
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Manual Kiosk Code Input */}
-        <div className="p-5 rounded-2xl border border-border bg-white space-y-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-muted text-muted-foreground flex items-center justify-center"><Keyboard className="w-5 h-5" /></div>
-            <div>
-              <p className="font-black text-sm text-foreground">Enter Kiosk Code Manually</p>
-              <p className="text-xs text-muted-foreground">Type the kiosk ID (e.g., K-01, K-02) shown on screen</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Hash className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={manualCode}
-                onChange={e => setManualCode(e.target.value.toUpperCase())}
-                placeholder="K-01"
-                className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border font-mono font-black text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/20"
-              />
-            </div>
-            <button
-              type="button"
-              disabled={connecting || !manualCode.trim()}
-              onClick={() => handleConnectKiosk(manualCode)}
-              className="px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold hover:bg-green-700 transition-colors disabled:opacity-50"
-            >
-              {connecting ? "Linking..." : "Link & Weigh"}
-            </button>
-          </div>
-        </div>
-
-        {/* Camera QR Alternative */}
-        <button type="button" onClick={() => go("submit-scan")} className="w-full text-left p-4 rounded-2xl border border-dashed border-primary/40 bg-primary/5 hover:bg-primary/10 transition-colors flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center"><ScanLine className="w-5 h-5" /></div>
-          <div className="flex-1">
-            <p className="font-black text-xs text-foreground">Or Scan Kiosk QR Code</p>
-            <p className="text-[10px] text-muted-foreground">Optional: Point camera at kiosk screen to connect</p>
-          </div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        </button>
-
-        <div className="p-4 rounded-2xl bg-blue-50 border border-blue-200 flex gap-2.5">
-          <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-blue-700 font-semibold leading-relaxed">Once connected, drop items into the weighing receptacle on the kiosk. Points will calculate and deposit directly to your wallet.</p>
-        </div>
-      </div>
-      <MobileBottomNav screen={screen} go={go} />
-    </div>
-  );
-}
-
-function ScreenSubmitScan() {
-  return (
-    <div className="min-h-[100dvh] flex flex-col bg-black" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-      <div className="px-5 py-3 flex items-center gap-3 border-b border-white/10 sticky top-0 z-10" style={{ top: "var(--sat)" }}>
-        <h2 className="text-base font-black text-white flex-1 text-center pr-10">Scan Kiosk QR</h2>
-      </div>
-      <div className="flex-1 relative overflow-hidden flex items-center justify-center">
-        <div id="qr-reader" className="w-full max-w-md" />
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="w-64 h-64 rounded-3xl border-[3px] border-green-400/80 absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2" style={{ boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)" }} />
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-64">
-            <div className="h-[3px] w-full bg-green-400 rounded-full animate-pulse" />
-          </div>
-        </div>
-        <p className="absolute bottom-12 left-1/2 -translate-x-1/2 text-xs text-white/80 font-semibold text-center w-full px-8">Align the QR code within the frame</p>
-      </div>
-    </div>
-  );
-}
-
-function ScreenSubmitConfirm({ weight, weighing, onConfirm }: Readonly<{ weight: any; weighing: boolean; onConfirm: () => void }>) {
-  return (
-    <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-      <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ top: "var(--sat)" }}>
-        <h2 className="text-base font-black text-foreground flex-1 text-center pr-10">Weighing Items</h2>
-      </div>
-      <div className="flex-1 flex flex-col items-center justify-center gap-6 p-6">
-        <div className="relative">
-          <div className="w-56 h-56 rounded-full border-[6px] border-border bg-white flex items-center justify-center" style={{ boxShadow: "inset 0 -8px 32px rgba(0,0,0,0.05), 0 10px 40px rgba(34,197,94,0.1)" }}>
-            <div className="flex flex-col items-center">
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${weighing ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>{weighing ? "Measuring..." : "Place items"}</span>
-              <AnimatedNumber value={weight as number} suffix=" kg" className="text-5xl font-black text-foreground mt-3 tracking-tight" />
-              <p className="text-xs text-muted-foreground mt-2">~ <AnimatedNumber value={Math.round((weight as number) * 10)} suffix=" pts earned" className="text-xs font-black text-primary" /></p>
-            </div>
-          </div>
-          {Array.from({ length: 12 }).map((_, i) => (
-            <div key={`item-${i}`} className="absolute left-1/2 top-1/2 w-0.5 h-3 bg-muted-foreground/30 origin-bottom" style={{ transform: `translate(-50%, -100%) rotate(${i * 30}deg) translateY(-108px)` }} />
-          ))}
-        </div>
-        <div className="w-full max-w-md space-y-2">
-          {[
-            { m: "PET Bottle", w: "0.8 kg", p: "+8 pts", c: "bg-blue-50 border-blue-200", ic: "🧴" },
-            { m: "Cardboard", w: "1.2 kg", p: "+12 pts", c: "bg-amber-50 border-amber-200", ic: "📦" },
-            { m: "Aluminum Can", w: "0.3 kg", p: "+3 pts", c: "bg-emerald-50 border-emerald-200", ic: "🥫" },
-          ].map(r => (
-            <div key={r.m} className={`flex items-center gap-3 p-3 rounded-xl border ${r.c}`}>
-              <div className="text-2xl">{r.ic}</div>
-              <div className="flex-1">
-                <p className="text-xs font-black text-foreground">{r.m}</p>
-                <p className="text-[10px] text-muted-foreground">{r.w}</p>
-              </div>
-              <p className="text-xs font-black text-primary">{r.p}</p>
-            </div>
-          ))}
-        </div>
-        <div className="w-full max-w-md space-y-3 pt-2">
-          <div className="flex items-center justify-between text-sm px-1">
-            <span className="text-muted-foreground font-semibold">Estimated points</span>
-            <span className="font-black text-primary">+{Math.round((weight as number) * 10)} pts</span>
-          </div>
-          <button type="button" onClick={onConfirm} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Confirm & Earn Points</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ScreenSubmitDone({ go, currentUser }: Readonly<{ go: (s: MobileScreen) => void; currentUser: any }>) {
-  return (
-    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-8 gap-6 overflow-y-auto" style={{ paddingTop: "var(--sat)", paddingBottom: "var(--sab)" }}>
-      <div className="relative">
-        <div className="w-28 h-28 rounded-full bg-green-100 flex items-center justify-center animate-bounce">
-          <CheckCircle2 className="w-14 h-14 text-green-500" />
-        </div>
-        <div className="absolute -bottom-2 -right-2 w-9 h-9 rounded-full bg-primary border-4 border-white flex items-center justify-center">
-          <Sparkles className="w-4 h-4 text-white" />
-        </div>
-      </div>
-      <div className="text-center space-y-2">
-        <h2 className="text-3xl font-black text-foreground">Points Earned!</h2>
-        <p className="text-5xl font-black text-primary tracking-tight">+23 pts</p>
-        <p className="text-muted-foreground text-sm mt-2">2.3 kg recycled · Thank you, {currentUser.initials}!</p>
-      </div>
-      <div className="w-full max-w-md space-y-3">
-        <div className="rounded-2xl border border-border bg-white p-4 flex items-center gap-4">
-          <div className="w-11 h-11 rounded-xl bg-green-50 flex items-center justify-center flex-shrink-0"><Trophy className="w-6 h-6 text-green-500" /></div>
-          <div>
-            <p className="text-xs text-muted-foreground font-semibold">New balance</p>
-            <p className="font-black text-foreground">{Number(currentUser.points || 0) + 23} total points</p>
-          </div>
-        </div>
-        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 flex items-center gap-3">
-          <Leaf className="w-5 h-5 text-amber-600 flex-shrink-0" />
-          <p className="text-xs text-amber-700 font-semibold leading-relaxed">🌍 You saved ~2.5 kg CO₂ today. Keep going!</p>
-        </div>
-        <button type="button" onClick={() => go("home")} className={`w-full py-4 ${BTN_PRIMARY_CLS} text-base`}>Back to Home</button>
-      </div>
-    </div>
-  );
-}
-
 function ScreenHome(p: MobileAppRouterProps) {
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
@@ -1827,10 +1530,10 @@ function ScreenHome(p: MobileAppRouterProps) {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
-          <button type="button" onClick={() => p.go("submit")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
+          <button type="button" onClick={() => p.go("redeem-code")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
             <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center mb-3"><Upload className="w-5 h-5 text-primary" /></div>
             <p className="text-sm font-black text-foreground">Submit Items</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Scan QR at kiosk</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Enter receipt code</p>
           </button>
           <button type="button" onClick={() => p.go("rewards")} className="rounded-2xl p-4 text-left bg-white border border-border hover:border-primary transition-colors">
             <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center mb-3"><Gift className="w-5 h-5 text-amber-500" /></div>
@@ -1848,14 +1551,6 @@ function ScreenHome(p: MobileAppRouterProps) {
             <p className="text-[10px] text-muted-foreground mt-0.5">Top barangay recyclers</p>
           </button>
         </div>
-        <button type="button" onClick={() => p.go("redeem-code")} className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl bg-white border border-primary/40 hover:bg-green-50 transition-colors text-left">
-          <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center"><Hash className="w-5 h-5 text-primary" /></div>
-          <div className="flex-1">
-            <p className="text-sm font-black text-foreground">Redeem Receipt Code</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Enter the code from the bottle machine</p>
-          </div>
-          <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        </button>
         {p.kioskSession.connected && (
           <button type="button" onClick={p.handleDisconnectKiosk} className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 transition-colors">
             <div className="flex items-center gap-3">
@@ -1958,25 +1653,39 @@ function ScreenRewards(p: MobileAppRouterProps) {
             const canRedeem = (Number(p.currentUser.points || 0) >= r.cost);
             const cls = canRedeem ? "bg-primary text-white" : "bg-muted text-muted-foreground";
             return (
-              <button
-                type="button"
+              <div
                 key={r.name}
-                onClick={() => p.setSelectedReward(r)}
-                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md cursor-pointer ${canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
+                className={`rounded-2xl border bg-white text-left overflow-hidden transition-all hover:shadow-md ${canRedeem ? "border-green-200 hover:border-primary ring-1 ring-green-100" : "border-border hover:border-muted-foreground/40"
                   }`}
               >
-                <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
-                  <div className="text-5xl">{r.icon}</div>
-                  {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
-                </div>
-                <div className="p-3 space-y-1.5">
-                  <p className="text-sm font-black text-foreground line-clamp-2 leading-tight min-h-[2.5rem]">{r.name}</p>
-                  <div className="flex items-center justify-between pt-1">
-                    <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{r.cost} pts</span>
-                    <span className="text-[10px] text-muted-foreground font-bold capitalize">{r.category}</span>
+                <button
+                  type="button"
+                  onClick={() => p.setSelectedReward(r)}
+                  className="block w-full text-left"
+                  aria-label={`View ${r.name} details`}
+                >
+                  <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center text-5xl">
+                    <div className="text-5xl">{r.icon}</div>
+                    {r.seasonal && <div className="absolute top-2 right-2 text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-700">⭐ Seasonal</div>}
                   </div>
+                  <div className="px-3 pt-3 space-y-1.5">
+                    <p className="text-sm font-black text-foreground line-clamp-2 leading-tight min-h-[2.5rem]">{r.name}</p>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className={`font-black px-2.5 py-1 rounded-full ${cls}`}>{r.cost} pts</span>
+                      <span className="text-[10px] text-muted-foreground font-bold capitalize">{r.category}</span>
+                    </div>
+                  </div>
+                </button>
+                <div className="p-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => p.setSelectedReward(r)}
+                    className={`w-full py-2.5 rounded-xl text-xs font-black transition-colors ${canRedeem ? "bg-primary text-white hover:bg-green-700" : "bg-muted text-muted-foreground"}`}
+                  >
+                    Redeem
+                  </button>
                 </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -1995,7 +1704,7 @@ function ScreenRewardDetail(p: DetailProps) {
   const canRedeem = Number(p.currentUser.points || 0) >= r.cost;
   return (
     <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
-      <div className="w-full max-w-lg bg-background rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92vh] animate-in slide-in-from-bottom-8 duration-300">
+      <div className="w-full max-w-lg bg-background rounded-t-3xl sm:rounded-3xl overflow-hidden flex flex-col max-h-[92dvh] animate-in slide-in-from-bottom-8 duration-300">
         <div className="relative aspect-square bg-gradient-to-br from-emerald-50 to-green-100 flex items-center justify-center">
           <div className="text-[8rem]">{r.icon}</div>
           <button type="button" onClick={p.onClose} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/90 backdrop-blur border border-border flex items-center justify-center"><X className="w-5 h-5 text-foreground" /></button>
@@ -2044,37 +1753,55 @@ function getTaskTypeBadgeClass(type: string): string {
 }
 
 function ScreenTasks(p: MobileAppRouterProps) {
+  const [quests, setQuests] = useState<any[] | null>(null);
+  const uid = p.currentUser.id || p.currentUser.userId;
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!uid || !Waste2GoodsAPI.getUserTasks) return;
+      try {
+        const rows = await Waste2GoodsAPI.getUserTasks(uid);
+        if (alive) setQuests(Array.isArray(rows) ? rows : []);
+      } catch {
+        if (alive) setQuests([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [uid]);
+
+  const list = quests || [];
+  const doneCount = list.filter(t => t.done).length;
+  const pct = list.length > 0 ? Math.round((doneCount / list.length) * 100) : 0;
+
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-        <h2 className="text-xl font-black text-foreground flex-1">Daily Tasks</h2>
+        <h2 className="text-xl font-black text-foreground flex-1">Quests</h2>
       </div>
       <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32">
         <div className="rounded-2xl p-4 border border-border bg-white">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm font-black text-foreground">Daily progress</p>
-            <p className="text-xs font-black text-primary">3 of 5</p>
+            <p className="text-sm font-black text-foreground">Quest progress</p>
+            <p className="text-xs font-black text-primary">{doneCount} of {list.length}</p>
           </div>
-          <div className="w-full h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: "60%" }} /></div>
-          <p className="text-[10px] text-muted-foreground mt-1 font-semibold">Complete 5 tasks to unlock <strong>+100 bonus pts</strong></p>
+          <div className="w-full h-2 rounded-full bg-muted overflow-hidden"><div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} /></div>
+          <p className="text-[10px] text-muted-foreground mt-1 font-semibold">Keep recycling to complete each quest and earn bonus points.</p>
         </div>
-        {[
-          { t: "Submit 1kg of recyclables", pts: "+50 pts", type: "daily", p: "daily", d: true },
-          { t: "Use app 3 days in a row", pts: "+25 pts", type: "daily", p: "daily", d: true },
-          { t: "Invite 1 neighbor", pts: "+100 pts", type: "daily", p: "daily", d: false },
-          { t: "Attend barangay event", pts: "+200 pts", type: "weekly", p: "weekly", d: false },
-          { t: "Redeem 1 reward", pts: "+75 pts", type: "monthly", p: "monthly", d: false },
-        ].map((t, i) => (
-          <div key={t.t} className="rounded-2xl border border-border bg-white p-4 flex items-center gap-4">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${t.d ? "bg-green-50 text-green-600" : "bg-muted text-muted-foreground"}`}>{t.d ? <CheckSquare2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</div>
+        {quests === null && <p className="text-sm text-muted-foreground text-center py-10">Loading quests…</p>}
+        {quests !== null && list.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">No quests available right now.</p>}
+        {list.map(t => (
+          <div key={t.id} className="rounded-2xl border border-border bg-white p-4 flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${t.done ? "bg-green-50 text-green-600" : "bg-muted text-muted-foreground"}`}>{t.done ? <CheckSquare2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}</div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-black text-foreground">{t.t}</p>
+              <p className="text-sm font-black text-foreground">{t.title}</p>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${getTaskTypeBadgeClass(t.type)}`}>{t.p}</span>
-                <span className="text-xs font-black text-primary">{t.pts}</span>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${getTaskTypeBadgeClass(t.type)}`}>{t.type}</span>
+                <span className="text-xs font-black text-primary">+{t.reward} pts</span>
+                <span className="text-[10px] text-muted-foreground font-semibold">{Math.min(t.progress, t.goal)}/{t.goal} {t.unit}</span>
               </div>
             </div>
-            <button type="button" disabled={t.d} className={`px-3 py-1.5 rounded-xl text-xs font-black ${t.d ? "bg-green-500 text-white cursor-default" : [BTN_PRIMARY_CLS, "px-3 py-1.5 text-xs"].join(" ")}`}>{t.d ? "Done" : "Start"}</button>
+            <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${t.done ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>{t.done ? "Done" : "In progress"}</span>
           </div>
         ))}
       </div>
@@ -2546,7 +2273,7 @@ function ScreenRedeemHistory(p: MobileAppRouterProps) {
       {/* Interactive Claim Details Modal */}
       {selectedClaim && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90vh] overflow-y-auto space-y-5">
+          <div className="bg-white w-full max-w-lg rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl max-h-[90dvh] overflow-y-auto space-y-5">
             {/* Header */}
             <div className="flex items-center justify-between pb-3 border-b border-border">
               <div className="flex items-center gap-3">
@@ -2718,7 +2445,6 @@ export default function App() {
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [rewardFilter, setRewardFilter] = useState("All");
   const [mfaCode, setMfaCode] = useState(["", "", "", "", "", ""]);
-  const [weighing, setWeighing] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -2776,7 +2502,6 @@ export default function App() {
     }
   });
   const [loginServerBanner, setLoginServerBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
-  const weight = useAnimatedWeight(2.3, weighing);
   const mfaRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const availableCities = regProvince ? Object.keys(PH_LOCATIONS[regProvince] || {}).sort(alphabeticalCompare) : [];
@@ -2944,7 +2669,7 @@ export default function App() {
   // or just after login/authenticated screens to keep the red-dot badge accurate.
   // Also re-fetch whenever notifications screen is about to be entered for freshness.
   useEffect(() => {
-    const authScreens: MobileScreen[] = ["home", "notifications", "profile", "tasks", "rewards", "submit", "history", "settings", "redeem-history", "redeem-confirm"];
+    const authScreens: MobileScreen[] = ["home", "notifications", "profile", "tasks", "rewards", "redeem-code", "history", "settings", "redeem-history", "redeem-confirm"];
     if (!authScreens.includes(screen)) return;
     let cancelled = false;
     (async () => {
@@ -2981,7 +2706,7 @@ export default function App() {
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time
   const [kioskTick, setKioskTick] = useState(0);
   useEffect(() => {
-    const watchScreens: MobileScreen[] = ["home", "submit", "submit-scan", "submit-confirm", "submit-done", "profile", "settings", "tasks", "rewards"];
+    const watchScreens: MobileScreen[] = ["home", "profile", "settings", "tasks", "rewards"];
     if (!watchScreens.includes(screen)) return;
     const uid = currentUser.id || currentUser.userId;
     if (!uid) return;
@@ -3109,76 +2834,6 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (screen === "submit-scan") {
-      const t = setTimeout(() => go("submit-confirm"), 2200);
-      return () => clearTimeout(t);
-    }
-  }, [screen]);
-
-  useEffect(() => {
-    if (screen === "submit-confirm") {
-      setWeighing(false);
-      setTimeout(() => setWeighing(true), 300);
-    }
-  }, [screen]);
-
-  // QR Scanner for mobile
-  useEffect(() => {
-    if (screen === "submit-scan") {
-      // Initialize the scanner
-      const scanner = new Html5QrcodeScanner(
-        "qr-reader",
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      );
-      scanner.render(
-        (decodedText) => {
-          console.log("QR code scanned:", decodedText);
-          // Write QR BRIDGE so Kiosk (cross-tab) picks up this logged-in user
-          // This is how the mobile signals the kiosk: "I am [user], connect me"
-          try {
-            const auth = Waste2GoodsAPI.getAuthState();
-            const u = auth?.user || {};
-            const bridgePayload = {
-              user: {
-                id: (u as any).id || (u as any).userId || currentUser.id || "U-001",
-                userId: (u as any).id || (u as any).userId || currentUser.id || "U-001",
-                name: currentUser.name && currentUser.name !== "Guest User" ? currentUser.name : (u as any).name || `${(u as any).firstName || ""} ${(u as any).lastName || ""}`.trim() || "Registered User",
-                firstName: (u as any).firstName,
-                lastName: (u as any).lastName,
-                email: currentUser.email || (u as any).email || "",
-                points: currentUser.points ?? (u as any).pointsBalance ?? 0,
-                pointsBalance: currentUser.points ?? (u as any).pointsBalance ?? 0,
-              },
-              kioskPayload: decodedText,
-              timestamp: Date.now(),
-            };
-            localStorage.setItem("w2g_kiosk_qr_bridge", JSON.stringify(bridgePayload));
-            // Also emit cross-tab storage event for same-origin kiosk tabs already listening
-            try { window.dispatchEvent(new StorageEvent("storage", { key: "w2g_kiosk_qr_bridge", newValue: JSON.stringify(bridgePayload) })); } catch { }
-            Waste2GoodsAPI.connectKioskSession?.({
-              userId: bridgePayload.user.id || bridgePayload.user.userId,
-              userName: bridgePayload.user.name,
-              kioskId: decodedText.includes("K-") ? decodedText : "K-01",
-            });
-            console.log("✅ QR bridge written to localStorage (kiosk should pick up user within ~800ms):", bridgePayload.user.name);
-          } catch (bridgeErr) {
-            console.warn("QR bridge write failed:", bridgeErr);
-          }
-          scanner.clear().catch(() => { });
-          go("submit-confirm");
-        },
-        (errorMessage) => {
-          console.log("QR scan error:", errorMessage);
-        }
-      );
-      // Cleanup on unmount
-      return () => {
-        scanner.clear().catch(() => { });
-      };
-    }
-  }, [screen]);
 
   const [liveRewards, setLiveRewards] = useState<any[] | null>(null);
   useEffect(() => {
@@ -3343,21 +2998,6 @@ export default function App() {
 
   const onRewardClose = () => setSelectedReward(null);
 
-  const onSubmitConfirm = () => {
-    const earnedPts = Math.round(Number(weight) * 10);
-    const newBal = Number(currentUser.points || 0) + earnedPts;
-    const newTotalKg = Number(currentUser.totalKg || 0) + Number(weight);
-    patchAuthBalance(newBal);
-    setProfileUser((prev: any) => ({
-      ...(prev || currentUser),
-      points: newBal,
-      pointsBalance: newBal,
-      totalKg: newTotalKg,
-      submissions: Number(currentUser.submissions || 0) + 1,
-    }));
-    go("submit-done");
-  };
-
   const onClaimed = (r: { newBalance: number; pointsAwarded: number; bottles: number }) => {
     patchAuthBalance(r.newBalance);
     setProfileUser((prev: any) => ({
@@ -3384,7 +3024,6 @@ export default function App() {
         selectedReward={selectedReward}
         rewardFilter={rewardFilter}
         mfaCode={mfaCode}
-        weighing={weighing}
         email={email}
         password={password}
         loginError={loginError}
@@ -3414,7 +3053,6 @@ export default function App() {
         showLoginServer={showLoginServer}
         loginServerBanner={loginServerBanner}
         apiHost={apiHost}
-        weight={weight}
         kioskSession={kioskSession}
         kioskChecking={kioskChecking}
         kioskElapsedLabel={kioskElapsedLabel}
@@ -3465,7 +3103,6 @@ export default function App() {
         onToggleLoginServer={onToggleLoginServer}
         onRewardRedeem={onRewardRedeem}
         onRewardClose={onRewardClose}
-        onSubmitConfirm={onSubmitConfirm}
         redemptions={redemptions}
         onClaimed={onClaimed}
         go={go}

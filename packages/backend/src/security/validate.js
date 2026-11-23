@@ -105,6 +105,32 @@ export const RedemptionStatusSchema = z.object({
   adminId: z.string().trim().max(50).optional().default('A-001'),
 });
 
+export const TaskCRUDSchema = z.object({
+  taskName:    z.string().trim().min(1).max(100),
+  description: z.string().trim().max(2000).optional().or(z.literal('')),
+  bonusPoints: z.coerce.number().int().nonnegative(),
+  targetKg:    z.coerce.number().nonnegative().optional().default(0),
+  target:      z.coerce.number().int().positive().optional().default(1),
+  frequency:   z.enum(['daily', 'weekly', 'monthly']).optional().default('weekly'),
+  materialId:  z.coerce.number().int().positive().optional(),
+  status:      z.string().trim().max(20).optional().default('active'),
+});
+
+export const TaskUpdateSchema = z.object({
+  taskName:    z.string().trim().min(1).max(100).optional(),
+  description: z.string().trim().max(2000).optional().or(z.literal('')),
+  bonusPoints: z.coerce.number().int().nonnegative().optional(),
+  targetKg:    z.coerce.number().nonnegative().optional(),
+  target:      z.coerce.number().int().positive().optional(),
+  frequency:   z.enum(['daily', 'weekly', 'monthly']).optional(),
+  materialId:  z.coerce.number().int().positive().optional(),
+  status:      z.string().trim().max(20).optional(),
+});
+
+export const RedemptionClaimSchema = z.object({
+  code: z.string().trim().min(1).max(16),
+});
+
 export const KioskSessionSchema = z.object({
   userId:   z.string().trim().min(2).max(50),
   userName: z.string().trim().max(200).optional(),

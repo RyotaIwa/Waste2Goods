@@ -141,6 +141,40 @@ async function migrateTableColumns(tableName, migrations) {
   return applied;
 }
 
+// Migration 003: pickup codes on reward_redemptions (see migrations/003_add_redemption_codes.sql)
+async function ensureRedeemCodeUniqueKey() {
+  try {
+    const [[existsRow]] = await db.query(
+      `SELECT COUNT(*) AS cnt FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'reward_redemptions' AND INDEX_NAME = 'redeemCode'`
+    );
+    if (Number(existsRow?.cnt || 0) > 0) return 0;
+    await db.query('ALTER TABLE reward_redemptions ADD UNIQUE KEY redeemCode (redeemCode)');
+    console.log('🔧 Migration applied: Added UNIQUE KEY reward_redemptions.redeemCode');
+    return 1;
+  } catch (err) {
+    console.debug('redeemCode unique-key migration skipped:', err.message);
+    return 0;
+  }
+}
+
+// Migration 004: one progress row per resident per quest (see migrations/004_add_user_task_progress_unique_key.sql)
+async function ensureUserTaskProgressUniqueKey() {
+  try {
+    const [[existsRow]] = await db.query(
+      `SELECT COUNT(*) AS cnt FROM information_schema.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_task_progress' AND INDEX_NAME = 'uniq_user_task'`
+    );
+    if (Number(existsRow?.cnt || 0) > 0) return 0;
+    await db.query('ALTER TABLE user_task_progress ADD UNIQUE KEY uniq_user_task (userId, taskId)');
+    console.log('🔧 Migration applied: Added UNIQUE KEY user_task_progress.uniq_user_task');
+    return 1;
+  } catch (err) {
+    console.debug('user_task_progress unique-key migration skipped:', err.message);
+    return 0;
+  }
+}
+
 async function ensureTasksView() {
   try {
     const [[existsRow]] = await db.query(
@@ -349,6 +383,12 @@ async function applySchemaMigrations() {
       console.debug('Email migration sync skipped:', err.message);
     }
 
+    totalApplied += await migrateTableColumns('reward_redemptions', [
+      { column: 'redeemCode', definition: 'VARCHAR(8)' },
+      { column: 'claimedAt',  definition: 'TIMESTAMP NULL DEFAULT NULL' },
+    ]);
+    totalApplied += await ensureRedeemCodeUniqueKey();
+    totalApplied += await ensureUserTaskProgressUniqueKey();
     totalApplied += await ensureTasksView();
     totalApplied += await ensureRewardsSeed();
     totalApplied += await ensureRecyclingTasksSeed();

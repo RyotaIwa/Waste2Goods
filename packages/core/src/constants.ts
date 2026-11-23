@@ -161,7 +161,7 @@ export const REWARDS: Reward[] = [
 export const TASKS: Task[] = [
   { id: 1, title: "Submit 2kg of PET bottles", reward: 100, progress: 1.4, goal: 2, unit: "kg", type: "daily", done: false },
   { id: 2, title: "Visit kiosk 3 days in a row", reward: 150, progress: 2, goal: 3, unit: "days", type: "weekly", done: false },
-  { id: 3, title: "Refer a neighbor", reward: 200, progress: 1, goal: 1, unit: "person", type: "special", done: true },
+  { id: 3, title: "Submit 10 bottles in a single day", reward: 150, progress: 10, goal: 10, unit: "bottles", type: "monthly", done: true },
   { id: 4, title: "Collect 5kg of cardboard", reward: 120, progress: 5, goal: 5, unit: "kg", type: "weekly", done: true },
   { id: 5, title: "Submit any 3 material types", reward: 80, progress: 2, goal: 3, unit: "types", type: "daily", done: false }
 ];

@@ -892,9 +892,52 @@ export const Waste2GoodsAPI = {
 
   // Tasks
   getTasks: () => fetchApi<Task[]>("/tasks"),
+  getUserTasks: (userId: string) => fetchApi<Task[]>(`/users/${userId}/tasks`),
+
+  // Quest Management (Admin) — self-contained recycling quests only, no social types
+  createTask: (data: {
+    taskName: string;
+    description?: string;
+    bonusPoints: number;
+    targetKg?: number;
+    target?: number;
+    frequency?: "daily" | "weekly" | "monthly";
+    materialId?: number;
+    status?: string;
+  }) =>
+    fetchApi<any>("/tasks", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateTask: (
+    taskId: number | string,
+    data: {
+      taskName?: string;
+      description?: string;
+      bonusPoints?: number;
+      targetKg?: number;
+      target?: number;
+      frequency?: "daily" | "weekly" | "monthly";
+      materialId?: number;
+      status?: string;
+    }
+  ) =>
+    fetchApi<any>(`/tasks/${taskId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  deleteTask: (taskId: number | string) =>
+    fetchApi<any>(`/tasks/${taskId}`, { method: "DELETE" }),
 
   // Redemptions
   getRedemptions: () => fetchApi<any[]>("/redemptions"),
+
+  // Resident shows/types this at the kiosk pickup terminal to claim an approved reward.
+  claimRedemptionCode: (code: string) =>
+    fetchApi<{ ok: boolean; rewardName: string; residentName: string; message: string }>("/redemptions/claim", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
 
   // Admin Management (only usable by authenticated admins)
   fetchAdminAdmins: () => fetchApi<any[]>("/admin/admins"),

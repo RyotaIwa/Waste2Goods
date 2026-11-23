@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import crypto from 'node:crypto';
 import db from './db-mysql.js';
+import { updateTaskProgressForUser } from './quest-progress.js';
 import {
   ADMIN_CREDENTIALS,
   KIOSK_PIN,
@@ -22,7 +23,8 @@ import { cacheRoute, CacheBust, cacheStats } from './security/cache.js';
 import {
   validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema,
   RewardCRUDSchema, RewardUpdateSchema, AdminCreateSchema, UserCreateSchema,
-  UserUpdateSchema, PointsAdjustSchema, RedemptionStatusSchema,
+  UserUpdateSchema, PointsAdjustSchema, RedemptionStatusSchema, RedemptionClaimSchema,
+  TaskCRUDSchema, TaskUpdateSchema,
   KioskSessionSchema, KioskPingSchema,
 } from './security/validate.js';
 import { gatewayLogger, apiNotFound, errorHandler } from './security/gateway.js';
@@ -572,8 +574,10 @@ app.post('/api/transactions', authenticate, requirePermission('create', 'transac
       'UPDATE users SET pointsBalance = pointsBalance + ?, totalSubmissions = totalSubmissions + 1 WHERE userId = ?',
       [pointsEarned, userId]
     );
+    await updateTaskProgressForUser(userId, materialId, weightKg);
 
     await CacheBust.transactions();
+    await CacheBust.tasks();
     res.json({
       message: 'Transaction created successfully',
       transactionId,
@@ -1230,6 +1234,36 @@ app.get('/api/analytics/summary', authenticate, analyticsHeavyLimiter, requirePe
 // REDEEM: User spends points to claim a reward
 // (deducts points, inserts redemption row, decrements stock)
 // ──────────────────────────────────────────────────────
+
+// An 8-char pickup code, same shape as the machine's receipt codes. Generated up front so
+// the resident can see it right away; it only becomes usable at the kiosk once an admin
+// approves the redemption (see PUT /api/redemptions/:id/status and POST /api/redemptions/claim).
+const REDEEM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O/1/I — avoids misreads
+function generateRedeemCode() {
+  const bytes = crypto.randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) out += REDEEM_CODE_ALPHABET[bytes[i] % REDEEM_CODE_ALPHABET.length];
+  return out;
+}
+
+async function insertRedemptionWithCode(params) {
+  const { redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints } = params;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const redeemCode = generateRedeemCode();
+    try {
+      await db.query(
+        'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate, redeemCode) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)',
+        [redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, 'pending', redeemCode]
+      );
+      return redeemCode;
+    } catch (err) {
+      if (err?.code === 'ER_DUP_ENTRY' && attempt < 4) continue;
+      throw err;
+    }
+  }
+  throw new Error('Could not generate a unique pickup code');
+}
+
 app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redemption'), writeLimiter, validateBody(RedeemSchema), async (req, res) => {
   try {
     const { userId, rewardId, quantity = 1 } = req.body;
@@ -1253,10 +1287,11 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
 
     // Create pending redemption request — points NOT deducted yet, stock NOT decremented yet
     // Admin must approve via PUT /api/redemptions/:id/status before points are deducted
-    await db.query(
-      'INSERT INTO reward_redemptions (redemptionId, userId, rewardId, pointsUsed, quantity, totalPoints, status, redemptionDate) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())',
-      [redemptionId, userId, rewardId, Number(reward.pointsCost || reward.points || 0), quantity, totalPoints, 'pending']
-    );
+    const redeemCode = await insertRedemptionWithCode({
+      redemptionId, userId, rewardId,
+      pointsUsed: Number(reward.pointsCost || reward.points || 0),
+      quantity, totalPoints,
+    });
     await CacheBust.redemptions();
     await CacheBust.users();
     await CacheBust.rewards();
@@ -1266,6 +1301,7 @@ app.post('/api/rewards/redeem', authenticate, requirePermission('create', 'redem
       status: 'pending',
       totalPointsUsed: totalPoints,
       rewardName: reward.rewardName || reward.name,
+      code: redeemCode,
       message: 'Redemption request submitted successfully. Waiting for admin approval. You will be notified once approved or rejected.'
     });
   } catch (err) {
@@ -1278,7 +1314,7 @@ app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'
   try {
     const [rows] = await db.query(`
         SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
-              r.status, r.approvedBy, r.redemptionDate,
+              r.status, r.approvedBy, r.redemptionDate, r.redeemCode, r.claimedAt,
               u.firstName, u.lastName, w.rewardName, w.icon, w.category
         FROM reward_redemptions r
         LEFT JOIN users u ON u.userId = r.userId
@@ -1286,7 +1322,7 @@ app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'
         ORDER BY r.redemptionDate DESC
         LIMIT 50
       `);
-    res.json(rows);
+    res.json(rows.map(r => ({ ...r, code: r.redeemCode })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1309,22 +1345,116 @@ app.get('/api/tasks', authenticate, requirePermission('list', 'task'), cacheRout
       return res.json([
         { id: 1, title: 'Submit 2kg of PET bottles', reward: 100, progress: 0, goal: 2, unit: 'kg', type: 'daily', done: false },
         { id: 2, title: 'Visit kiosk 3 days in a row', reward: 150, progress: 0, goal: 3, unit: 'days', type: 'weekly', done: false },
-        { id: 3, title: 'Refer a neighbor', reward: 200, progress: 0, goal: 1, unit: 'person', type: 'special', done: false },
+        { id: 3, title: '10 bottles in a single day', reward: 150, progress: 0, goal: 10, unit: 'bottles', type: 'daily', done: false },
       ]);
     }
-    const tasks = rows.map((t, idx) => ({
-      id: Number(t.taskId) || idx + 1,
-      title: String(t.taskName || `Task #${idx + 1}`),
-      description: String(t.description || ''),
-      reward: Number(t.pointsReward || t.bonusPoints || 0),
-      progress: Number(t.progress || 0),
-      goal: Number(t.target || t.targetKg || 1),
-      unit: resolveTaskUnit(t),
-      type: String(t.frequency || 'weekly').toLowerCase(),
-      done: Number(t.progress || 0) >= Number(t.target || 1) && Number(t.target || 1) > 0,
-      status: String(t.status || 'active'),
-    }));
+    const tasks = rows.map((t, idx) => mapTaskRow(t, idx));
     res.json(tasks);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+function mapTaskRow(t, idx, progressKg) {
+  // targetKg is the real completion threshold whenever a quest has one (every
+  // seeded quest does, even count-flavored ones like "10 bottles in a day" via
+  // an equivalent weight) — `target` is only a fallback for a pure count quest.
+  const targetKg = Number(t.targetKg || 0) > 0 ? Number(t.targetKg) : Number(t.target || 1);
+  const progress = progressKg != null ? Number(progressKg) : Number(t.progress || 0);
+  return {
+    id: Number(t.taskId) || idx + 1,
+    title: String(t.taskName || `Task #${idx + 1}`),
+    description: String(t.description || ''),
+    reward: Number(t.pointsReward || t.bonusPoints || 0),
+    progress,
+    goal: targetKg,
+    unit: resolveTaskUnit(t),
+    type: String(t.frequency || 'weekly').toLowerCase(),
+    done: progress >= targetKg && targetKg > 0,
+    status: String(t.status || 'active'),
+  };
+}
+
+// ──────────────────────────────────────────────────────
+// QUEST MANAGEMENT (admin): create/edit/delete self-contained recycling
+// quests — e.g. "submit 2kg of bottles". No social/manual quest types.
+// ──────────────────────────────────────────────────────
+app.post('/api/tasks', authenticate, requirePermission('create', 'task'), writeLimiter, validateBody(TaskCRUDSchema), async (req, res) => {
+  try {
+    const { taskName, description = '', bonusPoints, targetKg = 0, target = 1, frequency = 'weekly', materialId = null, status = 'active' } = req.body;
+    await db.query(
+      'INSERT INTO recycling_tasks (taskName, description, bonus_points, bonusPoints, targetKg, target, frequency, barangayId, materialId, status) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)',
+      [String(taskName).trim(), String(description), Number(bonusPoints), Number(bonusPoints), Number(targetKg), Number(target), String(frequency), materialId || null, String(status)]
+    );
+    const [rows] = await db.query('SELECT * FROM recycling_tasks ORDER BY taskId DESC LIMIT 1');
+    await CacheBust.tasks();
+    res.json({ ok: true, task: rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tasks/:id', authenticate, requirePermission('update', 'task'), writeLimiter, validateBody(TaskUpdateSchema), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [exists] = await db.query('SELECT * FROM recycling_tasks WHERE taskId = ?', [id]);
+    if (!exists.length) return res.status(404).json({ error: 'Quest not found' });
+    const curr = exists[0];
+    const { taskName, description, bonusPoints, targetKg, target, frequency, materialId, status } = req.body;
+    const next = {
+      taskName: taskName != null ? String(taskName).trim() : curr.taskName,
+      description: description != null ? String(description) : curr.description,
+      bonusPoints: bonusPoints != null ? Number(bonusPoints) : curr.bonusPoints,
+      targetKg: targetKg != null ? Number(targetKg) : curr.targetKg,
+      target: target != null ? Number(target) : curr.target,
+      frequency: frequency != null ? String(frequency) : curr.frequency,
+      materialId: materialId !== undefined ? materialId : curr.materialId,
+      status: status != null ? String(status) : curr.status,
+    };
+    await db.query(
+      'UPDATE recycling_tasks SET taskName=?, description=?, bonus_points=?, bonusPoints=?, targetKg=?, target=?, frequency=?, materialId=?, status=? WHERE taskId=?',
+      [next.taskName, next.description, next.bonusPoints, next.bonusPoints, next.targetKg, next.target, next.frequency, next.materialId, next.status, id]
+    );
+    await CacheBust.tasks();
+    res.json({ ok: true, taskId: id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tasks/:id', authenticate, requirePermission('delete', 'task'), writeLimiter, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const [exists] = await db.query('SELECT * FROM recycling_tasks WHERE taskId = ?', [id]);
+    if (!exists.length) return res.status(404).json({ error: 'Quest not found' });
+    try {
+      await db.query('DELETE FROM recycling_tasks WHERE taskId = ?', [id]);
+    } catch {
+      await db.query("UPDATE recycling_tasks SET status = 'inactive' WHERE taskId = ?", [id]);
+    }
+    await CacheBust.tasks();
+    res.json({ ok: true, taskId: id, deleted: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Per-resident quest progress: same shape as GET /api/tasks, but `progress` is this
+// resident's own accumulated progressKg from `user_task_progress` instead of the
+// shared column on `recycling_tasks`.
+app.get('/api/users/:id/tasks', authenticate, requireOwnershipOrRole(['admin', 'super_admin', 'barangay_admin'], 'id', 'userId'), cacheRoute(30), async (req, res) => {
+  try {
+    const targetId = String(req.params.id).toUpperCase();
+    const [rows] = await db.query(
+      `SELECT rt.taskId, rt.taskName, rt.description, rt.bonusPoints AS pointsReward, rt.targetKg, rt.target,
+              rt.frequency, rt.status, COALESCE(utp.progressKg, 0) AS progressKg
+         FROM recycling_tasks rt
+         LEFT JOIN user_task_progress utp ON utp.taskId = rt.taskId AND utp.userId = ?
+        WHERE rt.status = 'active'
+        ORDER BY rt.taskId ASC LIMIT 50`,
+      [targetId]
+    );
+    res.json(rows.map((t, idx) => mapTaskRow(t, idx, t.progressKg)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1669,7 +1799,8 @@ app.get('/api/users/:id/redemptions', authenticate, async (req, res) => {
   try {
     const [rows] = await db.query(
       `SELECT r.redemptionId, r.userId, r.rewardId, r.pointsUsed, r.quantity, r.totalPoints,
-                r.status, r.approvedBy, r.redemptionDate, w.rewardName, w.icon, w.category
+                r.status, r.approvedBy, r.redemptionDate, r.redeemCode, r.claimedAt,
+                w.rewardName, w.icon, w.category
         FROM reward_redemptions r
         LEFT JOIN rewards w ON w.rewardId = r.rewardId
         WHERE r.userId = ?
@@ -1677,7 +1808,7 @@ app.get('/api/users/:id/redemptions', authenticate, async (req, res) => {
         LIMIT 100`,
       [targetId]
     );
-    res.json(rows);
+    res.json(rows.map(r => ({ ...r, code: r.redeemCode })));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -1869,6 +2000,58 @@ app.put('/api/redemptions/:id/status', authenticate, requireRole('admin'), requi
     await CacheBust.users();
     await CacheBust.rewards();
     res.json({ ok: true, redemptionId, status, message: status === 'ready' || status === 'approved' ? 'Redemption approved — points deducted and stock updated.' : 'Redemption rejected.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────────────
+// CLAIM (pickup terminal): resident shows/types their redemption code at the
+// kiosk; this is what actually hands over the physical reward. Admin approval
+// (above) is unchanged and still required — a code only works once its
+// redemption is 'approved' or 'ready'.
+// ──────────────────────────────────────────────────────
+app.post('/api/redemptions/claim', authenticate, requirePermission('status', 'redemption'), writeLimiter, validateBody(RedemptionClaimSchema), async (req, res) => {
+  try {
+    const code = String(req.body.code).trim().toUpperCase();
+    const [rows] = await db.query(
+      `SELECT r.*, u.firstName, u.lastName, w.rewardName
+         FROM reward_redemptions r
+         LEFT JOIN users u ON u.userId = r.userId
+         LEFT JOIN rewards w ON w.rewardId = r.rewardId
+        WHERE r.redeemCode = ? LIMIT 1`,
+      [code]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Invalid code' });
+    const redemption = rows[0];
+    const status = String(redemption.status || '').toLowerCase();
+
+    if (status === 'claimed' || status === 'completed') {
+      return res.status(409).json({ error: 'This code was already claimed' });
+    }
+    if (status === 'rejected') {
+      return res.status(409).json({ error: 'This redemption was rejected' });
+    }
+    if (status !== 'approved' && status !== 'ready') {
+      return res.status(409).json({ error: 'Not approved yet — waiting on admin' });
+    }
+
+    const [claim] = await db.query(
+      "UPDATE reward_redemptions SET status = 'claimed', claimedAt = NOW() WHERE redeemCode = ? AND status IN ('approved','ready')",
+      [code]
+    );
+    if (!claim || claim.affectedRows !== 1) {
+      return res.status(409).json({ error: 'This code was already claimed' });
+    }
+
+    await CacheBust.redemptions();
+    res.json({
+      ok: true,
+      redemptionId: redemption.redemptionId,
+      rewardName: redemption.rewardName || 'Reward',
+      residentName: `${redemption.firstName || ''} ${redemption.lastName || ''}`.trim() || redemption.userId,
+      message: 'Valid — marked claimed',
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

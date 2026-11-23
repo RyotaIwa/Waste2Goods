@@ -18,6 +18,7 @@
 
 import crypto from 'node:crypto';
 import db from './db-mysql.js';
+import { updateTaskProgressForUser } from './quest-progress.js';
 import { authenticateJWT, requireRole } from './security/auth-jwt.js';
 import { writeLimiter } from './security/rate-limit.js';
 import { CacheBust } from './security/cache.js';
@@ -192,6 +193,7 @@ async function claimDeposit(req, res) {
                 'UPDATE users SET pointsBalance = pointsBalance + ?, totalSubmissions = totalSubmissions + 1 WHERE userId = ?',
                 [pointsAwarded, userId]
             );
+            await updateTaskProgressForUser(userId, materialId, weightKg);
         } catch (err) {
             // Crediting failed: give the code back so the resident can try again.
             await db.query(
@@ -204,6 +206,7 @@ async function claimDeposit(req, res) {
         try {
             await CacheBust.transactions();
             await CacheBust.users();
+            await CacheBust.tasks();
         } catch { /* ignore */ }
 
         const [bal] = await db.query('SELECT pointsBalance FROM users WHERE userId = ? LIMIT 1', [userId]);

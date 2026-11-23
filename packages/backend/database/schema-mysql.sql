@@ -244,6 +244,9 @@ INSERT INTO `rewards` (`rewardId`, `rewardName`, `points_required`, `pointsCost`
 -- Table structure for table `reward_redemptions`
 --
 
+-- Migration 003: `redeemCode`/`claimedAt` — an 8-char pickup code generated when the
+-- resident requests a reward. Admin approval still happens exactly as before; once
+-- approved, this code is what gets typed into the kiosk terminal to mark it claimed.
 CREATE TABLE `reward_redemptions` (
   `redemptionId` varchar(50) NOT NULL,
   `userId` varchar(50) NOT NULL,
@@ -253,7 +256,10 @@ CREATE TABLE `reward_redemptions` (
   `totalPoints` int(11) NOT NULL,
   `status` varchar(50) DEFAULT 'pending',
   `approvedBy` varchar(50) DEFAULT NULL,
-  `redemptionDate` timestamp NOT NULL DEFAULT current_timestamp()
+  `redemptionDate` timestamp NOT NULL DEFAULT current_timestamp(),
+  `redeemCode` varchar(8) DEFAULT NULL,
+  `claimedAt` timestamp NULL DEFAULT NULL,
+  UNIQUE KEY `redeemCode` (`redeemCode`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -461,6 +467,11 @@ ALTER TABLE `user_task_progress`
   ADD PRIMARY KEY (`progressId`),
   ADD KEY `userId` (`userId`),
   ADD KEY `taskId` (`taskId`);
+
+-- Migration 004: one progress row per resident per quest, so recording a transaction
+-- can safely `INSERT ... ON DUPLICATE KEY UPDATE progressKg = progressKg + ?`.
+ALTER TABLE `user_task_progress`
+  ADD UNIQUE KEY `uniq_user_task` (`userId`, `taskId`);
 
 --
 -- AUTO_INCREMENT for dumped tables

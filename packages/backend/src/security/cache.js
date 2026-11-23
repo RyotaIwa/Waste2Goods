@@ -122,6 +122,7 @@ export const CacheBust = {
   rewards:     async () => { await invalidatePattern('/rewards');     await invalidatePattern('/redemptions'); await invalidatePattern('/analytics'); return 'rewards'; },
   redemptions: async () => { await invalidatePattern('/redemptions'); await invalidatePattern('/rewards');     await invalidatePattern('/analytics'); await invalidatePattern('/users'); return 'redemptions'; },
   kiosks:      async () => { await invalidatePattern('/kiosks'); return 'kiosks'; },
+  tasks:       async () => { await invalidatePattern('/tasks'); return 'tasks'; },
   all:         async () => {
     try {
       await redisDelPattern(`${NAMESPACE_CACHE}*`);

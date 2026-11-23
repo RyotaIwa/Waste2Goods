@@ -3,7 +3,7 @@ import {
   BarChart3, Users, TrendingUp, Bell, Search, LogOut, Recycle,
   ArrowLeft, Zap, Award, ShoppingCart, Scale, Shield,
   X, Plus, Download, Eye, Edit, Trash2,
-  AlertCircle, Cpu, RefreshCw, Gift,
+  AlertCircle, Cpu, RefreshCw, Gift, Target,
   Lock, Mail, AlertTriangle, Check, Archive, ArchiveRestore,
   Activity, Upload, ChevronRight
 } from "lucide-react";
@@ -38,6 +38,12 @@ const leaderboard = [
   { rank: 5, name: "Liza Villareal", barangay: "Cabantian", points: 1990, avatar: "LV", streak: 3 },
   { rank: 6, name: "Ben Pascual", barangay: "Cabantian", points: 1640, avatar: "BP", streak: 2 },
 ];
+const demoTasks = [
+  { id: 1, title: "Daily Recycling", description: "Submit any amount of PET plastic today", reward: 25, goal: 0.5, unit: "kg", type: "daily", status: "active" },
+  { id: 2, title: "5 kg Weekly Challenge", description: "Collect and submit 5 kg total this week", reward: 300, goal: 5, unit: "kg", type: "weekly", status: "active" },
+  { id: 3, title: "10 Bottles in a Day", description: "Submit 10+ PET bottles in a single day", reward: 150, goal: 0.2, unit: "kg", type: "daily", status: "active" },
+];
+
 const rewards = [
   { id: 1, name: "School Supplies Kit", points: 500, category: "Education", stock: 23, icon: "📚", seasonal: false },
   { id: 2, name: "Grocery Voucher ₱100", points: 800, category: "Grocery", stock: 15, icon: "🛒", seasonal: false },
@@ -140,6 +146,7 @@ function getSearchPlaceholder(section: string): string {
   if (section === "dashboard") return "Search residents or activities...";
   if (section === "users" || section === "users-detail") return "Search residents by name, email, or ID...";
   if (section === "rewards") return "Search rewards by name, category, or stock...";
+  if (section === "quests") return "Search quests by name or description...";
   if (section === "analytics") return "Search rewards, redemptions, or trends...";
   if (section === "monitoring") return "Search kiosks by ID, location, or status...";
   if (section === "admins") return "Search admins by name, email, or role...";
@@ -184,7 +191,7 @@ function computeAdminDisplay(
   return { name, email, roleLabel, initials };
 }
 
-type AdminSection = "dashboard" | "users" | "users-detail" | "rewards" | "analytics" | "monitoring" | "admins";
+type AdminSection = "dashboard" | "users" | "users-detail" | "rewards" | "quests" | "analytics" | "monitoring" | "admins";
 type AppScreen = "login" | "admin";
 
 type SettledResult<T> = { status: "fulfilled"; value: T } | { status: "rejected"; reason?: any };
@@ -199,6 +206,7 @@ type DashboardSummaryShape = {
 type AdminDataSetters = {
   setLiveUsers: (v: any[] | null) => void;
   setLiveRewards: (v: any[] | null) => void;
+  setLiveTasks: (v: any[] | null) => void;
   setLiveKiosks: (v: any[] | null) => void;
   setLiveTx: (v: any[] | null) => void;
   setLiveWeekly: (v: any[] | null) => void;
@@ -262,6 +270,7 @@ async function fetchAllAdminSettled(includeProfile: boolean) {
     Waste2GoodsAPI.fetchRedemptions(),
     Waste2GoodsAPI.fetchAnalyticsSummary(),
     Waste2GoodsAPI.fetchNotifications(),
+    Waste2GoodsAPI.getTasks(),
   ];
   if (includeProfile) {
     calls.push(Waste2GoodsAPI.refreshCurrentUser ? Waste2GoodsAPI.refreshCurrentUser() : Promise.resolve(null));
@@ -274,9 +283,10 @@ function applyAdminDataSet(
   setters: AdminDataSetters,
   hasProfile: boolean,
 ) {
-  const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs, adminProf] = results;
+  const [users, rewards, kiosks, tx, weekly, monthly, leaderboard, redemptions, summary, notifs, tasks, adminProf] = results;
   applySettledArray(users, setters.setLiveUsers);
   applySettledArray(rewards, setters.setLiveRewards);
+  applySettledArray(tasks, setters.setLiveTasks);
   applySettledArray(kiosks, setters.setLiveKiosks);
   applySettledArray(tx, setters.setLiveTx);
   applySettledArray(weekly, setters.setLiveWeekly);
@@ -338,6 +348,7 @@ type SectionRenderProps = {
   searchQuery: string;
   refreshData: () => Promise<void>;
   liveRewards: any[] | null;
+  liveTasks: any[] | null;
   liveRedemptions: any[] | null;
   liveMonthly: any[] | null;
   liveKiosks: any[] | null;
@@ -390,6 +401,13 @@ function renderAdminSectionContent(p: SectionRenderProps): React.ReactNode {
         setRedemptionAction={p.setRedemptionAction}
         approving={p.approving}
         handleApproveRedemption={p.handleApproveRedemption}
+      />
+    ),
+    quests: (
+      <AdminQuests
+        liveTasks={p.liveTasks}
+        searchQuery={p.searchQuery}
+        onRefresh={p.refreshData}
       />
     ),
     analytics: (
@@ -517,6 +535,7 @@ export default function App() {
   // ── Live data state (merged with demo fallbacks) ──
   const [liveUsers, setLiveUsers] = useState<Array<any> | null>(null);
   const [liveRewards, setLiveRewards] = useState<Array<any> | null>(null);
+  const [liveTasks, setLiveTasks] = useState<Array<any> | null>(null);
   const [liveKiosks, setLiveKiosks] = useState<Array<any> | null>(null);
   const [liveTx, setLiveTx] = useState<Array<any> | null>(null);
   const [liveWeekly, setLiveWeekly] = useState<Array<any> | null>(null);
@@ -541,7 +560,7 @@ export default function App() {
   };
 
   const dataSetters: AdminDataSetters = {
-    setLiveUsers, setLiveRewards, setLiveKiosks, setLiveTx,
+    setLiveUsers, setLiveRewards, setLiveTasks, setLiveKiosks, setLiveTx,
     setLiveWeekly, setLiveMonthly, setLiveLeaderboard, setLiveRedemptions,
     setDashboardSummary, setNotifications, setNotifUnread,
     setAdminProfile, setProfileRefreshKey,
@@ -674,6 +693,7 @@ export default function App() {
     { id: "dashboard" as AdminSection, icon: <BarChart3 className="w-4 h-4" />, label: "Dashboard" },
     { id: "users" as AdminSection, icon: <Users className="w-4 h-4" />, label: "User Management" },
     { id: "rewards" as AdminSection, icon: <Gift className="w-4 h-4" />, label: "Reward Management" },
+    { id: "quests" as AdminSection, icon: <Target className="w-4 h-4" />, label: "Quest Management" },
     { id: "analytics" as AdminSection, icon: <TrendingUp className="w-4 h-4" />, label: "Reports & Analytics" },
     { id: "monitoring" as AdminSection, icon: <Cpu className="w-4 h-4" />, label: "IoT Kiosk Monitor" },
     { id: "admins" as AdminSection, icon: <Shield className="w-4 h-4" />, label: "Admin Management" },
@@ -704,6 +724,7 @@ export default function App() {
     searchQuery,
     refreshData,
     liveRewards,
+    liveTasks,
     liveRedemptions,
     liveMonthly,
     liveKiosks,
@@ -810,11 +831,13 @@ export default function App() {
                       }
                     };
                     return (
-                      <button
+                      <div
                         key={n.id}
-                        type="button"
+                        role={isRedemption ? "button" : undefined}
+                        tabIndex={isRedemption ? 0 : undefined}
                         onClick={handleNotifClick}
-                        className={`w-full text-left px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors flex items-start gap-2`}
+                        onKeyDown={(e) => { if (isRedemption && (e.key === "Enter" || e.key === " ")) handleNotifClick(); }}
+                        className={`w-full text-left px-4 py-3 border-b border-border/50 hover:bg-muted/30 transition-colors flex items-start gap-2 ${isRedemption ? "cursor-pointer" : ""}`}
                       >
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${getNotifSeverityBg(n.severity)}`}>
                           {getNotifIcon(n.type, n.severity)}
@@ -845,7 +868,7 @@ export default function App() {
                           )}
                         </div>
                         <ChevronRight className="w-3 h-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -2294,6 +2317,201 @@ function AnalyticsTopRedeemedCard({ searchQuery = "" }: Readonly<{ searchQuery?:
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function getTaskFrequencyBadgeClass(type: string): string {
+  if (type === "daily") return "bg-blue-100 text-blue-700";
+  if (type === "weekly") return "bg-purple-100 text-purple-700";
+  return "bg-amber-100 text-amber-700";
+}
+
+function getQuestSubmitButtonText(saving: boolean, isEditing: boolean): string {
+  if (saving) return "Saving...";
+  return isEditing ? "Save Changes" : "Create Quest";
+}
+
+function AdminQuests({ liveTasks, searchQuery = "", onRefresh }: Readonly<{ liveTasks: any[] | null; searchQuery?: string; onRefresh?: () => Promise<void> }>) {
+  const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [confirmDel, setConfirmDel] = useState<any>(null);
+  const [qName, setQName] = useState("");
+  const [qPoints, setQPoints] = useState<string>("100");
+  const [qTargetKg, setQTargetKg] = useState<string>("2");
+  const [qFrequency, setQFrequency] = useState("weekly");
+  const [qDesc, setQDesc] = useState("");
+
+  const resetForm = () => {
+    setQName(""); setQPoints("100"); setQTargetKg("2"); setQFrequency("weekly"); setQDesc("");
+  };
+
+  const openCreate = () => { resetForm(); setEditing(null); setBanner(null); setShowForm(true); };
+  const openEdit = (t: any) => {
+    setEditing(t);
+    setQName(t.title || "");
+    setQPoints(String(t.reward ?? 0));
+    setQTargetKg(String(t.goal ?? 1));
+    setQFrequency(t.type || "weekly");
+    setQDesc(t.description || "");
+    setBanner(null); setShowForm(true);
+  };
+
+  const submitForm = async () => {
+    setBanner(null);
+    if (!qName.trim() || Number(qPoints) < 0 || Number(qTargetKg) <= 0) {
+      setBanner({ type: "err", text: "Quest name, a valid bonus, and a target (kg) above 0 are required." });
+      return;
+    }
+    const payload: any = {
+      taskName: qName.trim(),
+      description: qDesc.trim(),
+      bonusPoints: Number(qPoints) || 0,
+      targetKg: Number(qTargetKg) || 0,
+      frequency: qFrequency,
+      status: "active",
+    };
+    try {
+      setSaving(true);
+      let res: any;
+      if (editing) {
+        res = await Waste2GoodsAPI.updateTask(editing.id, payload);
+      } else {
+        res = await Waste2GoodsAPI.createTask(payload);
+      }
+      if (!res || !(res as any).ok) throw new Error((res as any)?.error || "Quest save failed");
+      setBanner({ type: "ok", text: editing ? `Quest "${qName}" updated successfully!` : `Quest "${qName}" created!` });
+      if (onRefresh) await onRefresh();
+      setTimeout(() => { setShowForm(false); setEditing(null); resetForm(); }, 1500);
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Save failed. Run backend with MySQL." });
+    } finally { setSaving(false); }
+  };
+
+  const doRemove = async () => {
+    if (!confirmDel) return;
+    setBanner(null);
+    try {
+      const res = await Waste2GoodsAPI.deleteTask(confirmDel.id);
+      if (!res || !(res as any).ok) throw new Error("Remove failed");
+      setBanner({ type: "ok", text: `Quest "${confirmDel.title || ''}" removed / archived.` });
+      if (onRefresh) await onRefresh();
+    } catch (e) {
+      setBanner({ type: "err", text: e instanceof Error ? e.message : "Remove failed." });
+    } finally { setConfirmDel(null); }
+  };
+
+  let mergedTasks: any[] = liveTasks && liveTasks.length > 0 ? liveTasks.slice() : demoTasks.slice();
+  if (searchQuery?.trim()) {
+    const q = searchQuery.trim().toLowerCase();
+    mergedTasks = mergedTasks.filter(t => String(t.title || "").toLowerCase().includes(q) || String(t.description || "").toLowerCase().includes(q));
+  }
+
+  return (
+    <div className="flex flex-col gap-4 relative">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-black text-foreground">{mergedTasks.length} quests <span className={`text-[10px] ml-1 px-2.5 py-1 rounded-full font-bold ${liveTasks && liveTasks.length > 0 ? BADGE_SUCCESS_CLS : BADGE_WARN_CLS}`}>{liveTasks && liveTasks.length > 0 ? "● LIVE DB" : "DEMO"}</span></p>
+          <p className="text-xs text-muted-foreground">Self-contained recycling quests — no social/manual types{searchQuery ? ` · filter "${searchQuery}"` : ""}</p>
+        </div>
+        <div className="flex gap-2">
+          {onRefresh && <button type="button" onClick={() => onRefresh()} className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border bg-white text-xs font-semibold hover:bg-muted transition-colors"><RefreshCw className="w-3.5 h-3.5" />Refresh</button>}
+          <button type="button" onClick={openCreate} className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-primary text-white text-xs font-semibold hover:bg-green-700 transition-colors"><Plus className="w-3.5 h-3.5" />Add Quest</button>
+        </div>
+      </div>
+
+      {banner && (
+        <div className={`text-xs px-4 py-3 rounded-2xl font-semibold flex items-center gap-1.5 ${banner.type === 'ok' ? 'bg-green-50 border border-green-200 text-green-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
+          {banner.type === 'ok' ? <Check className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}{banner.text}
+        </div>
+      )}
+
+      {showForm && (
+        <div className="bg-white rounded-2xl border border-border p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-black text-foreground">{editing ? "Edit Quest" : "Add New Quest"}</h3>
+              <p className="text-xs text-muted-foreground">Saved to MySQL `recycling_tasks` table immediately</p>
+            </div>
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="text-xs font-bold text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label htmlFor="quest-name" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Quest Name *</label>
+              <input id="quest-name" value={qName} onChange={e => setQName(e.target.value)} placeholder="Submit 2kg of bottles" className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label htmlFor="quest-points" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Bonus Points *</label>
+              <input id="quest-points" type="number" value={qPoints} onChange={e => setQPoints(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div>
+              <label htmlFor="quest-target" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Target (kg) *</label>
+              <input id="quest-target" type="number" step="0.1" value={qTargetKg} onChange={e => setQTargetKg(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm" />
+            </div>
+            <div className="col-span-2">
+              <label htmlFor="quest-desc" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Short Description</label>
+              <textarea id="quest-desc" value={qDesc} onChange={e => setQDesc(e.target.value)} rows={2} placeholder="Describe the quest..." className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm resize-none" />
+            </div>
+            <div className="col-span-2">
+              <label htmlFor="quest-freq" className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1 block">Frequency</label>
+              <select id="quest-freq" value={qFrequency} onChange={e => setQFrequency(e.target.value)} className="w-full px-3 py-2.5 rounded-xl border border-border bg-background text-sm">
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button type="button" onClick={() => { setShowForm(false); setEditing(null); resetForm(); }} className="px-5 py-2.5 rounded-xl border border-border text-sm font-bold hover:bg-muted transition-colors">Cancel</button>
+            <button type="button" disabled={saving} onClick={submitForm} className="px-6 py-2.5 rounded-xl bg-primary text-white text-sm font-bold hover:bg-green-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+              {getQuestSubmitButtonText(saving, Boolean(editing))}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3">
+        {mergedTasks.map(t => (
+          <div key={t.id} className="bg-white rounded-2xl border border-border p-4 flex flex-col gap-2 relative">
+            <div className="flex items-start justify-between">
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full capitalize ${getTaskFrequencyBadgeClass(t.type)}`}>{t.type}</span>
+              <div className="flex gap-1">
+                <button type="button" onClick={() => openEdit(t)} className="p-1 rounded-lg hover:bg-amber-50 text-amber-600 transition-colors" title="Edit"><Edit className="w-4 h-4" /></button>
+                <button type="button" onClick={() => setConfirmDel(t)} className="p-1 rounded-lg hover:bg-red-50 text-red-500 transition-colors" title="Remove"><Trash2 className="w-4 h-4" /></button>
+              </div>
+            </div>
+            <div className="mt-1">
+              <p className="text-sm font-black text-foreground leading-tight">{t.title}</p>
+              {t.description && <p className="text-xs text-muted-foreground mt-0.5">{t.description}</p>}
+            </div>
+            <div className="flex justify-between text-xs mt-auto pt-2">
+              <div><p className="text-muted-foreground">Target</p><p className="font-black text-foreground">{t.goal} {t.unit || "kg"}</p></div>
+              <div className="text-right"><p className="text-muted-foreground">Bonus</p><p className="font-black text-primary">{t.reward} pts</p></div>
+            </div>
+          </div>
+        ))}
+        {mergedTasks.length === 0 && (
+          <div className="col-span-3 bg-white rounded-2xl border border-border p-10 text-center text-xs text-muted-foreground">
+            <Target className="w-10 h-10 mx-auto mb-2 text-muted-foreground/40" />
+            {searchQuery ? `No quests match "${searchQuery}".` : "No quests. Click Add Quest to create one."}
+          </div>
+        )}
+      </div>
+
+      {confirmDel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-96 shadow-2xl">
+            <h3 className="font-black text-foreground mb-2">Remove Quest?</h3>
+            <p className="text-sm text-muted-foreground mb-5">This will remove <strong>{confirmDel.title}</strong>. Residents in progress on it will no longer see it.</p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setConfirmDel(null)} className="flex-1 py-2.5 rounded-xl border border-border text-sm font-semibold hover:bg-muted transition-colors">Cancel</button>
+              <button type="button" onClick={doRemove} className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-bold hover:bg-red-700 transition-colors">Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

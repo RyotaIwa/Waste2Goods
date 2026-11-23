@@ -193,12 +193,14 @@ export interface RecyclingTask {
 export interface Task {
   id: number;
   title: string;
+  description?: string;
   reward: number;
   progress: number;
   goal: number;
   unit: string;
-  type: "daily" | "weekly" | "special";
+  type: "daily" | "weekly" | "monthly";
   done: boolean;
+  status?: string;
 }
 
 // Analytics Types (keep original for compatibility)
