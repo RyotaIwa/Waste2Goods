@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Recycle, Wifi, Clock, Battery, CheckCircle, XCircle, Hash, Loader2,
+  Recycle, Wifi, Clock, Battery, CheckCircle, XCircle, Hash, Loader2, Lock,
 } from "lucide-react";
 import { Waste2GoodsAPI } from "@waste2goods/core";
 
@@ -19,16 +19,80 @@ async function verifyCode(
   code: string,
   setChecking: (b: boolean) => void,
   setResult: (r: ClaimResult | null) => void,
+  onAuthLost: () => void,
 ) {
   setChecking(true);
   try {
     const res = await Waste2GoodsAPI.claimRedemptionCode(code);
     setResult({ status: "ok", rewardName: res.rewardName || "Reward", residentName: res.residentName || "Resident" });
   } catch (e) {
-    setResult({ status: "error", message: e instanceof Error ? e.message : "Could not verify the code" });
+    const message = e instanceof Error ? e.message : "Could not verify the code";
+    // The kiosk login token is short-lived; if it lapsed, ask for the PIN again instead of showing a confusing error.
+    if (/401|403|unauthor|forbidden|token|expired|sign in/i.test(message)) {
+      Waste2GoodsAPI.logout();
+      onAuthLost();
+      return;
+    }
+    setResult({ status: "error", message });
   } finally {
     setChecking(false);
   }
+}
+
+function isKioskSignedIn(): boolean {
+  const auth = Waste2GoodsAPI.getAuthState();
+  const role = String((auth?.user as any)?.role || "").toLowerCase();
+  return Boolean(auth?.token && (role === "kiosk" || role === "admin" || role === "super_admin"));
+}
+
+function PinGate({ onUnlocked }: Readonly<{ onUnlocked: () => void }>) {
+  const [pin, setPin] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const submit = async () => {
+    if (!pin || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await Waste2GoodsAPI.kioskLogin(pin);
+      if (!isKioskSignedIn()) throw new Error("Invalid PIN");
+      onUnlocked();
+    } catch {
+      setError("Invalid PIN. Ask the barangay admin.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="flex flex-col items-center gap-6 text-center w-full max-w-sm">
+      <div className="w-16 h-16 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center">
+        <Lock className="w-8 h-8 text-green-400" />
+      </div>
+      <div>
+        <h1 className="text-3xl font-black text-white tracking-tight mb-2">Staff Sign-in</h1>
+        <p className="text-green-300 text-sm">Enter the kiosk PIN to start verifying reward pickups.</p>
+      </div>
+      <input
+        type="password"
+        inputMode="numeric"
+        value={pin}
+        onChange={(e) => { setPin(e.target.value); setError(""); }}
+        onKeyDown={(e) => e.key === "Enter" && submit()}
+        placeholder="PIN"
+        aria-label="Kiosk PIN"
+        className="w-full px-4 py-4 rounded-2xl border border-white/15 bg-white/5 text-center font-mono font-black text-2xl tracking-[0.4em] text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-green-400/40"
+      />
+      {error && <p className="text-red-300 text-sm font-semibold">{error}</p>}
+      <button
+        type="button"
+        disabled={!pin || busy}
+        onClick={submit}
+        className="w-full py-4 rounded-2xl bg-green-500 text-white font-black text-lg hover:bg-green-400 transition-all disabled:opacity-50"
+      >
+        {busy ? "Checking..." : "Unlock"}
+      </button>
+    </div>
+  );
 }
 
 function IdleTerminal({
@@ -136,8 +200,11 @@ export default function App() {
   const [code, setCode] = useState("");
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState<ClaimResult | null>(null);
+  const [signedIn, setSignedIn] = useState<boolean>(isKioskSignedIn());
 
-  const onVerify = () => verifyCode(code, setChecking, setResult);
+  const onVerify = async () => {
+    await verifyCode(code, setChecking, setResult, () => setSignedIn(false));
+  };
   const onReset = () => {
     setCode("");
     setResult(null);
@@ -208,7 +275,7 @@ export default function App() {
         {/* Content area */}
         <div className="absolute top-14 left-0 right-0 bottom-0 flex items-center justify-center overflow-hidden px-5 pb-3">
           <div className="w-full h-full flex items-center justify-center overflow-auto">
-            {result ? <ResultTerminal result={result} onReset={onReset} /> : (
+            {!signedIn ? <PinGate onUnlocked={() => setSignedIn(true)} /> : result ? <ResultTerminal result={result} onReset={onReset} /> : (
               <IdleTerminal code={code} setCode={setCode} checking={checking} onVerify={onVerify} />
             )}
           </div>
