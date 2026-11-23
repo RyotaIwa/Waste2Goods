@@ -17,6 +17,15 @@ function googleConfigured() {
   return Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
 }
 
+// The local demo IdP mints a login for whatever email it is handed, and OAuth logins
+// link to existing accounts by email — so it must never be reachable on a real
+// deployment. Only outside production, and only when real Google isn't configured
+// (or USE_DEMO_OAUTH=true is set explicitly for a local classroom demo).
+function demoOAuthAllowed() {
+  if (process.env.NODE_ENV === 'production') return false;
+  return !googleConfigured() || process.env.USE_DEMO_OAUTH === 'true';
+}
+
 function callbackUrl(req) {
   return process.env.GOOGLE_CALLBACK_URL
     || `${req.protocol}://${req.get('host')}/api/auth/google/callback`;
@@ -38,7 +47,7 @@ async function loadState(state) {
 
 export function googleOAuthInfo() {
   return {
-    provider: googleConfigured() ? 'accounts.google.com' : 'local-demo-idp (Google-compatible Authorization Code)',
+    provider: googleConfigured() ? 'accounts.google.com' : (demoOAuthAllowed() ? 'local-demo-idp (Google-compatible Authorization Code)' : 'not configured'),
     configured: googleConfigured(),
     authorize: 'GET /api/auth/google',
     callback: 'GET /api/auth/google/callback',
@@ -65,6 +74,7 @@ async function resolveGoogleProfile(code, req) {
   if (googleConfigured() && code && !isDemoCode) {
     return exchangeGoogleCode(String(code), callbackUrl(req));
   }
+  if (!demoOAuthAllowed()) return null;
   const raw = await redisGet(`${CODE_PREFIX}${code}`);
   if (!raw) return null;
   await redisDel(`${CODE_PREFIX}${code}`);
@@ -86,23 +96,27 @@ export function attachGoogleOAuth(app) {
     returnTo = sanitizeRedirectUrl(returnTo, '/security-dashboard');
     await saveState(state, { returnTo, createdAt: Date.now() });
 
-    if (googleConfigured() && process.env.USE_DEMO_OAUTH !== 'true') {
-      const params = new URLSearchParams({
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        redirect_uri: callbackUrl(req),
-        response_type: 'code',
-        scope: 'openid profile email',
-        state,
-        access_type: 'offline',
-        prompt: 'select_account',
-      });
-      return safeRedirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302);
+    if (demoOAuthAllowed()) {
+      return safeRedirect(res, `/api/auth/google/demo?state=${encodeURIComponent(state)}`, 302);
     }
-
-    return safeRedirect(res, `/api/auth/google/demo?state=${encodeURIComponent(state)}`, 302);
+    if (!googleConfigured()) {
+      const params = new URLSearchParams({ oauth_error: 'google_not_configured' });
+      return safeRedirect(res, `${requestOrigin(req)}/?${params.toString()}`, 302);
+    }
+    const params = new URLSearchParams({
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      redirect_uri: callbackUrl(req),
+      response_type: 'code',
+      scope: 'openid profile email',
+      state,
+      access_type: 'offline',
+      prompt: 'select_account',
+    });
+    return safeRedirect(res, `https://accounts.google.com/o/oauth2/v2/auth?${params}`, 302);
   });
 
-  app.get('/api/auth/google/demo', (_req, res) => {
+  app.get('/api/auth/google/demo', (_req, res, next) => {
+    if (!demoOAuthAllowed()) return next();
     res.type('html').send(`<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Sign in – Google accounts</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -178,7 +192,8 @@ export function attachGoogleOAuth(app) {
 </body></html>`);
   });
 
-  app.post('/api/auth/google/demo/approve', async (req, res) => {
+  app.post('/api/auth/google/demo/approve', async (req, res, next) => {
+    if (!demoOAuthAllowed()) return next();
     let state = String(req.body?.state || req.query?.state || '').trim();
     if (!state) state = crypto.randomBytes(16).toString('hex');
     let saved = await loadState(state);

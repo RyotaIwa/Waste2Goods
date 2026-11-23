@@ -175,6 +175,29 @@ async function ensureUserTaskProgressUniqueKey() {
   }
 }
 
+// Migration 006: per-resident notification read state (see migrations/006_add_notification_reads.sql)
+async function ensureNotificationReadsTable() {
+  try {
+    const [[existsRow]] = await db.query(
+      "SELECT COUNT(*) AS cnt FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notification_reads'"
+    );
+    if (Number(existsRow?.cnt || 0) > 0) return 0;
+    await db.query(`
+      CREATE TABLE notification_reads (
+        userId varchar(50) NOT NULL,
+        notifId varchar(120) NOT NULL,
+        readAt timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (userId, notifId)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `);
+    console.log('🔧 Migration applied: Created table notification_reads');
+    return 1;
+  } catch (err) {
+    console.debug('notification_reads migration skipped:', err.message);
+    return 0;
+  }
+}
+
 async function ensureTasksView() {
   try {
     const [[existsRow]] = await db.query(
@@ -392,6 +415,7 @@ async function applySchemaMigrations() {
     ]);
     totalApplied += await ensureRedeemCodeUniqueKey();
     totalApplied += await ensureUserTaskProgressUniqueKey();
+    totalApplied += await ensureNotificationReadsTable();
     totalApplied += await ensureTasksView();
     totalApplied += await ensureRewardsSeed();
     totalApplied += await ensureRecyclingTasksSeed();

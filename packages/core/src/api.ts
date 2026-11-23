@@ -859,6 +859,15 @@ export const Waste2GoodsAPI = {
     };
   },
 
+  // Mark the logged-in resident's notifications as read: pass ids, or nothing to mark all.
+  async markMyNotificationsRead(ids?: string[]): Promise<{ ok: boolean; marked: number } | null> {
+    const auth = getStoredAuth();
+    const userId = (auth?.user as any)?.id || (auth?.user as any)?.userId;
+    if (!userId) return null;
+    const body = Array.isArray(ids) && ids.length > 0 ? { ids } : { all: true };
+    return fetchApi<{ ok: boolean; marked: number }>(`/users/${userId}/notifications/read`, { method: "POST", body: JSON.stringify(body) });
+  },
+
   // Users
   getUsers: () => fetchApi<User[]>("/users"),
   getUserById: (userId: string) => fetchApi<User>(`/users/${userId}`),

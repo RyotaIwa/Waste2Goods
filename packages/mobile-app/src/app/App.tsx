@@ -771,8 +771,17 @@ type SetState<T> = React.Dispatch<React.SetStateAction<T>>;
 
 function validateRegisterStep1(v: { full: string; email: string; phone?: string; pwd: string; confirm: string }, setError: SetState<string>): boolean {
   setError("");
-  if (!v.full || !v.email || !v.pwd || !v.confirm) {
-    setError("Please fill in all fields: name, email, phone, password, confirm password");
+  if (!v.full.trim() || !v.email.trim() || !v.pwd || !v.confirm) {
+    setError("Please fill in your name, email, password, and confirm password");
+    return false;
+  }
+  // splitFullName() would otherwise store a one-word name as "<name> Lastname".
+  if (v.full.trim().split(/\s+/).length < 2) {
+    setError("Please enter your first and last name");
+    return false;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.email.trim())) {
+    setError("Please enter a valid email address");
     return false;
   }
   if (v.pwd !== v.confirm) {
@@ -954,6 +963,8 @@ type MobileAppRouterProps = Readonly<{
   onToggleLoginServer: () => void;
   onRewardRedeem: () => Promise<void>;
   onRewardClose: () => void;
+  onNotificationOpen: (n: any) => Promise<void>;
+  onMarkAllNotificationsRead: () => Promise<void>;
   redemptions: any[];
   onClaimed: (r: { newBalance: number; pointsAwarded: number; bottles: number }) => void;
   go: (s: MobileScreen) => void;
@@ -1234,32 +1245,30 @@ function ScreenRegister(p: ScreenRegisterProps) {
         )}
         {p.regStep === 2 && (
           <div className="space-y-4">
-            <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 3 of 3 — Security</p>
-            <div className="rounded-2xl bg-blue-50 border border-blue-200 p-4 flex gap-3">
-              <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-700 font-semibold leading-relaxed">Enable Multi-Factor Authentication to protect your account and points balance from unauthorized access.</p>
+            <p className="text-xs font-black text-muted-foreground uppercase tracking-wide mb-1">Step 3 of 3 — Confirm</p>
+            <div className="rounded-2xl bg-white border border-border p-4 space-y-2 text-sm">
+              {[
+                ["Name", p.regFullName],
+                ["Email", p.regEmail],
+                ["Phone", p.regPhone || "—"],
+                ["Address", [p.regStreetAddress, p.regBarangay, p.regCity, p.regProvince].filter(Boolean).join(", ")],
+              ].map(([l, v]) => (
+                <div key={l} className="flex justify-between gap-3">
+                  <span className="text-muted-foreground font-semibold flex-shrink-0">{l}</span>
+                  <span className="font-bold text-foreground text-right break-words min-w-0">{v}</span>
+                </div>
+              ))}
             </div>
             {p.regError && (
               <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-xs font-semibold">
-                <AlertCircle className="w-4 h-4" />
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 <span>{p.regError}</span>
               </div>
             )}
-            <div className="grid grid-cols-4 gap-3 my-4">
-              {[
-                { i: "📱", l: "SMS" }, { i: "🔐", l: "Authenticator" },
-                { i: "📧", l: "Email" }, { i: "🆔", l: "Barangay ID" },
-              ].map((o) => (
-                <label key={o.l} className={`aspect-square rounded-2xl border-2 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all ${o.l === "SMS" ? "border-primary bg-primary/5" : "border-border bg-white"}`}>
-                  <div className="text-2xl">{o.i}</div>
-                  <div className="text-[10px] font-black text-muted-foreground uppercase tracking-wide">{o.l}</div>
-                </label>
-              ))}
-            </div>
-            <button type="button" disabled={p.regLoading} onClick={p.onStep3MFA} className={`w-full py-4 ${BTN_PRIMARY_CLS} disabled:opacity-60`}>
-              {p.regLoading ? "Creating account..." : "Enable MFA & Continue"}
+            <button type="button" disabled={p.regLoading} onClick={p.onStep3Skip} className={`w-full py-4 ${BTN_PRIMARY_CLS} disabled:opacity-60`}>
+              {p.regLoading ? "Creating account..." : "Create Account"}
             </button>
-            <button type="button" disabled={p.regLoading} onClick={p.onStep3Skip} className="w-full text-center text-sm text-muted-foreground font-semibold disabled:opacity-60">Skip for now</button>
+            <button type="button" disabled={p.regLoading} onClick={() => p.setRegStep(1)} className="w-full text-center text-sm text-muted-foreground font-semibold disabled:opacity-60">Back</button>
           </div>
         )}
       </div>
@@ -1887,33 +1896,72 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
   );
 }
 
+function notifTimeLabel(time?: string): string {
+  if (!time) return "";
+  const t = new Date(time).getTime();
+  if (Number.isNaN(t)) return String(time);
+  const diffMin = Math.floor((Date.now() - t) / 60000);
+  if (diffMin < 1) return "Just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  if (diffMin < 24 * 60) return `${Math.floor(diffMin / 60)}h ago`;
+  return `${Math.floor(diffMin / (24 * 60))}d ago`;
+}
+
+function notifIcon(type?: string): string {
+  if (type === "redemption") return "🎁";
+  if (type === "task") return "🎯";
+  if (type === "submission") return "♻️";
+  if (type === "milestone") return "🏆";
+  if (type === "welcome") return "👋";
+  return "🔔";
+}
+
+function notifColor(severity?: string): string {
+  if (severity === "success") return "bg-green-50 border-green-200";
+  if (severity === "danger") return "bg-red-50 border-red-200";
+  if (severity === "warning") return "bg-amber-50 border-amber-200";
+  return "bg-blue-50 border-blue-200";
+}
+
 function ScreenNotifications(p: MobileAppRouterProps) {
-  const items = p.notifItems.length > 0 ? p.notifItems : [
-    { title: "+23 Points Earned", desc: "You recycled 3 bottles at Kiosk 01", time: "2h ago", i: "🎁", c: "bg-green-50 border-green-200", unread: true },
-    { title: "New Weekly Task", desc: "Submit 1kg to unlock bonus 50 points", time: "8h ago", i: "📋", c: "bg-blue-50 border-blue-200", unread: true },
-    { title: "Seasonal Reward: Christmas Grocery", desc: "Now available in the catalog!", time: "1d ago", i: "🎄", c: "bg-red-50 border-red-200", unread: false },
-    { title: "Welcome to Waste2Goods!", desc: "+50 bonus points for completing onboarding", time: "3d ago", i: "🎉", c: "bg-amber-50 border-amber-200", unread: false },
-  ];
+  const items = p.notifItems;
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
-      <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
-        <h2 className="text-xl font-black text-foreground">Notifications</h2>
-        <p className="text-xs font-bold text-muted-foreground">{p.notifUnread || 0} unread</p>
+      <div className="sticky top-0 z-10 px-5 py-3 flex items-center justify-between gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
+        <div className="min-w-0">
+          <h2 className="text-xl font-black text-foreground">Notifications</h2>
+          <p className="text-xs font-bold text-muted-foreground">{p.notifUnread || 0} unread</p>
+        </div>
+        {p.notifUnread > 0 && (
+          <button type="button" onClick={p.onMarkAllNotificationsRead} className="flex-shrink-0 px-3 py-2 rounded-xl text-xs font-black text-primary bg-primary/10 hover:bg-primary/20 transition-colors whitespace-nowrap">
+            Mark all read
+          </button>
+        )}
       </div>
       <div className="p-5 space-y-3 overflow-y-auto flex-1 pb-32">
-        {items.map((n: any) => (
-          <div key={String(n.id ?? n.title)} className={`rounded-2xl p-4 flex items-start gap-4 border ${n.c}`}>
-            <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl flex-shrink-0 border border-white shadow-sm">{n.i}</div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-black text-foreground">{n.title}</p>
-                {n.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1.5" />}
+        {items.length === 0 && <p className="text-sm text-muted-foreground text-center py-10">No notifications yet.</p>}
+        {items.map((n: any) => {
+          const unread = n.read === false;
+          return (
+            <button
+              type="button"
+              key={String(n.id ?? n.title)}
+              onClick={() => p.onNotificationOpen(n)}
+              className={`w-full text-left rounded-2xl p-4 flex items-start gap-4 border transition-all active:scale-[0.99] ${notifColor(n.severity)} ${unread ? "ring-1 ring-primary/30" : "opacity-80"}`}
+            >
+              <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center text-xl flex-shrink-0 border border-white shadow-sm">{notifIcon(n.type)}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2">
+                  <p className={`text-sm text-foreground ${unread ? "font-black" : "font-bold"}`}>{n.title}</p>
+                  {unread && <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0 mt-1.5" aria-label="Unread" />}
+                </div>
+                {n.message && <p className="text-xs text-foreground/80 mt-0.5 break-words">{n.message}</p>}
+                <p className="text-[10px] text-muted-foreground mt-1.5 font-semibold">{notifTimeLabel(n.time)}</p>
               </div>
-              <p className="text-xs text-foreground/80 mt-0.5">{n.desc}</p>
-              <p className="text-[10px] text-muted-foreground mt-1.5 font-semibold">{n.time}</p>
-            </div>
-          </div>
-        ))}
+              <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-1" />
+            </button>
+          );
+        })}
       </div>
       <MobileBottomNav screen={p.screen} go={p.go} />
     </div>
@@ -2485,7 +2533,12 @@ export default function App() {
         const oauthError = params.get("oauth_error");
         if (oauthError) {
           window.history.replaceState({}, document.title, window.location.pathname);
-          setLoginError(`Sign-in failed: ${oauthError}`);
+          const friendly: Record<string, string> = {
+            github_not_configured: "GitHub sign-in isn't set up on this server yet. Please sign in with email or Google.",
+            google_not_configured: "Google sign-in isn't set up on this server yet. Please sign in with email or GitHub.",
+            access_denied: "Sign-in was cancelled.",
+          };
+          setLoginError(friendly[oauthError] || `Sign-in failed: ${oauthError}`);
           if (!cancelled) setScreen("login");
           return;
         }
@@ -2950,6 +3003,26 @@ export default function App() {
 
   const onRewardClose = () => setSelectedReward(null);
 
+  // Tapping a notification marks it read (server-side, so the badge stays cleared after a
+  // refetch) and then opens the screen it's about. The POST is awaited before navigating
+  // because the new screen re-fetches notifications and would otherwise race it.
+  const onNotificationOpen = async (n: any) => {
+    if (n?.read === false && n.id) {
+      setNotifItems(prev => prev.map(x => (x.id === n.id ? { ...x, read: true } : x)));
+      setNotifUnread(c => Math.max(0, c - 1));
+      try { await Waste2GoodsAPI.markMyNotificationsRead?.([n.id]); } catch { /* badge already cleared locally */ }
+    }
+    if (n?.type === "redemption") go("redeem-history");
+    else if (n?.type === "task") go("tasks");
+    else if (n?.type === "submission") go("history");
+  };
+
+  const onMarkAllNotificationsRead = async () => {
+    setNotifItems(prev => prev.map(x => ({ ...x, read: true })));
+    setNotifUnread(0);
+    try { await Waste2GoodsAPI.markMyNotificationsRead?.(); } catch { /* badge already cleared locally */ }
+  };
+
   const onClaimed = (r: { newBalance: number; pointsAwarded: number; bottles: number }) => {
     patchAuthBalance(r.newBalance);
     setProfileUser((prev: any) => ({
@@ -3055,6 +3128,8 @@ export default function App() {
         onToggleLoginServer={onToggleLoginServer}
         onRewardRedeem={onRewardRedeem}
         onRewardClose={onRewardClose}
+        onNotificationOpen={onNotificationOpen}
+        onMarkAllNotificationsRead={onMarkAllNotificationsRead}
         redemptions={redemptions}
         onClaimed={onClaimed}
         go={go}

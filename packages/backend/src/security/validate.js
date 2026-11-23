@@ -134,6 +134,12 @@ export const RedemptionClaimSchema = z.object({
   code: z.string().trim().min(1).max(16),
 });
 
+// Either specific notification ids, or all: true to mark everything currently shown as read.
+export const NotificationReadSchema = z.object({
+  ids: z.array(z.string().trim().min(1).max(120)).max(100).optional(),
+  all: z.boolean().optional(),
+});
+
 export const KioskSessionSchema = z.object({
   userId:   z.string().trim().min(2).max(50),
   userName: z.string().trim().max(200).optional(),

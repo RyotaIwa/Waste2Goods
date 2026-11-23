@@ -602,6 +602,15 @@ CREATE TABLE IF NOT EXISTS `machine_deposits` (
   CONSTRAINT `machine_deposits_ibfk_1` FOREIGN KEY (`kioskId`) REFERENCES `kiosks` (`kioskId`),
   CONSTRAINT `machine_deposits_ibfk_2` FOREIGN KEY (`claimedBy`) REFERENCES `users` (`userId`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- Migration 006: which resident notifications have been opened (unread badge).
+-- Redemption notification ids include the status, so a status change re-surfaces as unread.
+CREATE TABLE IF NOT EXISTS `notification_reads` (
+  `userId` varchar(50) NOT NULL,
+  `notifId` varchar(120) NOT NULL,
+  `readAt` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`userId`, `notifId`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

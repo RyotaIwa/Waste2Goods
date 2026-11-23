@@ -607,6 +607,15 @@ export const Waste2GoodsAPI = {
     };
   },
 
+  // Mark the logged-in resident's notifications as read: pass ids, or nothing to mark all.
+  async markMyNotificationsRead(ids) {
+    const auth = getStoredAuth();
+    const userId = auth?.user?.id || auth?.user?.userId;
+    if (!userId) return null;
+    const body = Array.isArray(ids) && ids.length > 0 ? { ids } : { all: true };
+    return fetchApi(`/users/${userId}/notifications/read`, { method: "POST", body: JSON.stringify(body) });
+  },
+
   // Users
   getUsers: () => fetchApi("/users"),
   getUserById: (userId) => fetchApi(`/users/${userId}`),

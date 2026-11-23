@@ -24,7 +24,7 @@ import {
   validateBody, RegisterSchema, LoginSchema, TransactionSchema, RedeemSchema,
   RewardCRUDSchema, RewardUpdateSchema, AdminCreateSchema, UserCreateSchema,
   UserUpdateSchema, PointsAdjustSchema, RedemptionStatusSchema, RedemptionClaimSchema,
-  TaskCRUDSchema, TaskUpdateSchema,
+  TaskCRUDSchema, TaskUpdateSchema, NotificationReadSchema,
   KioskSessionSchema, KioskPingSchema,
 } from './security/validate.js';
 import { gatewayLogger, apiNotFound, errorHandler } from './security/gateway.js';
@@ -277,6 +277,7 @@ app.get('/', async (req, res) => {
       'GET /api/users',
       'GET /api/users/:id',
       'GET /api/users/:id/notifications',
+      'POST /api/users/:id/notifications/read',
       'POST /api/users (admin)',
       'PUT /api/users/:id (admin)',
       'PUT /api/users/:id/points (admin)',
@@ -812,7 +813,8 @@ function buildMyRedeemNotif(rd) {
   const { title, severity } = redemptionTitleAndSeverity(status);
   const unreadStatuses = ['pending', 'ready', 'approved'];
   return {
-    id: `redeem-${rd.redemptionId}`,
+    // Status is part of the id so a status change (e.g. pending -> approved) is a fresh unread item.
+    id: `redeem-${rd.redemptionId}-${status}`,
     type: 'redemption',
     title,
     message: `${rd.rewardName || 'Reward'} × ${rd.quantity || 1} · ${rd.totalPoints || 0} pts · ${String(status).toUpperCase()}`,
@@ -1812,45 +1814,33 @@ app.get('/api/users/:id/redemptions', authenticate, async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
-  const targetId = String(req.params.id).toUpperCase();
+async function loadReadNotifIds(userId) {
+  try {
+    const [rows] = await db.query('SELECT notifId FROM notification_reads WHERE userId = ?', [userId]);
+    return new Set(rows.map(r => r.notifId));
+  } catch {
+    return new Set();
+  }
+}
+
+function canAccessUserNotifications(req, targetId) {
   const requesterRole = req.user?.role || 'resident';
   const requesterId = req.user?.userId || null;
-  if (requesterRole !== 'admin' && requesterId !== targetId) {
+  return requesterRole === 'admin' || requesterId === targetId;
+}
+
+app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
+  const targetId = String(req.params.id).toUpperCase();
+  if (!canAccessUserNotifications(req, targetId)) {
     return res.status(403).json({ error: 'Forbidden — you may only view your own notifications' });
   }
   const userId = targetId;
-  const notifications = [];
-  const limit = 25;
   try {
-    const [txList] = await db.query(
-      "SELECT t.transactionId, t.quantity, t.pointsEarned, t.kioskId, t.timestamp FROM recycling_transactions t WHERE t.userId = ? ORDER BY t.timestamp DESC LIMIT ?",
-      [userId, limit]
-    );
-    for (const t of txList) notifications.push(buildTxSubmissionNotif(t));
-
-    const [myRedeems] = await db.query(
-      "SELECT rr.redemptionId, rr.rewardId, rr.quantity, rr.totalPoints, rr.status, rr.redemptionDate, r.rewardName, r.icon FROM reward_redemptions rr LEFT JOIN rewards r ON rr.rewardId = r.rewardId WHERE rr.userId = ? ORDER BY rr.redemptionDate DESC LIMIT ?",
-      [userId, limit]
-    );
-    for (const rd of myRedeems) notifications.push(buildMyRedeemNotif(rd));
-
-    const u = await safeLoadUserWithTier(userId);
-    if (u) {
-      const welcomeNotif = buildUserWelcomeNotif(u);
-      if (welcomeNotif) notifications.push(welcomeNotif);
-      for (const mn of buildUserMilestoneNotifs(u)) notifications.push(mn);
+    const notifications = await buildUserNotifications(userId);
+    const readIds = await loadReadNotifIds(userId);
+    for (const n of notifications) {
+      if (n.read === false && readIds.has(n.id)) n.read = true;
     }
-
-    try {
-      const [tasks] = await db.query(
-        "SELECT taskId, taskName, description, pointsReward, status, startDate, endDate FROM tasks WHERE (status = 'active' OR status = '1' OR status = 1) ORDER BY startDate DESC LIMIT ?",
-        [limit]
-      );
-      for (const tk of tasks) notifications.push(buildTaskNotif(tk));
-    } catch { /* ignore tasks table if not present */ }
-
-    sortNotificationsByTime(notifications);
     const unreadCount = notifications.filter(n => n.read === false).length;
     res.json({ forUser: userId, count: notifications.length, unread: unreadCount, items: notifications.slice(0, 50) });
   } catch (err) {
@@ -1858,6 +1848,61 @@ app.get('/api/users/:id/notifications', authenticate, async (req, res) => {
     res.json({ forUser: userId, count: 0, unread: 0, items: [] });
   }
 });
+
+// Mark resident notifications as read: { ids: [...] } or { all: true }.
+app.post('/api/users/:id/notifications/read', authenticate, writeLimiter, validateBody(NotificationReadSchema), async (req, res) => {
+  const targetId = String(req.params.id).toUpperCase();
+  if (!canAccessUserNotifications(req, targetId)) {
+    return res.status(403).json({ error: 'Forbidden — you may only update your own notifications' });
+  }
+  try {
+    let ids = req.body.ids || [];
+    if (req.body.all) {
+      const notifications = await buildUserNotifications(targetId);
+      ids = notifications.filter(n => n.read === false).map(n => n.id);
+    }
+    if (ids.length > 0) {
+      const values = ids.map(id => [targetId, id]);
+      await db.query('INSERT IGNORE INTO notification_reads (userId, notifId) VALUES ?', [values]);
+    }
+    res.json({ ok: true, marked: ids.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function buildUserNotifications(userId) {
+  const notifications = [];
+  const limit = 25;
+  const [txList] = await db.query(
+    "SELECT t.transactionId, t.quantity, t.pointsEarned, t.kioskId, t.timestamp FROM recycling_transactions t WHERE t.userId = ? ORDER BY t.timestamp DESC LIMIT ?",
+    [userId, limit]
+  );
+  for (const t of txList) notifications.push(buildTxSubmissionNotif(t));
+
+  const [myRedeems] = await db.query(
+    "SELECT rr.redemptionId, rr.rewardId, rr.quantity, rr.totalPoints, rr.status, rr.redemptionDate, r.rewardName, r.icon FROM reward_redemptions rr LEFT JOIN rewards r ON rr.rewardId = r.rewardId WHERE rr.userId = ? ORDER BY rr.redemptionDate DESC LIMIT ?",
+    [userId, limit]
+  );
+  for (const rd of myRedeems) notifications.push(buildMyRedeemNotif(rd));
+
+  const u = await safeLoadUserWithTier(userId);
+  if (u) {
+    const welcomeNotif = buildUserWelcomeNotif(u);
+    if (welcomeNotif) notifications.push(welcomeNotif);
+    for (const mn of buildUserMilestoneNotifs(u)) notifications.push(mn);
+  }
+
+  try {
+    const [tasks] = await db.query(
+      "SELECT taskId, taskName, description, pointsReward, status, startDate, endDate FROM tasks WHERE (status = 'active' OR status = '1' OR status = 1) ORDER BY startDate DESC LIMIT ?",
+      [limit]
+    );
+    for (const tk of tasks) notifications.push(buildTaskNotif(tk));
+  } catch { /* ignore tasks table if not present */ }
+
+  return sortNotificationsByTime(notifications);
+}
 
 // ─────────────────────────────────────────────────────────
 // KIOSK OPS — Admin actions (Calibrate / View Logs / Restart)
