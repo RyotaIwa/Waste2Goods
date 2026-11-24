@@ -968,26 +968,20 @@ export const Waste2GoodsAPI = {
     authedJson<any>("PUT", `/redemptions/${encodeURIComponent(redemptionId)}/status`, { status, adminId }, "Could not update this redemption"),
 
   // Admin Management (only usable by authenticated admins)
-  fetchAdminAdmins: () => fetchApi<any[]>("/admin/admins"),
+  fetchAdminAdmins: () => fetchApi<any[]>("/admin/admins", { cache: "no-store" }),
   createAdmin: (data: { firstName: string; lastName: string; email: string; password: string; barangayId?: number; roleId?: number }) =>
     fetchApi<any>("/admin/admins", {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  // These use authedJson so a failed request THROWS (403/404/500 shows the real
+  // error in the admin panel) instead of fetchApi's silent null that looked like success.
   deleteAdmin: (adminId: string) =>
-    fetchApi<any>(`/admin/admins/${adminId}`, {
-      method: "DELETE",
-    }),
+    authedJson<any>("DELETE", `/admin/admins/${encodeURIComponent(adminId)}`, undefined, "Could not archive this admin"),
   updateAdminStatus: (adminId: string, status: "active" | "archived" = "archived") =>
-    fetchApi<any>(`/admin/admins/${adminId}/status`, {
-      method: "PUT",
-      body: JSON.stringify({ status }),
-    }),
+    authedJson<any>("PUT", `/admin/admins/${encodeURIComponent(adminId)}/status`, { status }, "Could not update this admin"),
   archiveAdmin: (adminId: string, status: "active" | "archived" = "archived") =>
-    fetchApi<any>(`/admin/admins/${adminId}/status`, {
-      method: "PUT",
-      body: JSON.stringify({ status }),
-    }),
+    authedJson<any>("PUT", `/admin/admins/${encodeURIComponent(adminId)}/status`, { status }, "Could not update this admin"),
 
   // Redeem
   redeemReward: (data: { userId: string; rewardId: number | string; quantity?: number }) =>
