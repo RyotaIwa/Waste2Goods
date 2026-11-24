@@ -424,6 +424,7 @@ function mergeFreshResidentData(authUser, r, userId) {
     pointsBalance: r.pointsBalance,
     submissions,
     totalSubmissions: submissions,
+    totalBottles: Number(r.totalBottles ?? authUser.totalBottles ?? 0),
     redeemed,
     createdAt: r.createdAt,
     joined,

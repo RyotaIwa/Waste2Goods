@@ -2137,6 +2137,9 @@ function ScreenHistory(p: MobileAppRouterProps) {
     key: d.id,
   }));
   const pointsEarned = drops.reduce((a, d) => a + d.pts, 0);
+  // Profile total can be missing/stale; never show less than the drop-offs listed below.
+  const listedBottles = drops.reduce((a, d) => a + d.bottles, 0);
+  const totalBottles = Math.max(Number(p.currentUser.totalBottles || 0), listedBottles);
   return (
     <div className="min-h-[100dvh] flex flex-col max-w-3xl w-full mx-auto">
       <div className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3 bg-background border-b border-border" style={{ paddingTop: "calc(0.75rem + var(--sat))" }}>
@@ -2146,7 +2149,7 @@ function ScreenHistory(p: MobileAppRouterProps) {
       <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-20">
         <div className="grid grid-cols-3 gap-2 text-center">
           {[
-            { l: "Total bottles", v: `${Number(p.currentUser.totalBottles || 0)}`, c: "from-primary to-emerald-600" },
+            { l: "Total bottles", v: `${totalBottles}`, c: "from-primary to-emerald-600" },
             { l: "Submissions", v: `${Number(p.currentUser.submissions || 0)}`, c: "from-blue-500 to-cyan-600" },
             { l: "Recent pts", v: `+${pointsEarned}`, c: "from-amber-500 to-orange-600" },
           ].map(s => (
