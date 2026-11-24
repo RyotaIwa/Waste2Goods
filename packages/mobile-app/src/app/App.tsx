@@ -430,8 +430,14 @@ type MobileUserShape = {
   id: string; userId: string; name: string; initials: string; email: string; phone: string;
   barangay: string; barangayName: string; province: string; city: string; streetAddress: string;
   points: number; submissions: number; redeemed: number; joined: string; createdAt: any;
-  firstName: string; lastName: string; totalBottles: number;
+  firstName: string; lastName: string; totalBottles: number; level: number;
 };
+
+// One level every 500 points (same formula the leaderboard uses).
+const POINTS_PER_LEVEL = 500;
+function levelFromPoints(points: unknown): number {
+  return Math.floor(Math.max(0, Number(points) || 0) / POINTS_PER_LEVEL) + 1;
+}
 
 function initialsFromName(name: string, fallback: string) {
   return (name || fallback)
@@ -472,13 +478,14 @@ function buildCurrentUser(profileUser: any): MobileUserShape {
       firstName: (userObj as any).firstName || "",
       lastName: (userObj as any).lastName || "",
       totalBottles: Number((userObj as any).totalBottles || 0),
+      level: levelFromPoints(points),
     };
   }
   return {
     id: "", userId: "", name: "", initials: "", email: "", phone: "",
     barangay: "Cabantian", barangayName: "Cabantian", province: "Davao del Sur", city: "Davao City",
     streetAddress: "", points: 0, submissions: 0, redeemed: 0, joined: "", createdAt: null,
-    firstName: "", lastName: "", totalBottles: 0,
+    firstName: "", lastName: "", totalBottles: 0, level: 1,
   };
 }
 
@@ -1550,7 +1557,7 @@ function ScreenHome(p: MobileAppRouterProps) {
                       <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
                       {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {Math.floor(Number(u.points || 0) / 500) + 1}</p>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {levelFromPoints(u.points)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
@@ -1817,7 +1824,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-green-200">Your Current Standing</p>
               <p className="text-sm font-black text-white">{myUserInLeaderboard.displayName} (You)</p>
-              <p className="text-[11px] text-green-200">{myUserInLeaderboard.barangay || "Cabantian"} · Level {Math.floor(Number(myUserInLeaderboard.points || 0) / 500) + 1}</p>
+              <p className="text-[11px] text-green-200">{myUserInLeaderboard.barangay || "Cabantian"} · Level {levelFromPoints(myUserInLeaderboard.points)}</p>
             </div>
           </div>
           <div className="text-right">
@@ -1879,7 +1886,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
                       <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
                       {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {Math.floor(Number(u.points || 0) / 500) + 1}</p>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {levelFromPoints(u.points)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
@@ -1992,7 +1999,7 @@ function ScreenProfile(p: MobileAppRouterProps) {
           </div>
           <div className="flex-1 pb-1 min-w-0">
             <p className="text-lg font-black text-white truncate">{p.currentUser.name || "Guest User"}</p>
-            <p className="text-xs text-green-200 font-semibold mt-0.5">Level {p.currentUser.level || 1} Recycler · {p.profileRank}</p>
+            <p className="text-xs text-green-200 font-semibold mt-0.5">Level {p.currentUser.level} Recycler · {p.profileRank}</p>
             <div className="flex items-center gap-2 mt-1.5"><span className="text-[10px] font-bold bg-white/20 px-2.5 py-1 rounded-full text-green-100">{p.profileSinceLabel}</span></div>
           </div>
         </div>
