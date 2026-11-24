@@ -3048,6 +3048,7 @@ export default function App() {
       points: r.newBalance,
       pointsBalance: r.newBalance,
       submissions: Number(currentUser.submissions || 0) + 1,
+      totalBottles: Number(currentUser.totalBottles || 0) + Number(r.bottles || 0),
     }));
   };
 

@@ -352,6 +352,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
     user.points = 0;
     user.submissions = 0;
     user.totalSubmissions = 0;
+    user.totalBottles = 0;
     user.redeemed = 0;
 
     const access = signAccessToken({ userId, role: 'resident', name: user.name, barangayId });
@@ -695,6 +696,9 @@ async function tryResidentDbLogin(normalizedEmail, password) {
       return { error: { status: 401, msg: 'Invalid credentials' } };
     }
     const userWithCompat = buildResidentUserFromDb(user);
+    // Real bottle count (login payload used to omit it, so the app showed 0 until a refetch)
+    const [[bRow]] = await db.query('SELECT COALESCE(SUM(quantity),0) AS totalBottles FROM recycling_transactions WHERE userId = ?', [user.userId]);
+    userWithCompat.totalBottles = Number(bRow?.totalBottles || 0);
     const access = signAccessToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
     const refresh = await issueRefreshToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
     console.log(`🔐 Resident logged in from DB: ${sanitizeLog(userWithCompat.name)} (${sanitizeLog(user.userId)})`);
@@ -975,6 +979,7 @@ function buildUserCompatRow(user, txByUser, rdByUser) {
     points: user.pointsBalance,
     submissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
     totalSubmissions: submissionsLive > 0 ? submissionsLive : Number(user.totalSubmissions || 0),
+    totalBottles: Number(tx?.totalBottles || 0),
     redeemed: redeemedLive,
     joined: formatDateShort(user.createdAt)
   };
