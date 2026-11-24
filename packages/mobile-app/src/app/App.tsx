@@ -511,6 +511,20 @@ function buildCurrentUser(profileUser: any): MobileUserShape {
   };
 }
 
+// ── Android APK (Capacitor) OAuth ──
+// Google refuses to sign in inside a WebView, so the APK runs OAuth in the external browser.
+// The backend then sends the finished login back through this deep link (see AndroidManifest).
+const APP_DEEP_LINK = "site.waste2goods.app://auth";
+const isNativeApp = (): boolean => {
+  try { return !!(window as any).Capacitor?.isNativePlatform?.(); } catch { return false; }
+};
+
+function startOAuth(provider: "google" | "github") {
+  // Native app → return through the deep link; browser/PWA → return to this origin as before.
+  const returnTo = isNativeApp() ? APP_DEEP_LINK : `${window.location.origin}/`;
+  window.location.href = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(returnTo)}`;
+}
+
 function currentUserIdForLeaderboard() {
   try {
     const auth = Waste2GoodsAPI.getAuthState()?.user || null;
@@ -521,12 +535,14 @@ function currentUserIdForLeaderboard() {
   }
 }
 
-function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: MobileUserShape) {
+function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: MobileUserShape, period: "weekly" | "monthly" | "all" = "all") {
   const myId = currentUserIdForLeaderboard() || String(currentUser.id || currentUser.userId || "").toUpperCase();
   const myEmail = String(currentUser.email || "").toLowerCase();
   const myName = currentUser.name || "You";
 
-  let list = (liveLeaderboard && liveLeaderboard.length > 0)
+  // A real (even empty) array means the server answered — an empty weekly/monthly board is
+  // genuine ("nobody recycled yet"), so only a failed fetch (null) falls back to the demo list.
+  let list = Array.isArray(liveLeaderboard)
     ? liveLeaderboard.map((u: any, i: number) => {
       const firstName = u.firstName || "";
       const lastName = u.lastName || "";
@@ -581,8 +597,9 @@ function buildMergedLeaderboard(liveLeaderboard: any[] | null, currentUser: Mobi
       _initials: userInitials,
       avatar: userInitials,
       barangay: currentUser.barangay || "Cabantian",
-      points: Number(currentUser.points || 0),
-      submissions: Number(currentUser.submissions || 0),
+      // Not in the weekly/monthly top list → they earned nothing (or too little) in that window.
+      points: period === "all" ? Number(currentUser.points || 0) : 0,
+      submissions: period === "all" ? Number(currentUser.submissions || 0) : 0,
       isMe: true,
       _isYou: true,
     });
@@ -1217,8 +1234,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
               type="button"
               onClick={() => {
                 // Direct backend Google OAuth — works without Appwrite configuration
-                const redirectUri = `${window.location.origin}/`;
-                window.location.href = `${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(redirectUri)}`;
+                startOAuth("google");
               }}
               className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
@@ -1234,8 +1250,7 @@ function ScreenRegister(p: ScreenRegisterProps) {
             <button
               type="button"
               onClick={() => {
-                const redirectUri = `${window.location.origin}/`;
-                window.location.href = `${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(redirectUri)}`;
+                startOAuth("github");
               }}
               className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
             >
@@ -1365,8 +1380,7 @@ function ScreenLogin(p: ScreenLoginProps) {
             type="button"
             onClick={() => {
               // Direct backend Google OAuth — works without Appwrite configuration
-              const redirectUri = `${window.location.origin}/`;
-              window.location.href = `${getApiBaseUrl()}/auth/google?return_to=${encodeURIComponent(redirectUri)}`;
+              startOAuth("google");
             }}
             className="w-full py-3 px-4 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50 active:scale-[0.98] text-slate-800 text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
@@ -1383,8 +1397,7 @@ function ScreenLogin(p: ScreenLoginProps) {
             type="button"
             onClick={() => {
               // Direct backend GitHub OAuth — works without Appwrite configuration
-              const redirectUri = `${window.location.origin}/`;
-              window.location.href = `${getApiBaseUrl()}/auth/github?return_to=${encodeURIComponent(redirectUri)}`;
+              startOAuth("github");
             }}
             className="w-full py-3 px-4 rounded-2xl border border-slate-900 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white text-sm font-bold flex items-center justify-center gap-3 shadow-xs transition-all no-underline"
           >
@@ -2583,6 +2596,62 @@ export default function App() {
     } catch { /* ignore */ }
   }, []);
 
+  // Saves the session from OAuth redirect params (token, refreshToken, userId, ...).
+  // Used by the web redirect (?token=...) and by the APK deep link (site.waste2goods.app://auth?token=...).
+  // Returns true when a token was present.
+  const applyOAuthTokens = (params: URLSearchParams): boolean => {
+    const token = params.get("token") || params.get("accessToken");
+    if (!token) return false;
+    const userId = params.get("userId") || "U-001";
+    const provider = params.get("provider") || "oauth";
+    const name = params.get("name") || (provider === "github" ? "GitHub User" : "Resident");
+    const email = params.get("email") || "";
+    const role = params.get("role") || "resident";
+    const refreshToken = params.get("refreshToken") || "";
+    const userObj = {
+      id: userId,
+      userId,
+      name,
+      email,
+      role,
+      total_points: 0,
+      pointsBalance: 0,
+      barangayName: "Cabantian",
+    };
+    const authState: any = {
+      token,
+      accessToken: token,
+      refreshToken,
+      isAuthenticated: true,
+      user: userObj,
+    };
+    localStorage.setItem("w2g_auth_state", JSON.stringify(authState));
+    setProfileUser({ ...userObj });
+    return true;
+  };
+
+  // ── APK deep link: the external browser returns here after Google/GitHub sign-in ──
+  // `Capacitor.Plugins.App` is injected by the native bridge, so no extra web dependency is needed.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    const appPlugin = (window as any).Capacitor?.Plugins?.App;
+    if (!appPlugin?.addListener) return;
+    const handle = (rawUrl?: string) => {
+      if (!rawUrl || !rawUrl.startsWith(APP_DEEP_LINK)) return;
+      try {
+        const q = rawUrl.includes("?") ? rawUrl.slice(rawUrl.indexOf("?") + 1).split("#")[0] : "";
+        if (applyOAuthTokens(new URLSearchParams(q))) setScreen("home");
+      } catch (e) {
+        console.warn("Deep link handler:", e);
+      }
+    };
+    let listener: any;
+    Promise.resolve(appPlugin.addListener("appUrlOpen", (ev: any) => handle(ev?.url))).then((l: any) => { listener = l; });
+    // Cold start: the app was launched by the deep link itself.
+    Promise.resolve(appPlugin.getLaunchUrl?.()).then((r: any) => handle(r?.url)).catch(() => { /* ignore */ });
+    return () => { try { listener?.remove?.(); } catch { /* ignore */ } };
+  }, []);
+
   // ── OAuth Callback Query Parameter Handler (Native + Appwrite SDK) ──
   useEffect(() => {
     let cancelled = false;
@@ -2606,33 +2675,7 @@ export default function App() {
         }
 
         // 1. Native backend OAuth redirect — tokens come as URL params
-        const token = params.get("token") || params.get("accessToken");
-        if (token) {
-          const userId = params.get("userId") || "U-001";
-          const provider = params.get("provider") || "oauth";
-          const name = params.get("name") || (provider === "github" ? "GitHub User" : "Resident");
-          const email = params.get("email") || "";
-          const role = params.get("role") || "resident";
-          const refreshToken = params.get("refreshToken") || "";
-          const userObj = {
-            id: userId,
-            userId,
-            name,
-            email,
-            role,
-            total_points: 0,
-            pointsBalance: 0,
-            barangayName: "Cabantian",
-          };
-          const authState: any = {
-            token,
-            accessToken: token,
-            refreshToken,
-            isAuthenticated: true,
-            user: userObj,
-          };
-          localStorage.setItem("w2g_auth_state", JSON.stringify(authState));
-          setProfileUser({ ...userObj });
+        if (applyOAuthTokens(params)) {
           window.history.replaceState({}, document.title, window.location.pathname);
           if (!cancelled) setScreen("home");
           return;
@@ -2698,9 +2741,11 @@ export default function App() {
   // Merged leaderboard: prefer live DB rows (with correct user names from MySQL),
   // otherwise fall back to the demo placeholder list. Always returns a non-empty array
   // so the Community Leaderboard panel never appears empty.
+  // Home always shows the all-time board; the Leaderboard screen follows its Weekly/Monthly tab.
+  const leaderPeriod: "weekly" | "monthly" | "all" = screen === "leaderboard" ? leaderTab : "all";
   const mergedLeaderboard = useMemo(
-    () => buildMergedLeaderboard(liveLeaderboard || null, currentUser),
-    [liveLeaderboard, currentUser.id, currentUser.userId, currentUser.barangay],
+    () => buildMergedLeaderboard(liveLeaderboard, currentUser, leaderPeriod),
+    [liveLeaderboard, leaderPeriod, currentUser.id, currentUser.userId, currentUser.barangay],
   );
 
   // When user opens Profile, Settings, or History — re-pull their latest DB row
@@ -2758,16 +2803,17 @@ export default function App() {
     (async () => {
       try {
         if (!Waste2GoodsAPI.fetchLeaderboard) return;
-        const rows = await Waste2GoodsAPI.fetchLeaderboard();
+        const rows = await Waste2GoodsAPI.fetchLeaderboard(leaderPeriod);
         if (cancelled) return;
-        setLiveLeaderboard(Array.isArray(rows) && rows.length > 0 ? rows : null);
+        // null = request failed → demo fallback. An empty array is a real (empty) period.
+        setLiveLeaderboard(Array.isArray(rows) ? rows : null);
       } catch (err) {
         console.warn("Leaderboard fetch failed:", err);
         if (!cancelled) setLiveLeaderboard(null);
       }
     })();
     return () => { cancelled = true; };
-  }, [screen]);
+  }, [screen, leaderPeriod]);
 
   // Poll backend: is this user currently linked to a kiosk?
   // Also tick every second so the "elapsed" label in the badge refreshes in real-time

@@ -1096,7 +1096,9 @@ export const Waste2GoodsAPI = {
   fetchAnalyticsMonthly: () => fetchApi<any[]>("/analytics/monthly"),
   fetchAnalyticsSummary: () => fetchApi<any>("/analytics/summary"),
   fetchRedemptions: () => fetchApi<any[]>("/redemptions"),
-  fetchLeaderboard: () => fetchApi<any[]>("/leaderboard"),
+  // period: "weekly" | "monthly" | "all" (default). Returns null if the request failed.
+  fetchLeaderboard: (period?: "weekly" | "monthly" | "all") =>
+    fetchApi<any[]>(period && period !== "all" ? `/leaderboard?period=${encodeURIComponent(period)}` : "/leaderboard"),
 
   // Kiosk ↔ mobile live session
   connectKioskSession: (data: { userId: string; userName?: string; kioskId?: string }) =>

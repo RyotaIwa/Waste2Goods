@@ -225,6 +225,42 @@ export function safeRedirect(res, targetUrl, statusCode = 302) {
 }
 
 /**
+ * Custom-scheme deep link of the Android APK (Capacitor app, see apk/android AndroidManifest).
+ * Google refuses to sign in inside a WebView, so OAuth runs in the external browser; this
+ * link is how the finished login hops back from that browser into the installed app.
+ * Only this exact base is ever used — the `return_to` value is just compared to it, never
+ * redirected to — so it can't be turned into an open redirect.
+ */
+export const APP_DEEP_LINK = 'site.waste2goods.app://auth';
+
+/** True when `return_to` is exactly the APK deep link (query/fragment ignored). */
+export function isAppDeepLink(value) {
+  if (typeof value !== 'string') return false;
+  return value.trim().split(/[?#]/)[0].replace(/\/+$/, '') === APP_DEEP_LINK;
+}
+
+/**
+ * Sends the browser back into the APK: a 302 to the deep link, plus a small HTML body with
+ * an "Open Waste2Goods" button for browsers that block the automatic custom-scheme redirect.
+ *
+ * @param {import('express').Response} res
+ * @param {Record<string,string>} params - Login result (token, refreshToken, userId, ...)
+ */
+export function redirectToApp(res, params) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) qs.set(k, String(v ?? ''));
+  const target = `${APP_DEEP_LINK}?${qs.toString()}`;
+  res.status(302).set('Location', target).type('html').send(
+    `<!doctype html><html lang="en"><head><meta charset="utf-8"/>` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1"/><title>Waste2Goods</title></head>` +
+    `<body style="font-family:system-ui,sans-serif;text-align:center;padding:48px 24px">` +
+    `<h2>Signed in ✅</h2><p>Tap the button to return to the Waste2Goods app.</p>` +
+    `<p><a href="${escapeHtml(target)}" style="display:inline-block;padding:14px 28px;background:#16a34a;` +
+    `color:#fff;border-radius:14px;font-weight:700;text-decoration:none">Open Waste2Goods</a></p></body></html>`
+  );
+}
+
+/**
  * Sanitizes untrusted user data for logging to prevent Log Injection / Log Forging (SonarQube jssecurity:S5145).
  * Strips carriage returns (\r), newlines (\n), and ASCII/Unicode control characters.
  *
@@ -246,6 +282,9 @@ export default {
   requestOrigin,
   safeRedirect,
   sanitizeLog,
+  APP_DEEP_LINK,
+  isAppDeepLink,
+  redirectToApp,
 };
 
 

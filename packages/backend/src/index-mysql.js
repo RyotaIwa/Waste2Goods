@@ -1379,11 +1379,38 @@ app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'
 
 app.get('/api/leaderboard', authenticate, requirePermission('list', 'leaderboard'), cacheRoute(60), async (req, res) => {
   try {
-    const [rows] = await db.query('SELECT userId, firstName, lastName, email, barangayId, barangayName, pointsBalance, totalSubmissions, tier, phone, createdAt, status FROM users ORDER BY pointsBalance DESC LIMIT 10');
+    // ?period=weekly (this Mon–Sun) | monthly (this calendar month) | all (default).
+    // Weekly/monthly rank by points EARNED in that window (recycling_transactions),
+    // so redeeming rewards never changes them and they reset each week / month.
+    const period = String(req.query.period || 'all').toLowerCase();
+    const periodStart = period === 'weekly'
+      ? 'DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)'
+      : period === 'monthly'
+        ? "DATE_FORMAT(CURDATE(), '%Y-%m-01')"
+        : null;
+    let rows;
+    if (periodStart) {
+      [rows] = await db.query(
+        `SELECT u.userId, u.firstName, u.lastName, u.email, u.barangayId, u.barangayName,
+                p.periodPoints AS pointsBalance, p.periodSubmissions AS totalSubmissions,
+                u.tier, u.phone, u.createdAt, u.status
+           FROM users u
+           JOIN (SELECT userId, SUM(pointsEarned) AS periodPoints, COUNT(*) AS periodSubmissions
+                   FROM recycling_transactions
+                  WHERE timestamp >= ${periodStart}
+                  GROUP BY userId
+                 HAVING SUM(pointsEarned) > 0) p ON p.userId = u.userId
+          ORDER BY p.periodPoints DESC, u.userId ASC
+          LIMIT 10`
+      );
+    } else {
+      [rows] = await db.query('SELECT userId, firstName, lastName, email, barangayId, barangayName, pointsBalance, totalSubmissions, tier, phone, createdAt, status FROM users ORDER BY pointsBalance DESC LIMIT 10');
+    }
     const ltByUser = await loadLifetimeMap();
     const leaderboard = rows.map((u, i) => ({
       ...buildLeaderboardRow(u, i),
       ...progressionFields(ltByUser[String(u.userId)] ?? u.pointsBalance),
+      period: periodStart ? period : 'all',
     }));
     res.json(leaderboard);
   } catch (err) {

@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.js';
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
-import { sanitizeRedirectUrl, safeRedirect, requestOrigin } from './escape-html.js';
+import { sanitizeRedirectUrl, safeRedirect, requestOrigin, APP_DEEP_LINK, isAppDeepLink, redirectToApp } from './escape-html.js';
 
 const STATE_PREFIX = 'google:oauth:state:';
 const CODE_PREFIX = 'google:oauth:code:';
@@ -94,6 +94,8 @@ export function attachGoogleOAuth(app) {
       }
     } catch { /* ignore */ }
     returnTo = sanitizeRedirectUrl(returnTo, '/security-dashboard');
+    // The APK asks to be sent back into the app through its custom-scheme deep link.
+    if (isAppDeepLink(String(req.query.return_to || ''))) returnTo = APP_DEEP_LINK;
     await saveState(state, { returnTo, createdAt: Date.now() });
 
     if (demoOAuthAllowed()) {
@@ -264,6 +266,18 @@ export function attachGoogleOAuth(app) {
       name: userRecord.name,
       barangayId: userRecord.barangayId,
     });
+
+    // APK login: hand the session back to the installed app via its deep link.
+    if (saved?.returnTo === APP_DEEP_LINK) {
+      return redirectToApp(res, {
+        token: access.accessToken,
+        refreshToken: refresh.refreshToken,
+        userId: userRecord.userId,
+        name: userRecord.name || 'Google User',
+        email: userRecord.email || '',
+        provider: 'google',
+      });
+    }
 
     // Determine redirect target
     const returnTo = sanitizeRedirectUrl(saved?.returnTo, '/');
