@@ -34,7 +34,7 @@ const PERMISSION_MATRIX = {
     redemption:    { list: true, read: true, approve: true, status: true },
     transaction:   { list: true, read: true, create: true, delete: false },
     kiosk:         { list: true, read: true, calibrate: true, status: true },
-    admin:         { list: true, read: true, create: false, update: false, delete: false, status: false },
+    admin:         { list: true, read: true, create: true, update: true, delete: true, status: true },
     analytics:     { list: true, read: true },
     leaderboard:   { list: true, read: true },
     notification:  { list: true, read: true, create: true, delete: false },

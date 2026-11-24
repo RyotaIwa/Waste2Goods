@@ -689,7 +689,6 @@ export default function App() {
     { id: "rewards" as AdminSection, icon: <Gift className="w-4 h-4" />, label: "Reward Management" },
     { id: "quests" as AdminSection, icon: <Target className="w-4 h-4" />, label: "Quest Management" },
     { id: "analytics" as AdminSection, icon: <TrendingUp className="w-4 h-4" />, label: "Reports & Analytics" },
-    { id: "monitoring" as AdminSection, icon: <Cpu className="w-4 h-4" />, label: "IoT Kiosk Monitor" },
     { id: "admins" as AdminSection, icon: <Shield className="w-4 h-4" />, label: "Admin Management" },
   ];
 
