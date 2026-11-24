@@ -510,6 +510,8 @@ function mergeFreshResidentData(authUser: AuthUser, resident: any, userId: strin
     joined,
     status: r.status,
     tier: r.tier,
+    lifetimePoints: r.lifetimePoints ?? a.lifetimePoints,
+    level: r.level ?? a.level,
   } as AuthUser;
 }
 

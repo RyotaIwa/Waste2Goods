@@ -430,6 +430,8 @@ function mergeFreshResidentData(authUser, r, userId) {
     joined,
     status: r.status,
     tier: r.tier,
+    lifetimePoints: r.lifetimePoints ?? authUser.lifetimePoints,
+    level: r.level ?? authUser.level,
   };
 }
 

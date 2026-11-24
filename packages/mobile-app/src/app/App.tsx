@@ -430,14 +430,29 @@ type MobileUserShape = {
   id: string; userId: string; name: string; initials: string; email: string; phone: string;
   barangay: string; barangayName: string; province: string; city: string; streetAddress: string;
   points: number; submissions: number; redeemed: number; joined: string; createdAt: any;
-  firstName: string; lastName: string; totalBottles: number; level: number;
+  firstName: string; lastName: string; totalBottles: number;
+  level: number; tier: string; lifetimePoints: number;
 };
 
-// One level every 500 points (same formula the leaderboard uses).
+// Level/tier come from the server (based on LIFETIME points, so redeeming never lowers them).
+// These mirror the backend formulas and are only a fallback when the server value is missing.
 const POINTS_PER_LEVEL = 500;
 function levelFromPoints(points: unknown): number {
   return Math.floor(Math.max(0, Number(points) || 0) / POINTS_PER_LEVEL) + 1;
 }
+function tierFromPoints(points: unknown): string {
+  const p = Number(points) || 0;
+  if (p >= 5000) return "Platinum";
+  if (p >= 2000) return "Gold";
+  if (p >= 500) return "Silver";
+  return "Bronze";
+}
+const TIER_STYLE: Record<string, string> = {
+  Bronze: "bg-orange-200/30 text-orange-100",
+  Silver: "bg-slate-200/40 text-slate-50",
+  Gold: "bg-yellow-300/40 text-yellow-100",
+  Platinum: "bg-cyan-200/40 text-cyan-50",
+};
 
 function initialsFromName(name: string, fallback: string) {
   return (name || fallback)
@@ -478,14 +493,21 @@ function buildCurrentUser(profileUser: any): MobileUserShape {
       firstName: (userObj as any).firstName || "",
       lastName: (userObj as any).lastName || "",
       totalBottles: Number((userObj as any).totalBottles || 0),
-      level: levelFromPoints(points),
+      ...(() => {
+        const lifetime = Number((userObj as any).lifetimePoints ?? points) || 0;
+        return {
+          lifetimePoints: lifetime,
+          level: Number((userObj as any).level) || levelFromPoints(lifetime),
+          tier: String((userObj as any).tier || tierFromPoints(lifetime)),
+        };
+      })(),
     };
   }
   return {
     id: "", userId: "", name: "", initials: "", email: "", phone: "",
     barangay: "Cabantian", barangayName: "Cabantian", province: "Davao del Sur", city: "Davao City",
     streetAddress: "", points: 0, submissions: 0, redeemed: 0, joined: "", createdAt: null,
-    firstName: "", lastName: "", totalBottles: 0, level: 1,
+    firstName: "", lastName: "", totalBottles: 0, level: 1, tier: "Bronze", lifetimePoints: 0,
   };
 }
 
@@ -1557,7 +1579,7 @@ function ScreenHome(p: MobileAppRouterProps) {
                       <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
                       {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {levelFromPoints(u.points)}</p>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {u.level ?? levelFromPoints(u.points)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
@@ -1824,7 +1846,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wider text-green-200">Your Current Standing</p>
               <p className="text-sm font-black text-white">{myUserInLeaderboard.displayName} (You)</p>
-              <p className="text-[11px] text-green-200">{myUserInLeaderboard.barangay || "Cabantian"} · Level {levelFromPoints(myUserInLeaderboard.points)}</p>
+              <p className="text-[11px] text-green-200">{myUserInLeaderboard.barangay || "Cabantian"} · Level {myUserInLeaderboard.level ?? levelFromPoints(myUserInLeaderboard.points)}</p>
             </div>
           </div>
           <div className="text-right">
@@ -1886,7 +1908,7 @@ function ScreenLeaderboard(p: MobileAppRouterProps) {
                       <p className="text-sm font-black text-foreground truncate">{u.displayName}</p>
                       {isYou && <span className="text-[9px] bg-primary text-white font-black px-1.5 py-0.2 rounded-full">YOU</span>}
                     </div>
-                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {levelFromPoints(u.points)}</p>
+                    <p className="text-[10px] text-muted-foreground font-semibold">{u.barangay || "Cabantian"} · Level {u.level ?? levelFromPoints(u.points)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-black text-primary">{Number(u.points || 0).toLocaleString()} pts</p>
@@ -2000,7 +2022,19 @@ function ScreenProfile(p: MobileAppRouterProps) {
           <div className="flex-1 pb-1 min-w-0">
             <p className="text-lg font-black text-white truncate">{p.currentUser.name || "Guest User"}</p>
             <p className="text-xs text-green-200 font-semibold mt-0.5">Level {p.currentUser.level} Recycler · {p.profileRank}</p>
-            <div className="flex items-center gap-2 mt-1.5"><span className="text-[10px] font-bold bg-white/20 px-2.5 py-1 rounded-full text-green-100">{p.profileSinceLabel}</span></div>
+            <div className="flex items-center gap-2 mt-1.5">
+              <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${TIER_STYLE[p.currentUser.tier] || TIER_STYLE.Bronze}`}>{p.currentUser.tier}</span>
+              <span className="text-[10px] font-bold bg-white/20 px-2.5 py-1 rounded-full text-green-100">{p.profileSinceLabel}</span>
+            </div>
+            {(() => {
+              const into = p.currentUser.lifetimePoints % POINTS_PER_LEVEL;
+              return (
+                <div className="mt-2">
+                  <div className="h-1.5 rounded-full bg-white/20 overflow-hidden"><div className="h-full rounded-full bg-white/80" style={{ width: `${Math.round((into / POINTS_PER_LEVEL) * 100)}%` }} /></div>
+                  <p className="text-[10px] text-green-200 font-semibold mt-1">{POINTS_PER_LEVEL - into} pts to Level {p.currentUser.level + 1}</p>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -3059,6 +3093,9 @@ export default function App() {
       pointsBalance: r.newBalance,
       submissions: Number(currentUser.submissions || 0) + 1,
       totalBottles: Number(currentUser.totalBottles || 0) + Number(r.bottles || 0),
+      lifetimePoints: Number(currentUser.lifetimePoints || 0) + Number(r.pointsAwarded || 0),
+      level: levelFromPoints(Number(currentUser.lifetimePoints || 0) + Number(r.pointsAwarded || 0)),
+      tier: tierFromPoints(Number(currentUser.lifetimePoints || 0) + Number(r.pointsAwarded || 0)),
     }));
   };
 

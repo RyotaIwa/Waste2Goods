@@ -353,6 +353,7 @@ app.post('/api/auth/register', authLimiter, authFailureLimiter, validateBody(Reg
     user.submissions = 0;
     user.totalSubmissions = 0;
     user.totalBottles = 0;
+    Object.assign(user, progressionFields(0));
     user.redeemed = 0;
 
     const access = signAccessToken({ userId, role: 'resident', name: user.name, barangayId });
@@ -477,7 +478,11 @@ app.get('/api/users', authenticate, requirePermission('list', 'user'), cacheRout
     const [redCounts] = await db.query('SELECT userId, COUNT(*) as cnt, COALESCE(SUM(quantity),0) as totalQty, COALESCE(SUM(totalPoints),0) as totalPtsUsed FROM reward_redemptions GROUP BY userId');
     const txByUser = Object.fromEntries(txCounts.map(t => [String(t.userId), t]));
     const rdByUser = Object.fromEntries(redCounts.map(r => [String(r.userId), r]));
-    const usersWithCompat = rows.map(user => buildUserCompatRow(user, txByUser, rdByUser));
+    const ltByUser = await loadLifetimeMap();
+    const usersWithCompat = rows.map(user => ({
+      ...buildUserCompatRow(user, txByUser, rdByUser),
+      ...progressionFields(ltByUser[String(user.userId)] ?? user.pointsBalance),
+    }));
     res.json(usersWithCompat);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -497,8 +502,10 @@ app.get('/api/users/:id', authenticate, requireOwnershipOrRole(['admin', 'super_
     const submissionsLive = Number(txRow?.cnt || 0);
     const redeemedLive = Number(rdRow?.totalQty || rdRow?.cnt || 0);
     const barangayLive = user.barangayName || 'Cabantian';
+    const lifetime = (await loadLifetimeMap(user.userId))[String(user.userId)] ?? user.pointsBalance;
     res.json({
       ...user,
+      ...progressionFields(lifetime),
       id: user.userId,
       name: `${user.firstName} ${user.lastName}`,
       barangay: barangayLive,
@@ -699,6 +706,7 @@ async function tryResidentDbLogin(normalizedEmail, password) {
     // Real bottle count (login payload used to omit it, so the app showed 0 until a refetch)
     const [[bRow]] = await db.query('SELECT COALESCE(SUM(quantity),0) AS totalBottles FROM recycling_transactions WHERE userId = ?', [user.userId]);
     userWithCompat.totalBottles = Number(bRow?.totalBottles || 0);
+    Object.assign(userWithCompat, progressionFields((await loadLifetimeMap(user.userId))[String(user.userId)] ?? user.pointsBalance));
     const access = signAccessToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
     const refresh = await issueRefreshToken({ userId: user.userId, role: 'resident', name: userWithCompat.name, barangayId: user.barangayId || null });
     console.log(`🔐 Resident logged in from DB: ${sanitizeLog(userWithCompat.name)} (${sanitizeLog(user.userId)})`);
@@ -836,11 +844,37 @@ function buildMyRedeemNotif(rd) {
   };
 }
 
-function deriveTierFromPoints(ptsBal) {
-  if (ptsBal >= 5000) return 'Platinum';
-  if (ptsBal >= 2000) return 'Gold';
-  if (ptsBal >= 500) return 'Silver';
+// ── Progression (level + tier) ─────────────────────────────────────────────
+// Based on LIFETIME points (everything ever earned), so redeeming rewards never
+// lowers a resident's level/tier. users.total_points was never maintained (always 0)
+// and users.tier was stuck on 'Bronze', so both are derived here instead.
+//   lifetime = current balance + points already spent on approved/ready/claimed redemptions
+// (points are deducted once, when a redemption is approved — see PUT /redemptions/:id/status).
+const POINTS_PER_LEVEL = 500;
+function levelFromLifetime(lifetime) {
+  return Math.floor(Math.max(0, Number(lifetime) || 0) / POINTS_PER_LEVEL) + 1;
+}
+function deriveTierFromPoints(lifetime) {
+  if (lifetime >= 5000) return 'Platinum';  // level 11+
+  if (lifetime >= 2000) return 'Gold';      // level 5+
+  if (lifetime >= 500) return 'Silver';     // level 2+
   return 'Bronze';
+}
+function progressionFields(lifetime) {
+  const lp = Math.max(0, Number(lifetime) || 0);
+  return { lifetimePoints: lp, level: levelFromLifetime(lp), tier: deriveTierFromPoints(lp) };
+}
+// Map of userId -> lifetime points (one user, or everyone when userId is omitted).
+async function loadLifetimeMap(userId = null) {
+  const [rows] = await db.query(
+    `SELECT u.userId, u.pointsBalance + COALESCE(r.spent, 0) AS lifetime
+       FROM users u
+       LEFT JOIN (SELECT userId, SUM(totalPoints) AS spent FROM reward_redemptions
+                  WHERE status IN ('approved','ready','claimed') GROUP BY userId) r ON r.userId = u.userId
+      ${userId ? 'WHERE u.userId = ?' : ''}`,
+    userId ? [userId] : []
+  );
+  return Object.fromEntries(rows.map(x => [String(x.userId), Number(x.lifetime || 0)]));
 }
 
 async function queryUserWithoutTier(userId) {
@@ -866,7 +900,8 @@ async function safeLoadUserWithTier(userId) {
     );
     if (rows?.[0]) {
       const u = rows[0];
-      if (!u.tier) u.tier = deriveTierFromPoints(Number(u.pointsBalance || 0));
+      const lifetime = (await loadLifetimeMap(userId))[String(userId)] ?? Number(u.pointsBalance || 0);
+      Object.assign(u, progressionFields(lifetime));
       return u;
     }
     return null;
@@ -894,7 +929,7 @@ function buildUserWelcomeNotif(u) {
 function buildUserMilestoneNotifs(u) {
   const notifs = [];
   const nSubs = Number(u.totalSubmissions || 0);
-  const pts = Number(u.pointsBalance || 0);
+  const pts = Number(u.lifetimePoints ?? u.pointsBalance ?? 0);
   const createdTime = new Date(u.createdAt || Date.now()).toISOString();
   if (nSubs >= 10) {
     notifs.push({
@@ -1345,7 +1380,11 @@ app.get('/api/redemptions', authenticate, requirePermission('list', 'redemption'
 app.get('/api/leaderboard', authenticate, requirePermission('list', 'leaderboard'), cacheRoute(60), async (req, res) => {
   try {
     const [rows] = await db.query('SELECT userId, firstName, lastName, email, barangayId, barangayName, pointsBalance, totalSubmissions, tier, phone, createdAt, status FROM users ORDER BY pointsBalance DESC LIMIT 10');
-    const leaderboard = rows.map(buildLeaderboardRow);
+    const ltByUser = await loadLifetimeMap();
+    const leaderboard = rows.map((u, i) => ({
+      ...buildLeaderboardRow(u, i),
+      ...progressionFields(ltByUser[String(u.userId)] ?? u.pointsBalance),
+    }));
     res.json(leaderboard);
   } catch (err) {
     res.status(500).json({ error: err.message });
