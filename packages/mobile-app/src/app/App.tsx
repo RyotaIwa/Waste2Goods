@@ -519,10 +519,42 @@ const isNativeApp = (): boolean => {
   try { return !!(window as any).Capacitor?.isNativePlatform?.(); } catch { return false; }
 };
 
+// The APK's pending login: a random nonce the server also files the finished session under, so
+// the app can collect it itself (GET /auth/app-session/:nonce) even when the browser never
+// follows the deep link back. Kept in localStorage so it survives the app being restarted.
+const OAUTH_NONCE_KEY = "w2g_oauth_app_nonce";
+const OAUTH_NONCE_TTL_MS = 10 * 60 * 1000;
+
+function newOAuthNonce(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function pendingOAuthNonce(): string {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OAUTH_NONCE_KEY) || "null");
+    if (raw?.nonce && Date.now() - Number(raw.at) < OAUTH_NONCE_TTL_MS) return String(raw.nonce);
+    localStorage.removeItem(OAUTH_NONCE_KEY);
+  } catch { /* ignore */ }
+  return "";
+}
+
 function startOAuth(provider: "google" | "github") {
-  // Native app → return through the deep link; browser/PWA → return to this origin as before.
-  const returnTo = isNativeApp() ? APP_DEEP_LINK : `${window.location.origin}/`;
-  window.location.href = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(returnTo)}`;
+  if (!isNativeApp()) {
+    window.location.href = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(`${window.location.origin}/`)}`;
+    return;
+  }
+  const nonce = newOAuthNonce();
+  try { localStorage.setItem(OAUTH_NONCE_KEY, JSON.stringify({ nonce, at: Date.now() })); } catch { /* ignore */ }
+  const url = `${getApiBaseUrl()}/auth/${provider}?return_to=${encodeURIComponent(APP_DEEP_LINK)}&app_nonce=${nonce}`;
+  // Prefer an in-app Chrome Custom Tab (@capacitor/browser); fall back to the system browser.
+  const browser = (window as any).Capacitor?.Plugins?.Browser;
+  if (browser?.open) {
+    Promise.resolve(browser.open({ url })).catch(() => { window.location.href = url; });
+  } else {
+    window.location.href = url;
+  }
 }
 
 function currentUserIdForLeaderboard() {
@@ -2640,16 +2672,50 @@ export default function App() {
       if (!rawUrl || !rawUrl.startsWith(APP_DEEP_LINK)) return;
       try {
         const q = rawUrl.includes("?") ? rawUrl.slice(rawUrl.indexOf("?") + 1).split("#")[0] : "";
-        if (applyOAuthTokens(new URLSearchParams(q))) setScreen("home");
+        if (applyOAuthTokens(new URLSearchParams(q))) finishAppLogin();
       } catch (e) {
         console.warn("Deep link handler:", e);
       }
     };
-    let listener: any;
-    Promise.resolve(appPlugin.addListener("appUrlOpen", (ev: any) => handle(ev?.url))).then((l: any) => { listener = l; });
+    const finishAppLogin = () => {
+      try { localStorage.removeItem(OAUTH_NONCE_KEY); } catch { /* ignore */ }
+      try { (window as any).Capacitor?.Plugins?.Browser?.close?.(); } catch { /* ignore */ }
+      setScreen("home");
+    };
+    // Collect the finished login from the server (works even when the deep link never fires).
+    let polling = false;
+    const pollSession = async () => {
+      const nonce = pendingOAuthNonce();
+      if (!nonce || polling) return;
+      polling = true;
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/auth/app-session/${nonce}`, { cache: "no-store" });
+        if (res.ok) {
+          const data = await res.json();
+          const params = new URLSearchParams();
+          for (const [k, v] of Object.entries(data || {})) params.set(k, String(v ?? ""));
+          if (applyOAuthTokens(params)) finishAppLogin();
+        }
+      } catch { /* offline — try again on the next tick */ } finally { polling = false; }
+    };
+    const listeners: any[] = [];
+    Promise.resolve(appPlugin.addListener("appUrlOpen", (ev: any) => handle(ev?.url))).then((l: any) => listeners.push(l));
+    Promise.resolve(appPlugin.addListener("resume", () => { pollSession(); })).then((l: any) => listeners.push(l));
+    const browser = (window as any).Capacitor?.Plugins?.Browser;
+    if (browser?.addListener) {
+      Promise.resolve(browser.addListener("browserFinished", () => { pollSession(); })).then((l: any) => listeners.push(l)).catch(() => { /* ignore */ });
+    }
+    const onVisible = () => { if (document.visibilityState === "visible") pollSession(); };
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(pollSession, 3000);
     // Cold start: the app was launched by the deep link itself.
     Promise.resolve(appPlugin.getLaunchUrl?.()).then((r: any) => handle(r?.url)).catch(() => { /* ignore */ });
-    return () => { try { listener?.remove?.(); } catch { /* ignore */ } };
+    pollSession();
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      for (const l of listeners) { try { l?.remove?.(); } catch { /* ignore */ } }
+    };
   }, []);
 
   // ── OAuth Callback Query Parameter Handler (Native + Appwrite SDK) ──

@@ -37,6 +37,7 @@ import {
 } from './security/oauth2-server.js';
 import { csrfOriginGuard, csrfInfo } from './security/csrf.js';
 import { attachGitHubOAuth, githubOAuthInfo } from './security/github-oauth.js';
+import { attachAppHandoff } from './security/app-handoff.js';
 import { attachGoogleOAuth, googleOAuthInfo } from './security/google-oauth.js';
 import { attachAppwriteAuth, appwriteInfo, syncAppwriteSessionToPlatform } from './security/appwrite-auth.js';
 import { attachCdnStatic, cdnInfo } from './security/cdn.js';
@@ -169,6 +170,7 @@ const authenticate = (req, res, next) => authenticateJWT(req, res, next);
 oauth2RouterAttach(app, { authenticate });
 attachGitHubOAuth(app);
 attachGoogleOAuth(app);
+attachAppHandoff(app);
 attachAppwriteAuth(app);
 
 // ════════════════════════════════════════════════════════════════════

@@ -3,6 +3,7 @@ import { redisSet, redisGet, redisDel, redisBackendMode } from './redis-client.j
 import { signAccessToken, issueRefreshToken } from './auth-jwt.js';
 import { findOrCreateOAuthUser } from './oauth-user-store.js';
 import { sanitizeRedirectUrl, safeRedirect, requestOrigin, APP_DEEP_LINK, isAppDeepLink, redirectToApp } from './escape-html.js';
+import { appNonceFrom, stashAppSession } from './app-handoff.js';
 
 const STATE_PREFIX = 'gh:oauth:state:';
 const CODE_PREFIX = 'gh:oauth:code:';
@@ -84,7 +85,7 @@ export function attachGitHubOAuth(app) {
     returnTo = sanitizeRedirectUrl(returnTo, '/security-dashboard');
     // The APK asks to be sent back into the app through its custom-scheme deep link.
     if (isAppDeepLink(String(req.query.return_to || ''))) returnTo = APP_DEEP_LINK;
-    await saveState(state, { returnTo, createdAt: Date.now() });
+    await saveState(state, { returnTo, appNonce: returnTo === APP_DEEP_LINK ? appNonceFrom(req) : '', createdAt: Date.now() });
 
     if (demoOAuthAllowed()) {
       return safeRedirect(res, `/api/auth/github/demo?state=${encodeURIComponent(state)}`, 302);
@@ -259,14 +260,16 @@ export function attachGitHubOAuth(app) {
 
     // APK login: hand the session back to the installed app via its deep link.
     if (saved?.returnTo === APP_DEEP_LINK) {
-      return redirectToApp(res, {
+      const appSession = {
         token: access.accessToken,
         refreshToken: refresh.refreshToken,
         userId: userRecord.userId,
         name: userRecord.name || profile.login || 'GitHub User',
         email: userRecord.email || '',
         provider: 'github',
-      });
+      };
+      await stashAppSession(saved.appNonce, appSession);
+      return redirectToApp(res, appSession);
     }
 
     // Determine redirect target
