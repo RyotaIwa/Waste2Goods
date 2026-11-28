@@ -1734,6 +1734,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<any>(null);
   const [restock, setRestock] = useState<any>(null);
+  const [redemptionTab, setRedemptionTab] = useState<string>("all");
   const [saving, setSaving] = useState(false);
   const [banner, setBanner] = useState<{ type: "ok" | "err"; text: string } | null>(null);
   const [confirmDel, setConfirmDel] = useState<any>(null);
@@ -2033,6 +2034,34 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             );
           })()}
         </div>
+        {(() => {
+          const groupOf = (st: string) => (st === "completed" ? "claimed" : st || "pending");
+          const all = liveRedemptions || [];
+          const tabs = [
+            { key: "all", label: "All" },
+            { key: "pending", label: "Pending" },
+            { key: "approved", label: "Approved" },
+            { key: "ready", label: "Ready" },
+            { key: "claimed", label: "Claimed" },
+            { key: "rejected", label: "Rejected" },
+          ];
+          return (
+            <div className="flex gap-2 overflow-x-auto pb-1 mb-3" role="tablist" aria-label="Filter redemption requests by status">
+              {tabs.map(t => {
+                const n = t.key === "all" ? all.length : all.filter((r: any) => groupOf(r.status) === t.key).length;
+                const active = redemptionTab === t.key;
+                const urgent = t.key === "pending" && n > 0;
+                return (
+                  <button key={t.key} type="button" role="tab" aria-selected={active} onClick={() => setRedemptionTab(t.key)}
+                    className={`flex-shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-colors ${active ? "bg-primary text-white" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}>
+                    {t.label}
+                    <span className={`min-w-[1.25rem] px-1.5 rounded-full text-[10px] font-black ${active ? "bg-white/25 text-white" : urgent ? "bg-amber-500 text-white" : "bg-white text-muted-foreground"}`}>{n}</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
         <div className="overflow-auto max-h-[420px] rounded-xl border border-border">
           <table className="w-full text-sm border-collapse">
             <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--border,#e5e7eb)] [&_th]:pt-2 [&_th:first-child]:pl-3 [&_th:last-child]:pr-3">
@@ -2047,12 +2076,26 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
               </tr>
             </thead>
             <tbody className="[&_td:first-child]:pl-3 [&_td:last-child]:pr-3">
-              {(liveRedemptions || []).length === 0 && (
-                <tr>
-                  <td colSpan={7} className="p-4 text-center text-xs text-muted-foreground">No redemption requests yet.</td>
-                </tr>
-              )}
-              {(liveRedemptions || []).map((rr: any) => {
+              {(() => {
+                const shown = (liveRedemptions || []).filter((r: any) => {
+                  if (redemptionTab === "all") return true;
+                  const st = r.status === "completed" ? "claimed" : (r.status || "pending");
+                  return st === redemptionTab;
+                });
+                if (shown.length > 0) return null;
+                return (
+                  <tr>
+                    <td colSpan={7} className="p-4 text-center text-xs text-muted-foreground">
+                      {(liveRedemptions || []).length === 0 ? "No redemption requests yet." : `No ${redemptionTab} requests.`}
+                    </td>
+                  </tr>
+                );
+              })()}
+              {(liveRedemptions || []).filter((r: any) => {
+                if (redemptionTab === "all") return true;
+                const st = r.status === "completed" ? "claimed" : (r.status || "pending");
+                return st === redemptionTab;
+              }).map((rr: any) => {
                 const status = rr.status || "pending";
                 const statusColor = status === "pending" ? "bg-amber-50 text-amber-700 border-amber-200" : status === "approved" || status === "ready" ? "bg-green-50 text-green-700 border-green-200" : status === "rejected" ? "bg-red-50 text-red-700 border-red-200" : "bg-muted text-muted-foreground";
                 const isPending = status === "pending";
