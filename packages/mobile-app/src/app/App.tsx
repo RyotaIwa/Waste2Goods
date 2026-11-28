@@ -2213,16 +2213,31 @@ function realDropoffs(notifItems: any[]) {
 
 function ScreenHistory(p: MobileAppRouterProps) {
   const drops = realDropoffs(p.notifItems);
-  const items = drops.map(d => ({
-    t: `${d.bottles} bottle${d.bottles === 1 ? "" : "s"} recycled`,
-    v: `+${d.pts} pts`,
-    sub: notifTimeLabel(d.time),
-    i: "🧴",
-    c: "bg-green-50",
-    label: `${d.bottles} bottles`,
-    key: d.id,
-  }));
-  const pointsEarned = drops.reduce((a, d) => a + d.pts, 0);
+  const quests = (p.notifItems || []).filter((n: any) => String(n.id || "").startsWith("quest-"));
+  const items = [
+    ...drops.map(d => ({
+      t: `${d.bottles} bottle${d.bottles === 1 ? "" : "s"} recycled`,
+      v: `+${d.pts} pts`,
+      sub: notifTimeLabel(d.time),
+      i: "🧴",
+      c: "bg-green-50",
+      label: `${d.bottles} bottles`,
+      key: d.id,
+      time: d.time,
+    })),
+    ...quests.map((q: any) => ({
+      t: `Quest completed: ${q.meta?.taskName || "Quest"}`,
+      v: `+${Number(q.meta?.pointsEarned || 0)} pts`,
+      sub: notifTimeLabel(q.time),
+      i: "🏆",
+      c: "bg-amber-50",
+      label: "Quest bonus",
+      key: q.id,
+      time: q.time,
+    })),
+  ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  const pointsEarned = drops.reduce((a, d) => a + d.pts, 0)
+    + quests.reduce((a: number, q: any) => a + Number(q.meta?.pointsEarned || 0), 0);
   // Profile total can be missing/stale; never show less than the drop-offs listed below.
   const listedBottles = drops.reduce((a, d) => a + d.bottles, 0);
   const totalBottles = Math.max(Number(p.currentUser.totalBottles || 0), listedBottles);

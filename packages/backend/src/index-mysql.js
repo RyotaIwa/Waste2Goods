@@ -1967,6 +1967,30 @@ async function buildUserNotifications(userId) {
   );
   for (const rd of myRedeems) notifications.push(buildMyRedeemNotif(rd));
 
+  // Completed quests — bonus points are credited automatically (quest-progress.js),
+  // so record each one in the activity feed so the resident sees where they came from.
+  try {
+    const [quests] = await db.query(
+      "SELECT p.taskId, p.completedAt, t.taskName, t.bonusPoints FROM user_task_progress p JOIN recycling_tasks t ON t.taskId = p.taskId WHERE p.userId = ? AND p.completed = 1 ORDER BY p.completedAt DESC LIMIT ?",
+      [userId, limit]
+    );
+    for (const q of quests) {
+      const pts = Number(q.bonusPoints || 0);
+      notifications.push({
+        id: `quest-${q.taskId}`,
+        type: 'quest',
+        title: '🏆 Quest completed!',
+        message: `${q.taskName} · bonus +${pts} points`,
+        time: toIsoTime(q.completedAt),
+        severity: 'success',
+        read: true,
+        meta: { taskId: q.taskId, taskName: q.taskName, pointsEarned: pts },
+      });
+    }
+  } catch (err) {
+    console.warn('Quest activity load failed:', err.message);
+  }
+
   const u = await safeLoadUserWithTier(userId);
   if (u) {
     const welcomeNotif = buildUserWelcomeNotif(u);
