@@ -1836,7 +1836,13 @@ function ScreenTasks(p: MobileAppRouterProps) {
                 <span className="text-[10px] text-muted-foreground font-semibold">{Math.min(t.progress, t.goal)}/{t.goal} {t.unit}</span>
               </div>
             </div>
-            <span className={`px-3 py-1.5 rounded-xl text-xs font-black ${t.done ? "bg-green-500 text-white" : "bg-muted text-muted-foreground"}`}>{t.done ? "Done" : "In progress"}</span>
+            {t.done ? (
+              <span aria-label="Completed" title="Completed — bonus points added" className="w-9 h-9 rounded-full bg-green-500 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Check className="w-5 h-5" strokeWidth={3} />
+              </span>
+            ) : (
+              <span aria-label="In progress" title="In progress" className="w-9 h-9 rounded-full border-2 border-dashed border-muted-foreground/40 flex-shrink-0" />
+            )}
           </div>
         ))}
       </div>
