@@ -2033,9 +2033,9 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
             );
           })()}
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[420px] rounded-xl border border-border">
           <table className="w-full text-sm border-collapse">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_0_var(--border,#e5e7eb)] [&_th]:pt-2 [&_th:first-child]:pl-3 [&_th:last-child]:pr-3">
               <tr className="border-b border-border text-left">
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Resident</th>
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase">Reward</th>
@@ -2046,7 +2046,7 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
                 <th className="pb-2 text-xs font-bold text-muted-foreground uppercase text-right">Action</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="[&_td:first-child]:pl-3 [&_td:last-child]:pr-3">
               {(liveRedemptions || []).length === 0 && (
                 <tr>
                   <td colSpan={7} className="p-4 text-center text-xs text-muted-foreground">No redemption requests yet.</td>
@@ -2144,8 +2144,8 @@ function AdminRewards({ liveRewards, liveRedemptions, searchQuery = "", onRefres
 
       {/* Restock Modal */}
       {restock && (
-        <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50 rounded-2xl">
-          <div className="bg-white rounded-2xl p-5 w-80 shadow-2xl">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={() => setRestock(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-xs shadow-2xl" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-black text-foreground">Restock Reward</h3>
               <button type="button" onClick={() => setRestock(null)}><X className="w-5 h-5 text-muted-foreground" /></button>

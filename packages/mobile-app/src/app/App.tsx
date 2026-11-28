@@ -10,7 +10,8 @@ import {
   ChevronRight, Shield, Mail, Phone, Leaf,
   Settings, Lock, Info, Camera, Globe,
   Hash, Sparkles, Upload, CheckSquare2, Cable, Wallet, X, Circle, Package,
-  Copy, Check
+  Copy, Check,
+  Search,
 } from "lucide-react";
 import ScreenRedeemCode from "./ScreenRedeemCode";
 
@@ -1006,6 +1007,8 @@ type MobileAppRouterProps = Readonly<{
   filteredRewards: typeof rewards;
   setSelectedReward: (r: typeof rewards[number] | null) => void;
   setRewardFilter: (v: string) => void;
+  rewardSearch: string;
+  setRewardSearch: (v: string) => void;
   setMfaCode: (v: string[]) => void;
   setEmail: SetState<string>;
   setPassword: SetState<string>;
@@ -1678,11 +1681,25 @@ function ScreenRewards(p: MobileAppRouterProps) {
         </div>
       </div>
       <div className="p-5 space-y-4 overflow-y-auto flex-1 pb-32">
+        <div className="relative">
+          <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={p.rewardSearch}
+            onChange={e => p.setRewardSearch(e.target.value)}
+            placeholder="Search rewards..."
+            aria-label="Search rewards"
+            className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+          />
+        </div>
         <div className="flex gap-2 overflow-x-auto -mx-5 px-5 pb-1">
           {p.rewardCategories.map(c => (
             <button type="button" key={c} onClick={() => p.setRewardFilter(c)} className={`flex-shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors ${p.rewardFilter === c ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>{c}</button>
           ))}
         </div>
+        {p.filteredRewards.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-8">No rewards match "{p.rewardSearch}".</p>
+        )}
         <div className="grid grid-cols-2 gap-3">
           {p.filteredRewards.map(r => {
             const canRedeem = (Number(p.currentUser.points || 0) >= r.cost);
@@ -2572,6 +2589,7 @@ export default function App() {
   const [selectedReward, setSelectedReward] = useState<typeof rewards[0] | null>(null);
   const [redemptions, setRedemptions] = useState<any[]>([]);
   const [rewardFilter, setRewardFilter] = useState("All");
+  const [rewardSearch, setRewardSearch] = useState("");
   const [mfaCode, setMfaCode] = useState(["", "", "", "", "", ""]);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -3067,7 +3085,11 @@ export default function App() {
   }, []);
   const rewardList: typeof rewards = (liveRewards as any) ?? rewards;
   const rewardCategories = ["All", ...Array.from(new Set(rewardList.map(r => r.category)))];
-  const filteredRewards = rewardFilter === "All" ? rewardList : rewardList.filter(r => r.category === rewardFilter);
+  const rewardQuery = rewardSearch.trim().toLowerCase();
+  const filteredRewards = rewardList.filter(r =>
+    (rewardFilter === "All" || r.category === rewardFilter) &&
+    (!rewardQuery || `${r.name ?? ""} ${r.category ?? ""}`.toLowerCase().includes(rewardQuery))
+  );
 
 
   const onLogin = async () => {
@@ -3294,6 +3316,8 @@ export default function App() {
         setRegStep={setRegStep}
         setSelectedReward={setSelectedReward}
         setRewardFilter={setRewardFilter}
+        rewardSearch={rewardSearch}
+        setRewardSearch={setRewardSearch}
         setMfaCode={setMfaCode}
         setEmail={setEmail}
         setPassword={setPassword}
